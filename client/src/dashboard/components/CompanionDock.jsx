@@ -585,6 +585,99 @@ export default function CompanionDock({ user, onClose, onComposeTo, activeMessag
     if (window.WoxToast) window.WoxToast.success('Address copied');
   };
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // 5. CONTACT INTELLIGENCE & DOSSIER STATE
+  // ══════════════════════════════════════════════════════════════════════════
+  const [dossierData, setDossierData] = useState(null);
+  const [loadingDossier, setLoadingDossier] = useState(false);
+  const [dossierEmailInput, setDossierEmailInput] = useState('');
+
+  const targetDossierEmail = useMemo(() => {
+    if (dossierEmailInput.trim()) return dossierEmailInput.trim();
+    if (activeMessage) {
+      const fromAddr = typeof activeMessage.from === 'object' ? (activeMessage.from?.address || '') : String(activeMessage.from || '');
+      return fromAddr;
+    }
+    return '';
+  }, [dossierEmailInput, activeMessage]);
+
+  const fetchDossier = async (email) => {
+    if (!email || !email.includes('@')) return;
+    setLoadingDossier(true);
+    try {
+      const res = await get(`/dossier/${encodeURIComponent(email)}`);
+      if (res && res.dossier) setDossierData(res.dossier);
+    } catch {
+      setDossierData(null);
+    } finally {
+      setLoadingDossier(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'dossier' && targetDossierEmail) {
+      fetchDossier(targetDossierEmail);
+    }
+  }, [activeTab, targetDossierEmail]);
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 6. SNIPPETS & SLASH MACROS STATE
+  // ══════════════════════════════════════════════════════════════════════════
+  const [snippets, setSnippets] = useState([]);
+  const [loadingSnippets, setLoadingSnippets] = useState(false);
+  const [showSnippetForm, setShowSnippetForm] = useState(false);
+  const [snippetShortcut, setSnippetShortcut] = useState('');
+  const [snippetTitle, setSnippetTitle] = useState('');
+  const [snippetContent, setSnippetContent] = useState('');
+
+  const fetchSnippets = async () => {
+    setLoadingSnippets(true);
+    try {
+      const res = await get('/snippets');
+      if (res && res.snippets) setSnippets(res.snippets);
+    } catch {} finally {
+      setLoadingSnippets(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'snippets') {
+      fetchSnippets();
+    }
+  }, [activeTab]);
+
+  const handleCreateSnippet = async (e) => {
+    e.preventDefault();
+    if (!snippetShortcut || !snippetTitle || !snippetContent) return;
+    try {
+      const res = await post('/snippets', {
+        shortcut: snippetShortcut,
+        title: snippetTitle,
+        contentHtml: snippetContent,
+      });
+      if (res && res.snippet) {
+        setSnippets((prev) => [...prev, res.snippet]);
+        setSnippetShortcut('');
+        setSnippetTitle('');
+        setSnippetContent('');
+        setShowSnippetForm(false);
+        if (window.WoxToast) window.WoxToast.success('Snippet macro created');
+      }
+    } catch (err) {
+      if (window.WoxToast) window.WoxToast.error(err.message || 'Failed to create snippet');
+    }
+  };
+
+  const handleDeleteSnippet = async (id) => {
+    try {
+      await del(`/snippets/${id}`);
+      setSnippets((prev) => prev.filter((s) => s.id !== id));
+      if (window.WoxToast) window.WoxToast.info('Snippet deleted');
+    } catch (err) {
+      if (window.WoxToast) window.WoxToast.error('Failed to delete snippet');
+    }
+  };
+
   return (
     <aside className="companion-dock-drawer" aria-label="Productivity companion dock">
       {/* Dock Top Banner */}
@@ -628,6 +721,24 @@ export default function CompanionDock({ user, onClose, onComposeTo, activeMessag
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
             <span>Notes</span>
+          </button>
+          <button
+            type="button"
+            className={`dock-tab-pill ${activeTab === 'dossier' ? 'active' : ''}`}
+            onClick={() => switchTab('dossier')}
+            title="Contact Intelligence & Dossier"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <span>Dossier</span>
+          </button>
+          <button
+            type="button"
+            className={`dock-tab-pill ${activeTab === 'snippets' ? 'active' : ''}`}
+            onClick={() => switchTab('snippets')}
+            title="Snippets & Slash Macros"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            <span>Snippets</span>
           </button>
           <button
             type="button"
@@ -1474,6 +1585,236 @@ export default function CompanionDock({ user, onClose, onComposeTo, activeMessag
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════════════════════ */}
+        {/* 5. CONTACT INTELLIGENCE & DOSSIER TAB                  */}
+        {/* ══════════════════════════════════════════════════════ */}
+        {activeTab === 'dossier' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+            {/* Search / Target Contact Email Input */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (dossierEmailInput.trim()) fetchDossier(dossierEmailInput.trim());
+              }}
+              style={{ display: 'flex', gap: '0.4rem' }}
+            >
+              <input
+                className="input"
+                placeholder="contact@domain.com"
+                value={dossierEmailInput}
+                onChange={(e) => setDossierEmailInput(e.target.value)}
+                style={{ fontSize: '0.78rem', flex: 1 }}
+              />
+              <button type="submit" className="btn btn-secondary btn-xs" disabled={loadingDossier}>
+                {loadingDossier ? '...' : 'Inspect'}
+              </button>
+            </form>
+
+            {loadingDossier ? (
+              <div className="text-secondary" style={{ textAlign: 'center', padding: '2rem 0', fontSize: '0.8125rem' }}>
+                Loading intelligence telemetry...
+              </div>
+            ) : !dossierData ? (
+              <div className="dock-empty-state">
+                <span style={{ display: 'inline-flex', color: 'var(--color-text-tertiary)' }}>
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                </span>
+                <p>Select an email in your inbox or enter an address above to generate a contact dossier.</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {/* Profile Card */}
+                <div className="dock-card" style={{ padding: '0.85rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
+                    <div style={{ overflow: 'hidden' }}>
+                      <strong style={{ fontSize: '0.875rem', color: 'var(--color-text-primary)' }} className="truncate">
+                        {dossierData.email}
+                      </strong>
+                      <div className="text-secondary" style={{ fontSize: '0.72rem' }}>
+                        Domain: {dossierData.domain}
+                      </div>
+                    </div>
+                    <span className="badge badge-purple" style={{ fontSize: '0.7rem' }}>
+                      {dossierData.timezoneLabel}
+                    </span>
+                  </div>
+
+                  {/* Local Time Clock */}
+                  <div style={{ background: 'var(--color-bg-input)', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius-sm)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>Recipient Local Time:</span>
+                    <span className="mono" style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--color-primary-light)' }}>
+                      {dossierData.localTime}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Telemetry Metrics Grid */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                  <div className="dock-card" style={{ padding: '0.65rem', textAlign: 'center' }}>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--color-success)' }}>
+                      {dossierData.metrics?.openRatePercent || 0}%
+                    </div>
+                    <div className="text-secondary" style={{ fontSize: '0.6875rem' }}>Open Rate ({dossierData.metrics?.totalOpened || 0}/{dossierData.metrics?.totalEmailsSent || 0})</div>
+                  </div>
+                  <div className="dock-card" style={{ padding: '0.65rem', textAlign: 'center' }}>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--color-primary-light)' }}>
+                      {dossierData.metrics?.averageOpenLatencyHours !== null ? `${dossierData.metrics.averageOpenLatencyHours}h` : '—'}
+                    </div>
+                    <div className="text-secondary" style={{ fontSize: '0.6875rem' }}>Avg. Open Latency</div>
+                  </div>
+                </div>
+
+                {/* Quick Action Buttons */}
+                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-xs"
+                    onClick={() => onComposeTo && onComposeTo(dossierData.email)}
+                    style={{ flex: 1 }}
+                  >
+                    Compose Email
+                  </button>
+                  {onFilterBySender && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-xs"
+                      onClick={() => onFilterBySender(dossierData.email)}
+                    >
+                      Filter Thread
+                    </button>
+                  )}
+                </div>
+
+                {/* Shared Controlled Attachments */}
+                {dossierData.sharedAttachments && dossierData.sharedAttachments.length > 0 && (
+                  <div className="dock-card" style={{ padding: '0.75rem' }}>
+                    <span className="dock-section-title" style={{ marginBottom: '0.4rem', display: 'block' }}>
+                      Shared Controlled Attachments ({dossierData.sharedAttachments.length})
+                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                      {dossierData.sharedAttachments.map((att) => (
+                        <div key={att.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', padding: '0.3rem 0', borderBottom: '1px solid var(--color-border)' }}>
+                          <span className="truncate" style={{ maxWidth: '140px' }}>{att.filename}</span>
+                          <span className="mono text-secondary" style={{ fontSize: '0.6875rem' }}>
+                            {att.max_views ? `${att.view_count}/${att.max_views}v` : 'Unl'} • {att.max_downloads !== null ? `${att.download_count}/${att.max_downloads}d` : 'Unl'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════════════════════ */}
+        {/* 6. SNIPPETS & SLASH MACROS TAB                         */}
+        {/* ══════════════════════════════════════════════════════ */}
+        {activeTab === 'snippets' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span className="dock-section-title">Saved Macros ({snippets.length})</span>
+              <button
+                type="button"
+                className="btn btn-secondary btn-xs"
+                onClick={() => setShowSnippetForm(!showSnippetForm)}
+              >
+                {showSnippetForm ? 'Cancel' : '+ New Snippet'}
+              </button>
+            </div>
+
+            {/* Create Snippet Form */}
+            {showSnippetForm && (
+              <form onSubmit={handleCreateSnippet} className="dock-card" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '0.75rem' }}>
+                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                  <input
+                    className="input"
+                    placeholder="shortcut (e.g. intro)"
+                    value={snippetShortcut}
+                    onChange={(e) => setSnippetShortcut(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ''))}
+                    style={{ fontSize: '0.75rem', flex: 1 }}
+                    required
+                  />
+                  <input
+                    className="input"
+                    placeholder="Title"
+                    value={snippetTitle}
+                    onChange={(e) => setSnippetTitle(e.target.value)}
+                    style={{ fontSize: '0.75rem', flex: 1.5 }}
+                    required
+                  />
+                </div>
+                <textarea
+                  className="input"
+                  placeholder="Template HTML / text..."
+                  value={snippetContent}
+                  onChange={(e) => setSnippetContent(e.target.value)}
+                  rows={3}
+                  style={{ fontSize: '0.75rem', resize: 'vertical' }}
+                  required
+                />
+                <button type="submit" className="btn btn-primary btn-xs">
+                  Save Snippet
+                </button>
+              </form>
+            )}
+
+            {loadingSnippets ? (
+              <div className="text-secondary" style={{ textAlign: 'center', padding: '1rem 0', fontSize: '0.8125rem' }}>
+                Loading snippets...
+              </div>
+            ) : snippets.length === 0 ? (
+              <div className="dock-empty-state">
+                <span style={{ display: 'inline-flex', color: 'var(--color-text-tertiary)' }}>
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                </span>
+                <p>No text snippets saved yet. Create a snippet to use slash macros like <code>/intro</code> in the composer.</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', maxHeight: '55vh', overflowY: 'auto' }}>
+                {snippets.map((snip) => (
+                  <div key={snip.id} className="dock-card" style={{ padding: '0.65rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        <span className="badge badge-purple mono" style={{ fontSize: '0.7rem' }}>
+                          /{snip.shortcut}
+                        </span>
+                        <strong style={{ fontSize: '0.8125rem' }}>{snip.title}</strong>
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.25rem' }}>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-xs"
+                          onClick={() => {
+                            navigator.clipboard.writeText(snip.content_html || '');
+                            if (window.WoxToast) window.WoxToast.success('Snippet copied');
+                          }}
+                          title="Copy snippet to clipboard"
+                        >
+                          Copy
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-xs"
+                          onClick={() => handleDeleteSnippet(snip.id)}
+                          style={{ color: 'var(--color-error)' }}
+                          title="Delete snippet"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                    <div className="text-secondary" style={{ fontSize: '0.72rem', maxHeight: '40px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {snip.content_html}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>

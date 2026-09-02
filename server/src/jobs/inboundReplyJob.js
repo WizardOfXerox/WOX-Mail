@@ -5,6 +5,7 @@
 
 import { createConnection } from '../services/imap.js';
 import { processInboundReply } from '../services/verificationService.js';
+import { resolveFollowUpOnReply } from '../services/followUpService.js';
 import { get, setex } from '../config/redis.js';
 import { simpleParser } from 'mailparser';
 import pino from 'pino';
@@ -54,6 +55,11 @@ export async function processInboundVerificationReplies() {
         const fromAddr = (msg.envelope?.from?.[0]?.address || '').toLowerCase().trim();
         const toAddr = (msg.envelope?.to?.[0]?.address || '').toLowerCase().trim();
         const subject = msg.envelope?.subject || '';
+
+        // Auto-resolve any pending "Bump If No Reply" reminders for this sender
+        if (fromAddr) {
+          await resolveFollowUpOnReply({ senderEmail: fromAddr }).catch(() => {});
+        }
 
         // Check if message relates to verification
         const isVerp = toAddr.includes('verify+');

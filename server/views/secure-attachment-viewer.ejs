@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Secure Attachment — WoxMail Sovereign Enclave</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    body {
+      background: #0a0a14;
+      color: #f0f0f5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .enclave-header {
+      background: rgba(22, 22, 38, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(124, 58, 237, 0.2);
+      padding: 0.85rem 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .enclave-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 0.25rem 0.65rem;
+      border-radius: 9999px;
+      background: rgba(124, 58, 237, 0.15);
+      border: 1px solid rgba(124, 58, 237, 0.3);
+      color: #c084fc;
+    }
+    .viewer-container {
+      flex: 1;
+      max-width: 1100px;
+      width: 100%;
+      margin: 1.5rem auto;
+      padding: 0 1rem;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .watermark-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 50;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      grid-template-rows: repeat(auto-fit, minmax(140px, 1fr));
+      overflow: hidden;
+      opacity: 0.12;
+    }
+    .watermark-item {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transform: rotate(-25deg);
+      font-family: var(--font-mono);
+      font-size: 0.875rem;
+      color: #ffffff;
+      white-space: nowrap;
+    }
+    .content-box {
+      background: #141424;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      padding: 1.5rem;
+      position: relative;
+      overflow: hidden;
+      min-height: 500px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .media-preview {
+      max-width: 100%;
+      max-height: 70vh;
+      border-radius: 8px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+    }
+    .doc-iframe {
+      width: 100%;
+      height: 70vh;
+      border: none;
+      border-radius: 8px;
+    }
+    .error-card {
+      text-align: center;
+      max-width: 460px;
+      padding: 2.5rem 1.5rem;
+    }
+  </style>
+</head>
+<body oncontextmenu="return false;">
+
+  <!-- Header -->
+  <header class="enclave-header">
+    <div style="display: flex; align-items: center; gap: 0.75rem;">
+      <a href="/" style="display: flex; align-items: center; gap: 0.5rem; text-decoration: none; color: inherit;">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+        <span style="font-weight: 800; letter-spacing: -0.02em;">WoxMail</span>
+      </a>
+      <span class="enclave-badge">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <span>Controlled Secure Attachment</span>
+      </span>
+    </div>
+
+    <div id="header-actions" style="display: flex; align-items: center; gap: 0.75rem;">
+      <div id="limits-indicator" class="text-secondary" style="font-size: 0.8125rem; font-family: var(--font-mono);">
+        Loading telemetry...
+      </div>
+      <button id="download-btn" class="btn btn-primary btn-sm" style="display: none;" onclick="triggerDownload()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <span>Download File</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Viewer Canvas Area -->
+  <main class="viewer-container">
+    <div class="content-box" id="viewer-box">
+      <!-- Watermark Grid -->
+      <div class="watermark-overlay" id="watermark-container"></div>
+
+      <!-- Live Content Display -->
+      <div id="content-render" style="width: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10;">
+        <div class="text-secondary" style="display: flex; align-items: center; gap: 0.5rem;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="spin"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg>
+          <span>Decrypting and verifying attachment enclave...</span>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const token = window.location.pathname.split('/').pop();
+
+    // Disable keyboard shortcuts for print / save
+    window.addEventListener('keydown', function(e) {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'p' || e.key === 'P' || e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+      }
+    });
+
+    async function loadSecureAttachment() {
+      try {
+        const statusRes = await fetch('/api/secure-attachments/status/' + encodeURIComponent(token));
+        const meta = await statusRes.json();
+
+        if (!statusRes.ok || !meta.isAccessible) {
+          renderExhaustedState(meta);
+          return;
+        }
+
+        renderHeaderTelemetry(meta);
+        renderWatermark(meta.watermarkText || 'CONFIDENTIAL • PROTECTED VIEW');
+
+        // Render preview content
+        const previewUrl = '/api/secure-attachments/preview/' + encodeURIComponent(token);
+        const renderEl = document.getElementById('content-render');
+
+        if (meta.contentType && meta.contentType.startsWith('image/')) {
+          renderEl.innerHTML = '<img src="' + previewUrl + '" alt="' + meta.filename + '" class="media-preview" draggable="false" />';
+        } else if (meta.contentType && meta.contentType.includes('pdf')) {
+          renderEl.innerHTML = '<iframe src="' + previewUrl + '#toolbar=0" class="doc-iframe"></iframe>';
+        } else if (meta.contentType && (meta.contentType.includes('text') || meta.contentType.includes('json') || meta.contentType.includes('javascript'))) {
+          const textRes = await fetch(previewUrl);
+          const rawText = await textRes.text();
+          renderEl.innerHTML = '<pre style="width: 100%; max-height: 65vh; overflow: auto; padding: 1.25rem; background: #0c0c16; border-radius: 8px; font-family: var(--font-mono); font-size: 0.8125rem; white-space: pre-wrap; word-break: break-all;">' + escapeHtml(rawText) + '</pre>';
+        } else {
+          // Binary download card
+          renderEl.innerHTML = `
+            <div style="text-align: center; padding: 2rem;">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 1rem;"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+              <h3 style="font-size: 1.125rem; margin-bottom: 0.25rem;">${escapeHtml(meta.filename)}</h3>
+              <p class="text-secondary" style="font-size: 0.875rem; margin-bottom: 1.25rem;">${formatBytes(meta.fileSize)} • ${meta.contentType}</p>
+            </div>
+          `;
+        }
+
+        // Configure download button
+        if (meta.maxDownloads !== 0 && !meta.isDownloadExhausted) {
+          const dlBtn = document.getElementById('download-btn');
+          if (dlBtn) dlBtn.style.display = 'inline-flex';
+        }
+      } catch (err) {
+        renderExhaustedState({ error: err.message });
+      }
+    }
+
+    function renderHeaderTelemetry(meta) {
+      const el = document.getElementById('limits-indicator');
+      const viewsStr = meta.maxViews !== null ? `Views: ${meta.viewCount}/${meta.maxViews}` : 'Views: Unlimited';
+      const dlStr = meta.maxDownloads !== null ? (meta.maxDownloads === 0 ? 'View-Only' : `Downloads: ${meta.downloadCount}/${meta.maxDownloads}`) : 'Downloads: Unlimited';
+      el.innerText = `${viewsStr} • ${dlStr}`;
+    }
+
+    function renderWatermark(text) {
+      const container = document.getElementById('watermark-container');
+      container.innerHTML = '';
+      const displayStr = `${text} • ${new Date().toLocaleDateString()}`;
+      for (let i = 0; i < 20; i++) {
+        const item = document.createElement('div');
+        item.className = 'watermark-item';
+        item.innerText = displayStr;
+        container.appendChild(item);
+      }
+    }
+
+    function renderExhaustedState(meta) {
+      document.getElementById('limits-indicator').innerText = 'Access Restricted';
+      document.getElementById('download-btn').style.display = 'none';
+      const renderEl = document.getElementById('content-render');
+      let title = 'Attachment Inaccessible';
+      let desc = meta.error || 'This attachment link is no longer valid.';
+
+      if (meta.isRevoked) {
+        title = 'Access Revoked';
+        desc = 'The sender has revoked access to this confidential attachment.';
+      } else if (meta.isExpired) {
+        title = 'Link Expired';
+        desc = 'The time limit for accessing this attachment has elapsed.';
+      } else if (meta.isViewExhausted && meta.isDownloadExhausted) {
+        title = 'Limit Reached';
+        desc = 'The maximum allowed views and downloads for this attachment have been exhausted.';
+      }
+
+      renderEl.innerHTML = `
+        <div class="error-card">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 1rem;"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+          <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 0.5rem;">${title}</h2>
+          <p class="text-secondary" style="font-size: 0.875rem; line-height: 1.5;">${desc}</p>
+        </div>
+      `;
+    }
+
+    function triggerDownload() {
+      window.location.href = '/api/secure-attachments/download/' + encodeURIComponent(token);
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function formatBytes(bytes) {
+      if (!bytes || bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    }
+
+    loadSecureAttachment();
+  </script>
+</body>
+</html>

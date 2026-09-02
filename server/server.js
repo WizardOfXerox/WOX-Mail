@@ -58,6 +58,11 @@ import kanbanRouter from './src/routes/kanban.js';
 import integrationsRouter from './src/routes/integrations.js';
 import aiRouter from './src/routes/ai.js';
 import exportRouter from './src/routes/export.js';
+import secureAttachmentsRouter from './src/routes/secureAttachments.js';
+import followupRouter from './src/routes/followup.js';
+import deliverabilityRouter from './src/routes/deliverability.js';
+import dossierRouter from './src/routes/dossier.js';
+import snippetsRouter from './src/routes/snippets.js';
 import { setVerificationSocketIO } from './src/services/verificationService.js';
 
 // Background jobs
@@ -193,6 +198,11 @@ app.use('/api/integrations', integrationsRouter);
 app.use('/api/ai', aiRouter);
 app.use('/api/export', exportRouter);
 app.use('/api/proton', protonProxyRouter);
+app.use('/api/secure-attachments', secureAttachmentsRouter);
+app.use('/api/followup', followupRouter);
+app.use('/api/deliverability', deliverabilityRouter);
+app.use('/api/dossier', dossierRouter);
+app.use('/api/snippets', snippetsRouter);
 app.use('/', autodiscoverRouter);
 
 // Global API rate limiter (after specific route limiters)

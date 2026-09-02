@@ -1,7 +1,13 @@
 import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { query } from '../config/database.js';
-import { TRANSPARENT_PNG, recordEmailOpen, getTrackingStatus } from '../services/trackingService.js';
+import {
+  TRANSPARENT_PNG,
+  recordEmailOpen,
+  recordLinkClick,
+  getTrackingTimeline,
+  getTrackingStatus,
+} from '../services/trackingService.js';
 
 const router = Router();
 
@@ -24,8 +30,40 @@ router.get('/pixel/:token.png', async (req, res) => {
   return res.send(TRANSPARENT_PNG);
 });
 
+/**
+ * GET /api/analytics/click/:token
+ * Public signed link click redirect proxy endpoint
+ */
+router.get('/click/:token', async (req, res) => {
+  try {
+    const targetUrl = await recordLinkClick(req.params.token, req);
+    if (!targetUrl) {
+      return res.redirect('/');
+    }
+    return res.redirect(targetUrl);
+  } catch (err) {
+    return res.redirect('/');
+  }
+});
+
 // All following endpoints require authentication
 router.use(requireAuth);
+
+/**
+ * GET /api/analytics/timeline/:trackingId
+ * Get discrete open event timeline and link click history for an email
+ */
+router.get('/timeline/:trackingId', async (req, res) => {
+  try {
+    const timeline = await getTrackingTimeline(parseInt(req.params.trackingId, 10), req.user.id);
+    if (!timeline) {
+      return res.status(404).json({ error: 'Tracking record not found' });
+    }
+    res.json(timeline);
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to fetch timeline.' });
+  }
+});
 
 /**
  * GET /api/analytics/tracking

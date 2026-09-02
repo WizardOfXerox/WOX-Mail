@@ -331,4 +331,10 @@ router.get('/terminal', async (req, res) => {
   }
 });
 
+// ─── Secure Controlled Attachment Sandboxed Reader ─────────────────────────
+
+router.get('/secure-attachment/:token', (req, res) => {
+  res.render('secure-attachment-viewer', { token: req.params.token });
+});
+
 export default router;

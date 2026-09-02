@@ -189,33 +189,29 @@
 
 ---
 
----
-
-## Future Roadmap & Planned Phases
-
-### Phase 16: Next-Gen Email Intelligence & Controlled Attachments Suite
-- [ ] **Controlled Secure Attachments**:
-  - Customizable view limits (e.g. 1 view, 3 views, custom).
-  - Customizable download limits (e.g. View-only / 0 downloads, 1 download, custom).
+## Phase 16: Next-Gen Email Intelligence, Controlled Attachments & Sovereign Productivity Suite (✅ 100% Completed)
+- [x] **Controlled Secure Attachments (AES-256-GCM Vault)**:
+  - Custom view limits (1 view, 3 views, unlimited).
+  - Custom download restrictions (view-only / 0 downloads, 1 download, unlimited).
   - Sandboxed in-browser viewer with dynamic vector watermarking (recipient email + timestamp).
   - Automatic lockout / asset burn upon limit exhaustion.
-  - Real-time view and download alerts pushed to the sender.
-- [ ] **Advanced Interaction & Link Tracking**:
+  - Real-time view and download alerts pushed to the sender over WebSockets.
+- [x] **Advanced Interaction & Link Tracking**:
   - Outbound link wrapping with signed redirect proxies (`/api/analytics/click/:token`).
   - Multi-open timeline and dwell telemetry.
-  - Real-time desktop/push notification alerts on open.
-- [ ] **Automated Follow-Up Reminders ("Bump If No Reply")**:
+  - Real-time notification alerts on open and click.
+- [x] **Automated Follow-Up Reminders ("Bump If No Reply")**:
   - Configurable reminder buffers (2 days, 3 days, 1 week, custom date).
-  - Automatic thread resurfacing to the top of the Inbox when unreplied.
-  - Auto-cancellation upon recipient reply detection via `In-Reply-To` headers.
-- [ ] **Pre-Flight Deliverability & Spam Score Inspector**:
-  - 0-100 score analyzing spam trigger words, HTML-to-text balance, DNS alignment, and broken URLs.
-- [ ] **Recipient Intelligence & Contact Dossier**:
-  - Companion Dock side-panel with contact interaction history, response speed graph, and recipient local timezone clock.
-- [ ] **Remote Message & Attachment Revocation**:
-  - 1-click remote kill-switch for sent confidential messages and attachments in the Sent folder.
-- [ ] **Smart Snippets & WYSIWYG Macro Expansion**:
-  - Slash command macros (`/intro`, `/meeting`, `/pricing`) in the composer.
+  - Automatic thread resurfacing when unreplied.
+  - Auto-cancellation upon recipient reply detection via incoming mail hooks.
+- [x] **Pre-Flight Deliverability & Spam Score Inspector**:
+  - 0-100 score analyzing spam trigger words, HTML-to-text balance, uppercase density, and broken URLs.
+- [x] **Recipient Intelligence & Contact Dossier**:
+  - Companion Dock side-panel with contact interaction history, open rate, response speed, and recipient local timezone clock.
+- [x] **Remote Message & Attachment Revocation**:
+  - 1-click remote kill-switch for sent confidential messages and attachments.
+- [x] **Smart Snippets & WYSIWYG Macro Expansion**:
+  - Slash command macros (`/intro`, `/meeting`, `/pricing`) in composer and dock manager.
 
 ---
 

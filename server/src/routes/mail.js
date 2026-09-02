@@ -1137,7 +1137,7 @@ router.post('/send',
         });
       }
 
-      // Check and inject Open Tracking / Read Receipt pixel
+      // Check and inject Open Tracking / Read Receipt pixel & Link Click Tracking
       let effectiveHtml = html;
       let trackingRecord = null;
       if (req.body.trackOpens !== false && effectiveHtml) {
@@ -1150,9 +1150,26 @@ router.post('/send',
           });
           if (trackingRecord?.tracking_token) {
             effectiveHtml = trackingService.injectTrackingPixel(effectiveHtml, trackingRecord.tracking_token);
+            effectiveHtml = await trackingService.wrapLinksWithTracking(effectiveHtml, trackingRecord.id);
           }
         } catch (trackErr) {
           logger.warn({ err: trackErr.message }, 'Failed to create tracking token');
+        }
+      }
+
+      // Check and schedule "Bump If No Reply" reminder
+      if (req.body.remindIfNoReply) {
+        try {
+          const { scheduleFollowUp } = await import('../services/followUpService.js');
+          await scheduleFollowUp({
+            userId: req.user.id,
+            recipientEmail: actualTo,
+            subject: subject || '',
+            remindAfterDays: req.body.remindAfterDays ? parseInt(req.body.remindAfterDays, 10) : 3,
+            customDate: req.body.remindCustomDate || null,
+          });
+        } catch (remindErr) {
+          logger.warn({ err: remindErr.message }, 'Failed to schedule follow-up reminder');
         }
       }
 

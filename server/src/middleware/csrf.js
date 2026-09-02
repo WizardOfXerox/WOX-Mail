@@ -40,6 +40,11 @@ export function csrfProtection(req, res, next) {
     req.path.startsWith('/api/auth') ||
     req.path.startsWith('/api/mail/secure/unlock') ||
     req.path.startsWith('/api/secure/unlock') ||
+    req.path.startsWith('/api/secure-attachments/preview') ||
+    req.path.startsWith('/api/secure-attachments/download') ||
+    req.path.startsWith('/api/secure-attachments/status') ||
+    req.path.startsWith('/api/analytics/click') ||
+    req.path.startsWith('/api/analytics/pixel') ||
     req.path.startsWith('/api/cli') ||
     req.path.startsWith('/api/futureme')
   ) {

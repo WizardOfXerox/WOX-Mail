@@ -11,6 +11,7 @@ import { runNightlyAggregation } from '../../jobs/analytics-aggregate.js';
 import { processPendingCampaigns } from '../services/campaignService.js';
 import { processInboundSupportEmails } from './supportIngestionJob.js';
 import { processInboundVerificationReplies } from './inboundReplyJob.js';
+import { checkDueFollowUps } from '../services/followUpService.js';
 import pino from 'pino';
 
 const logger = pino({ name: 'woxmail:jobs' });
@@ -91,6 +92,16 @@ export function startJobs() {
       if (count > 0) logger.info({ count }, 'Snooze: unsnoozed');
     } catch (err) {
       logger.error({ err }, 'Snooze check job failed');
+    }
+  });
+
+  // Every 1 minute: check due "Bump If No Reply" reminders
+  cron.schedule('* * * * *', async () => {
+    try {
+      const triggered = await checkDueFollowUps();
+      if (triggered.length > 0) logger.info({ count: triggered.length }, 'Follow-up reminders: triggered');
+    } catch (err) {
+      logger.error({ err }, 'Follow-up check job failed');
     }
   });
 

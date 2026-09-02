@@ -26,6 +26,7 @@ import { up as m023Up } from './023_templates_and_kanban.js';
 import { up as m024Up } from './024_chat_forwarding_and_disposable.js';
 import { up as m025Up } from './025_spam_learning_and_quotas.js';
 import { up as m026Up } from './026_compliance_archive_journal.js';
+import { up as m027Up } from './027_intelligence_and_controlled_attachments.js';
 
 /**
  * Simple migration runner.
@@ -60,6 +61,7 @@ const migrations = [
   { name: '024_chat_forwarding_and_disposable', up: m024Up },
   { name: '025_spam_learning_and_quotas', up: m025Up },
   { name: '026_compliance_archive_journal', up: m026Up },
+  { name: '027_intelligence_and_controlled_attachments', up: m027Up },
 ];
 
 async function run() {

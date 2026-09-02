@@ -186,6 +186,53 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
   // Real-Time Pre-Flight Recipient Verification State
   const [recipientVerification, setRecipientVerification] = useState(null);
 
+  // ─── Phase 16: Next-Gen Email Intelligence States ──────────
+  const [remindIfNoReply, setRemindIfNoReply] = useState(false);
+  const [remindDays, setRemindDays] = useState(3);
+  const [showDeliverabilityModal, setShowDeliverabilityModal] = useState(false);
+  const [deliverabilityResult, setDeliverabilityResult] = useState(null);
+  const [checkingDeliverability, setCheckingDeliverability] = useState(false);
+  const [activeAttachmentPopoverIdx, setActiveAttachmentPopoverIdx] = useState(null);
+
+  // Snippets & Slash Macros
+  const [availableSnippets, setAvailableSnippets] = useState([]);
+  const [showMacroMenu, setShowMacroMenu] = useState(false);
+
+  useEffect(() => {
+    get('/snippets')
+      .then((res) => {
+        if (res && res.snippets) setAvailableSnippets(res.snippets);
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleCheckDeliverability = async () => {
+    setCheckingDeliverability(true);
+    try {
+      const res = await post('/deliverability/check', {
+        subject,
+        bodyHtml: editorRef.current ? editorRef.current.innerHTML : body,
+        bodyText: editorRef.current ? editorRef.current.innerText : body,
+        toEmail: to,
+      });
+      setDeliverabilityResult(res);
+      setShowDeliverabilityModal(true);
+    } catch (err) {
+      if (window.WoxToast) window.WoxToast.error('Deliverability check failed: ' + err.message);
+    } finally {
+      setCheckingDeliverability(false);
+    }
+  };
+
+  const insertSnippet = (snippet) => {
+    if (editorRef.current) {
+      editorRef.current.focus();
+      document.execCommand('insertHTML', false, snippet.content_html || '');
+      setBody(editorRef.current.innerHTML);
+      setShowMacroMenu(false);
+    }
+  };
+
   useEffect(() => {
     const rawTo = to.trim();
     if (!rawTo || !rawTo.includes('@') || rawTo.length < 5) {
@@ -243,7 +290,7 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
 
     files.forEach((file) => {
       if (file.size > 25 * 1024 * 1024) {
-        setError(`⚠️ Large Attachment Warning: "${file.name}" (${(file.size / (1024 * 1024)).toFixed(1)}MB) exceeds the 25MB threshold. Client-side OpenPGP streaming chunk encryption enabled.`);
+        setError(`Large Attachment Notice: "${file.name}" (${(file.size / (1024 * 1024)).toFixed(1)}MB) exceeds 25MB threshold.`);
       }
 
       const reader = new FileReader();
@@ -257,6 +304,10 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
             content: loadEvt.target.result,
             isImage: file.type.startsWith('image/'),
             isVideo: file.type.startsWith('video/'),
+            isControlled: false,
+            maxViews: null,
+            maxDownloads: null,
+            watermark: true,
           },
         ]);
       };
@@ -266,8 +317,15 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const updateAttachmentControl = (idx, updates) => {
+    setAttachments((prev) =>
+      prev.map((a, i) => (i === idx ? { ...a, ...updates, isControlled: true } : a))
+    );
+  };
+
   const removeAttachment = (index) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index));
+    if (activeAttachmentPopoverIdx === index) setActiveAttachmentPopoverIdx(null);
   };
 
   const formatFileSize = (bytes) => {
@@ -354,6 +412,54 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
         });
         onClose();
       } else {
+        // Process controlled attachments
+        let finalAttachments = [];
+        let secureLinksHtml = '';
+
+        for (const att of attachments) {
+          if (att.isControlled) {
+            try {
+              const rawBuffer = att.content.includes('base64,') ? att.content.split('base64,')[1] : att.content;
+              const uploaded = await post('/secure-attachments/upload', {
+                filename: att.name,
+                contentType: att.type,
+                bufferBase64: rawBuffer,
+                maxViews: att.maxViews,
+                maxDownloads: att.maxDownloads,
+                watermarkText: att.watermark ? `Confidential • ${to.trim()}` : null,
+                expiresInHours: 72,
+              });
+
+              if (uploaded && uploaded.viewUrl) {
+                secureLinksHtml += `
+                  <div style="margin-top: 16px; padding: 12px 16px; background: #141424; border: 1px solid #7c3aed; border-radius: 10px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+                    <div style="font-weight: 700; color: #c084fc; font-size: 14px; margin-bottom: 4px;">Controlled Secure Attachment: ${att.name}</div>
+                    <div style="font-size: 12px; color: #a1a1aa; margin-bottom: 10px;">${formatFileSize(att.size)} • Limits: ${att.maxViews ? `${att.maxViews} View(s)` : 'Unlimited Views'} • ${att.maxDownloads !== null && att.maxDownloads !== undefined ? (att.maxDownloads === 0 ? 'View-Only' : `${att.maxDownloads} Download(s)`) : 'Unlimited Downloads'}</div>
+                    <a href="${uploaded.viewUrl}" target="_blank" style="display: inline-block; padding: 6px 14px; background: #7c3aed; color: #ffffff; text-decoration: none; border-radius: 6px; font-size: 13px; font-weight: 600;">Open Sandboxed Reader</a>
+                  </div>
+                `;
+              }
+            } catch (secErr) {
+              console.error('Failed to upload secure attachment:', secErr);
+              finalAttachments.push({
+                filename: att.name,
+                content: att.content,
+                contentType: att.type,
+              });
+            }
+          } else {
+            finalAttachments.push({
+              filename: att.name,
+              content: att.content,
+              contentType: att.type,
+            });
+          }
+        }
+
+        if (secureLinksHtml) {
+          effectiveBody = `${effectiveBody}<br>${secureLinksHtml}`;
+        }
+
         await onSend({
           from: fromAddress,
           to: to.trim(),
@@ -364,11 +470,9 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
           html: effectiveBody,
           scheduledAt,
           trackOpens,
-          attachments: attachments.map((a) => ({
-            filename: a.name,
-            content: a.content,
-            contentType: a.type,
-          })),
+          remindIfNoReply,
+          remindAfterDays: remindDays,
+          attachments: finalAttachments,
         });
         onClose();
       }
@@ -875,46 +979,147 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
             </div>
           )}
 
-          {/* Attachment Preview Bar */}
+          {/* Attachment Preview Bar with Security Limits */}
           {attachments.length > 0 && (
             <div style={{ padding: '0.5rem 1.25rem', borderTop: '1px solid var(--color-border)', background: 'var(--color-bg-page)', display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-              {attachments.map((att, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                    background: 'var(--color-bg-card)',
-                    border: '1px solid var(--color-border)',
-                    borderRadius: 'var(--radius-sm)',
-                    padding: '0.35rem 0.65rem',
-                    fontSize: '0.8125rem',
-                  }}
-                >
-                  {att.isImage ? (
-                    <img src={att.content} alt={att.name} style={{ width: 22, height: 22, objectFit: 'cover', borderRadius: 4 }} />
-                  ) : att.isVideo ? (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect width="15" height="14" x="1" y="5" rx="2" ry="2"/></svg>
-                  ) : (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                  )}
-                  <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {att.name}
-                  </span>
-                  <span className="text-tertiary" style={{ fontSize: '0.75rem' }}>
-                    ({formatFileSize(att.size)})
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => removeAttachment(idx)}
-                    style={{ background: 'transparent', border: 'none', color: 'var(--color-error)', cursor: 'pointer', fontSize: '0.9rem', padding: '0 2px' }}
-                    title="Remove attachment"
+              {attachments.map((att, idx) => {
+                const isPopoverOpen = activeAttachmentPopoverIdx === idx;
+                return (
+                  <div
+                    key={idx}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.45rem',
+                      background: att.isControlled ? 'rgba(124, 58, 237, 0.12)' : 'var(--color-bg-card)',
+                      border: `1px solid ${att.isControlled ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '0.35rem 0.65rem',
+                      fontSize: '0.8125rem',
+                      position: 'relative',
+                    }}
                   >
-                    &times;
-                  </button>
-                </div>
-              ))}
+                    {att.isImage ? (
+                      <img src={att.content} alt={att.name} style={{ width: 20, height: 20, objectFit: 'cover', borderRadius: 4 }} />
+                    ) : att.isVideo ? (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect width="15" height="14" x="1" y="5" rx="2" ry="2"/></svg>
+                    ) : (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    )}
+
+                    <span style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {att.name}
+                    </span>
+
+                    <span className="text-tertiary" style={{ fontSize: '0.72rem' }}>
+                      ({formatFileSize(att.size)})
+                    </span>
+
+                    {/* Security & Limits Toggle Button */}
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs"
+                      onClick={() => setActiveAttachmentPopoverIdx(isPopoverOpen ? null : idx)}
+                      style={{
+                        padding: '0.15rem 0.35rem',
+                        fontSize: '0.7rem',
+                        color: att.isControlled ? 'var(--color-primary-light)' : 'var(--color-text-tertiary)',
+                        border: '1px solid var(--color-border)',
+                        borderRadius: 'var(--radius-pill)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.2rem',
+                      }}
+                      title="Configure view limits, download restrictions, and watermark"
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                      <span>{att.isControlled ? `${att.maxViews ? `${att.maxViews}v` : 'Unl'} / ${att.maxDownloads !== null && att.maxDownloads !== undefined ? (att.maxDownloads === 0 ? '0d' : `${att.maxDownloads}d`) : 'Unl'}` : 'Set Limits'}</span>
+                    </button>
+
+                    {/* Popover Controls */}
+                    {isPopoverOpen && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          bottom: '100%',
+                          left: 0,
+                          marginBottom: 6,
+                          zIndex: 200,
+                          background: 'var(--color-bg-card)',
+                          border: '1px solid var(--color-primary)',
+                          boxShadow: 'var(--shadow-lg)',
+                          borderRadius: 'var(--radius-md)',
+                          padding: '0.75rem',
+                          minWidth: 240,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.5rem',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <strong style={{ fontSize: '0.75rem', color: 'var(--color-text-primary)' }}>Attachment Access Caps</strong>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-xs"
+                            onClick={() => setActiveAttachmentPopoverIdx(null)}
+                            style={{ padding: 0 }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.72rem' }}>
+                          <span>Max Views:</span>
+                          <select
+                            className="input"
+                            value={att.maxViews === null || att.maxViews === undefined ? 'unlimited' : String(att.maxViews)}
+                            onChange={(e) => updateAttachmentControl(idx, { maxViews: e.target.value === 'unlimited' ? null : parseInt(e.target.value, 10) })}
+                            style={{ width: 100, fontSize: '0.72rem', padding: '0.2rem' }}
+                          >
+                            <option value="unlimited">Unlimited</option>
+                            <option value="1">1 View</option>
+                            <option value="2">2 Views</option>
+                            <option value="5">5 Views</option>
+                          </select>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.72rem' }}>
+                          <span>Max Downloads:</span>
+                          <select
+                            className="input"
+                            value={att.maxDownloads === null || att.maxDownloads === undefined ? 'unlimited' : String(att.maxDownloads)}
+                            onChange={(e) => updateAttachmentControl(idx, { maxDownloads: e.target.value === 'unlimited' ? null : parseInt(e.target.value, 10) })}
+                            style={{ width: 100, fontSize: '0.72rem', padding: '0.2rem' }}
+                          >
+                            <option value="unlimited">Unlimited</option>
+                            <option value="0">View-Only (0 DL)</option>
+                            <option value="1">1 Download</option>
+                            <option value="2">2 Downloads</option>
+                          </select>
+                        </div>
+
+                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.72rem', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(att.watermark)}
+                            onChange={(e) => updateAttachmentControl(idx, { watermark: e.target.checked })}
+                          />
+                          <span>Burn recipient watermark</span>
+                        </label>
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => removeAttachment(idx)}
+                      style={{ background: 'transparent', border: 'none', color: 'var(--color-error)', cursor: 'pointer', fontSize: '0.9rem', padding: '0 2px' }}
+                      title="Remove attachment"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -927,22 +1132,18 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
             onChange={handleFileSelect}
           />
 
-          {/* Compose Footer with Split Send & Schedule Popover */}
-          <div className="compose-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          {/* Compose Footer */}
+          <div className="compose-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.6rem' }}>
+            <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
                 onClick={() => fileInputRef.current?.click()}
-                title="Attach images, videos, documents, or files (Max 25MB)"
+                title="Attach files (supports view & download caps)"
               >
                 Attach Files
               </button>
-              {attachments.length > 0 && (
-                <span className="text-secondary" style={{ fontSize: '0.75rem' }}>
-                  {attachments.length} attached
-                </span>
-              )}
+
               <label
                 style={{
                   display: 'inline-flex',
@@ -952,10 +1153,9 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
                   fontSize: '0.75rem',
                   color: trackOpens ? 'var(--color-primary-light)' : 'var(--color-text-secondary)',
                   fontWeight: 600,
-                  marginLeft: '0.5rem',
                   userSelect: 'none',
                 }}
-                title="Embed non-intrusive 1x1 pixel to track when the recipient opens this email"
+                title="Embed tracking pixel and signed link redirect telemetry"
               >
                 <input
                   type="checkbox"
@@ -963,8 +1163,56 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
                   onChange={(e) => setTrackOpens(e.target.checked)}
                   style={{ accentColor: 'var(--color-primary)', cursor: 'pointer' }}
                 />
-                <span>📊 Track Opens</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+                <span>Track Opens & Clicks</span>
               </label>
+
+              {/* Follow-Up Auto-Reminder Toggle */}
+              <label
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  cursor: 'pointer',
+                  fontSize: '0.75rem',
+                  color: remindIfNoReply ? 'var(--color-primary-light)' : 'var(--color-text-secondary)',
+                  fontWeight: 600,
+                  userSelect: 'none',
+                }}
+                title="Resurface this thread if recipient does not reply"
+              >
+                <input
+                  type="checkbox"
+                  checked={remindIfNoReply}
+                  onChange={(e) => setRemindIfNoReply(e.target.checked)}
+                  style={{ accentColor: 'var(--color-primary)', cursor: 'pointer' }}
+                />
+                <span>Bump if no reply</span>
+                {remindIfNoReply && (
+                  <select
+                    value={remindDays}
+                    onChange={(e) => setRemindDays(parseInt(e.target.value, 10))}
+                    style={{ fontSize: '0.7rem', padding: '0.1rem 0.3rem', background: 'var(--color-bg-card)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', color: 'var(--color-text-primary)' }}
+                  >
+                    <option value="2">in 2d</option>
+                    <option value="3">in 3d</option>
+                    <option value="7">in 7d</option>
+                  </select>
+                )}
+              </label>
+
+              {/* Pre-Flight Spam & Deliverability Check Button */}
+              <button
+                type="button"
+                className="btn btn-ghost btn-xs"
+                onClick={handleCheckDeliverability}
+                disabled={checkingDeliverability}
+                style={{ color: 'var(--color-primary-light)', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                title="Inspect draft for spam trigger words and deliverability issues"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                <span>{checkingDeliverability ? 'Inspecting...' : 'Pre-Flight Check'}</span>
+              </button>
             </div>
 
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
@@ -994,11 +1242,12 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
                   ref={scheduleBtnRef}
                   type="button"
                   className="btn btn-primary btn-sm"
-                  style={{ borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderLeft: '1px solid rgba(255,255,255,0.2)', padding: '0 8px' }}
+                  style={{ borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderLeft: '1px solid rgba(255,255,255,0.2)', padding: '0 8px', display: 'inline-flex', alignItems: 'center', gap: '2px' }}
                   onClick={() => setShowSchedulePopover(!showSchedulePopover)}
                   title="Schedule Send"
                 >
-                  ⏰ ▾
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  <span style={{ fontSize: '0.65rem' }}>▼</span>
                 </button>
 
                 {showSchedulePopover && (
@@ -1015,6 +1264,62 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
             </div>
           </div>
         </form>
+
+        {/* Deliverability Score Inspection Modal */}
+        {showDeliverabilityModal && deliverabilityResult && (
+          <div className="compose-overlay" style={{ zIndex: 1100 }} onClick={(e) => { if (e.target === e.currentTarget) setShowDeliverabilityModal(false); }}>
+            <div className="compose-modal card" style={{ maxWidth: 500, padding: '1.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                  <strong style={{ fontSize: '1rem' }}>Pre-Flight Deliverability Inspector</strong>
+                </div>
+                <button type="button" className="btn btn-ghost btn-xs" onClick={() => setShowDeliverabilityModal(false)}>✕</button>
+              </div>
+
+              {/* Score Meter */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', background: 'var(--color-bg-input)', padding: '1rem', borderRadius: 'var(--radius-md)', marginBottom: '1rem' }}>
+                <div style={{ fontSize: '2.25rem', fontWeight: 800, color: deliverabilityResult.score >= 80 ? 'var(--color-success)' : deliverabilityResult.score >= 60 ? 'var(--color-warning)' : 'var(--color-error)' }}>
+                  {deliverabilityResult.score}/100
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '0.9375rem' }}>Rating: {deliverabilityResult.grade}</div>
+                  <div className="text-secondary" style={{ fontSize: '0.75rem' }}>
+                    {deliverabilityResult.isDeliverable ? 'High confidence of reaching Primary Inbox.' : 'May risk landing in Spam / Promotional folders.'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Detected Issues */}
+              {deliverabilityResult.issues && deliverabilityResult.issues.length > 0 && (
+                <div style={{ marginBottom: '1rem' }}>
+                  <div className="text-secondary" style={{ fontSize: '0.75rem', fontWeight: 600, marginBottom: '0.35rem' }}>DETECTED RISKS:</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                    {deliverabilityResult.issues.map((iss, i) => (
+                      <div key={i} style={{ fontSize: '0.75rem', padding: '0.4rem 0.6rem', background: 'rgba(239, 68, 68, 0.1)', borderLeft: '3px solid var(--color-error)', borderRadius: 'var(--radius-sm)' }}>
+                        {iss.message}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Recommendations */}
+              <div style={{ marginBottom: '1.25rem' }}>
+                <div className="text-secondary" style={{ fontSize: '0.75rem', fontWeight: 600, marginBottom: '0.35rem' }}>RECOMMENDATIONS:</div>
+                <ul style={{ paddingLeft: '1.2rem', margin: 0, fontSize: '0.75rem', color: 'var(--color-text-secondary)', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  {deliverabilityResult.recommendations.map((rec, i) => (
+                    <li key={i}>{rec}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <button type="button" className="btn btn-primary btn-sm" style={{ width: '100%' }} onClick={() => setShowDeliverabilityModal(false)}>
+                Done
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
