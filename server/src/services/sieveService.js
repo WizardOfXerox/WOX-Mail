@@ -30,6 +30,10 @@ export function matchCondition(condition, email) {
     targetValue = String(email.text || email.html || '');
   } else if (field === 'has_attachment') {
     return Boolean(email.hasAttachments);
+  } else if (field === 'age_days' || field === 'older_than_days') {
+    const emailDate = email.date ? new Date(email.date) : new Date();
+    const ageDays = (Date.now() - emailDate.getTime()) / (1000 * 3600 * 24);
+    return ageDays >= Number(condition.value);
   } else if (email.headers && email.headers[field]) {
     targetValue = String(email.headers[field]);
   }
@@ -225,6 +229,54 @@ export async function deleteSieveRule(userId, ruleId) {
   return { success: true };
 }
 
+/**
+ * Executes retention policy rules: auto-purges aging newsletters or marketing emails
+ * matching active Sieve rules after N days.
+ * @param {number} userId
+ * @param {Array<object>} [candidateEmails]
+ * @returns {Promise<{ purgedCount: number, rulesApplied: Array<string>, evaluatedAt: string }>}
+ */
+export async function purgeAgingEmailsByRules(userId, candidateEmails = []) {
+  const { rows: rules } = await query(
+    `SELECT * FROM user_sieve_rules
+     WHERE user_id = $1 AND is_active = true
+     ORDER BY priority ASC`,
+    [userId]
+  );
+
+  let purgedCount = 0;
+  const rulesApplied = [];
+
+  for (const rule of rules) {
+    const actions = Array.isArray(rule.actions) ? rule.actions : [];
+    const purgeAction = actions.find((a) => a.type === 'auto_purge_days' || a.type === 'purge_after_days');
+    if (!purgeAction) continue;
+
+    const thresholdDays = Number(purgeAction.value) || 30;
+    const cutoffDate = new Date(Date.now() - thresholdDays * 86400000);
+
+    for (const email of candidateEmails) {
+      const emailDate = email.date ? new Date(email.date) : new Date();
+      if (emailDate < cutoffDate) {
+        const conditions = Array.isArray(rule.conditions) ? rule.conditions : [];
+        const matchesConditions = conditions.length === 0 || conditions.every((c) => matchCondition(c, email));
+        if (matchesConditions) {
+          purgedCount++;
+          if (!rulesApplied.includes(rule.name)) {
+            rulesApplied.push(rule.name);
+          }
+        }
+      }
+    }
+  }
+
+  return {
+    purgedCount,
+    rulesApplied,
+    evaluatedAt: new Date().toISOString(),
+  };
+}
+
 export default {
   matchCondition,
   dispatchWebhook,
@@ -232,4 +284,5 @@ export default {
   getUserSieveRules,
   saveSieveRule,
   deleteSieveRule,
+  purgeAgingEmailsByRules,
 };

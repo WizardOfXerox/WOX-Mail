@@ -311,14 +311,16 @@ export function useKeyboard(shortcuts) {
  * @param {number} ms - duration threshold in ms (default 500)
  */
 export function useLongPress(callback, ms = 500) {
-  const timerRef = React.useRef(null);
-  const isLongPressRef = React.useRef(false);
+  const timerRef = useRef(null);
+  const isLongPressRef = useRef(false);
 
   const start = useCallback((e) => {
     isLongPressRef.current = false;
+    const clientX = e.touches ? e.touches[0]?.clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0]?.clientY : e.clientY;
     timerRef.current = setTimeout(() => {
       isLongPressRef.current = true;
-      if (callback) callback(e);
+      if (callback) callback({ ...e, clientX, clientY, isLongPress: true });
     }, ms);
   }, [callback, ms]);
 
@@ -333,6 +335,9 @@ export function useLongPress(callback, ms = 500) {
     onTouchStart: start,
     onTouchEnd: clear,
     onTouchMove: clear,
+    onMouseDown: start,
+    onMouseUp: clear,
+    onMouseLeave: clear,
     onContextMenu: (e) => {
       if (isLongPressRef.current) {
         e.preventDefault();

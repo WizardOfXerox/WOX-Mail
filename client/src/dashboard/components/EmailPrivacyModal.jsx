@@ -335,7 +335,97 @@ export default function EmailPrivacyModal({
           </div>
         </div>
 
-        {/* 4. Trusted Senders Whitelist */}
+        {/* 4. Sender Authentication Policy (SPF/DKIM/DMARC Failure Action) */}
+        <div style={{ marginBottom: '1.25rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.4rem' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            <strong style={{ fontSize: '0.875rem' }}>Sender Authentication Policy (SPF / DKIM / DMARC)</strong>
+          </div>
+          <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.75rem', margin: '0 0 0.5rem 0' }}>
+            Choose how WoxMail protects you when an incoming email fails sender cryptographic authentication checks.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.5rem' }}>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                padding: '0.5rem 0.75rem',
+                borderRadius: 'var(--radius-md)',
+                border: `1px solid ${prefs.authFailurePolicy === 'warning' ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                background: prefs.authFailurePolicy === 'warning' ? 'var(--color-bg-hover)' : 'transparent',
+                cursor: 'pointer',
+                fontSize: '0.8125rem',
+              }}
+            >
+              <input
+                type="radio"
+                name="authFailurePolicy"
+                value="warning"
+                checked={prefs.authFailurePolicy === 'warning'}
+                onChange={() => updatePref('authFailurePolicy', 'warning')}
+              />
+              <div>
+                <strong>Warning Banner</strong>
+                <div style={{ fontSize: '0.7rem', color: 'var(--color-text-secondary)' }}>Show alert header</div>
+              </div>
+            </label>
+
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                padding: '0.5rem 0.75rem',
+                borderRadius: 'var(--radius-md)',
+                border: `1px solid ${prefs.authFailurePolicy === 'blur' ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                background: prefs.authFailurePolicy === 'blur' ? 'var(--color-bg-hover)' : 'transparent',
+                cursor: 'pointer',
+                fontSize: '0.8125rem',
+              }}
+            >
+              <input
+                type="radio"
+                name="authFailurePolicy"
+                value="blur"
+                checked={prefs.authFailurePolicy === 'blur'}
+                onChange={() => updatePref('authFailurePolicy', 'blur')}
+              />
+              <div>
+                <strong>Blur Body</strong>
+                <div style={{ fontSize: '0.7rem', color: 'var(--color-text-secondary)' }}>Click to unblur</div>
+              </div>
+            </label>
+
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                padding: '0.5rem 0.75rem',
+                borderRadius: 'var(--radius-md)',
+                border: `1px solid ${prefs.authFailurePolicy === 'quarantine' ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                background: prefs.authFailurePolicy === 'quarantine' ? 'var(--color-bg-hover)' : 'transparent',
+                cursor: 'pointer',
+                fontSize: '0.8125rem',
+              }}
+            >
+              <input
+                type="radio"
+                name="authFailurePolicy"
+                value="quarantine"
+                checked={prefs.authFailurePolicy === 'quarantine'}
+                onChange={() => updatePref('authFailurePolicy', 'quarantine')}
+              />
+              <div>
+                <strong>Quarantine</strong>
+                <div style={{ fontSize: '0.7rem', color: 'var(--color-text-secondary)' }}>Isolate in Screener</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        {/* 5. Trusted Senders Whitelist */}
         <div style={{ marginBottom: '1.25rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>

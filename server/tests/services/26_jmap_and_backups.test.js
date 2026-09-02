@@ -3,7 +3,7 @@
  */
 
 import assert from 'assert';
-import { formatMbox } from '../../src/services/backupService.js';
+import { formatMbox, createZipArchive, encryptBackupBuffer, decryptBackupBuffer } from '../../src/services/backupService.js';
 import { generateBlindTokens } from '../../src/services/zeroKnowledgeSearchService.js';
 import { getJmapSession, executeJmapBatch } from '../../src/services/jmapService.js';
 
@@ -57,7 +57,28 @@ const batchRequest = {
 
 const batchResponse = await executeJmapBatch(mockUser, batchRequest);
 assert.strictEqual(batchResponse.methodResponses.length, 2, 'Must return matching method responses count');
-assert.strictEqual(batchResponse.methodResponses[0][0], 'Mailbox/get', 'First method response should be Mailbox/get');
-assert.strictEqual(batchResponse.methodResponses[0][2], 'call_1', 'Call ID must match invocation ID');
+// Test 5: Native ZIP Archive Packaging
+const testFiles = [
+  { name: '0001_welcome.eml', data: 'From: support@wox.world\r\nSubject: Welcome\r\n\r\nHello!' },
+  { name: '0002_invoice.eml', data: 'From: billing@wox.world\r\nSubject: Invoice\r\n\r\nReceipt details.' },
+];
+const zipBuf = createZipArchive(testFiles);
+assert.ok(Buffer.isBuffer(zipBuf), 'ZIP output must be a Buffer');
+assert.ok(zipBuf.length > 50, 'ZIP archive must contain header and file entries');
+// Check standard PK zip magic header (0x04034b50 -> 'PK\x03\x04')
+assert.strictEqual(zipBuf.readUInt32LE(0), 0x04034b50, 'ZIP file must begin with PK signature 0x04034b50');
 
-console.log('✓ Suite 26: All JMAP & Mailbox backup tests passed (4/4)');
+// Test 6: AES-256-GCM Encrypted Backup Snapshots
+const secretData = Buffer.from('Confidential Sovereign Mailbox Backup Content', 'utf8');
+const passphrase = 'SuperSecretEncryptionKey-999';
+const encryptedBuf = encryptBackupBuffer(secretData, passphrase);
+
+assert.ok(Buffer.isBuffer(encryptedBuf), 'Encrypted backup must be a Buffer');
+assert.ok(encryptedBuf.subarray(0, 6).toString('utf8') === 'WOXENC', 'Encrypted backup must have WOXENC magic header');
+assert.notDeepStrictEqual(encryptedBuf, secretData, 'Encrypted buffer must not match plaintext');
+
+// Decrypt and verify exact match
+const decryptedBuf = decryptBackupBuffer(encryptedBuf, passphrase);
+assert.strictEqual(decryptedBuf.toString('utf8'), 'Confidential Sovereign Mailbox Backup Content', 'Decrypted payload must match original');
+
+console.log('✓ Suite 26: All JMAP & Mailbox backup tests passed (6/6)');

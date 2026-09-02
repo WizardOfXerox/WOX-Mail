@@ -474,15 +474,17 @@ export default function App() {
     refetchFolders();
   };
 
-  const handleReply = (replyAll = false) => {
-    if (!message) return;
-    setReplyData({ uid: message.uid, folder: activeFolder, replyAll });
+  const handleReply = (replyAll = false, targetMsg = null) => {
+    const target = targetMsg || message;
+    if (!target) return;
+    setReplyData({ uid: target.uid, folder: target.folder || activeFolder, replyAll, subject: target.subject, from: target.from, to: target.to });
     setComposing(true);
   };
 
-  const handleForward = () => {
-    if (!message) return;
-    setReplyData({ uid: message.uid, folder: activeFolder, forward: true });
+  const handleForward = (targetMsg = null) => {
+    const target = targetMsg || message;
+    if (!target) return;
+    setReplyData({ uid: target.uid, folder: target.folder || activeFolder, forward: true, subject: target.subject, text: target.text, html: target.html });
     setComposing(true);
   };
 
@@ -777,6 +779,9 @@ export default function App() {
                     onBatchSpam={handleBatchSpam}
                     onPage={setPage}
                     onRefresh={() => { refetchMessages(); refetchFolders(); }}
+                    onReply={(msg) => handleReply(false, msg)}
+                    onReplyAll={(msg) => handleReply(true, msg)}
+                    onForward={(msg) => handleForward(msg)}
                     activeAccount={activeAccount}
                     isProtonLocked={activeAccount?.provider === 'proton' && !isProtonUnlocked}
                     onUnlockProton={() => setShowProtonUnlock(true)}
@@ -846,6 +851,9 @@ export default function App() {
                       onBatchSpam={handleBatchSpam}
                       onPage={setPage}
                       onRefresh={() => { refetchMessages(); refetchFolders(); }}
+                      onReply={(msg) => handleReply(false, msg)}
+                      onReplyAll={(msg) => handleReply(true, msg)}
+                      onForward={(msg) => handleForward(msg)}
                       activeAccount={activeAccount}
                       isProtonLocked={activeAccount?.provider === 'proton' && !isProtonUnlocked}
                       onUnlockProton={() => setShowProtonUnlock(true)}
@@ -896,6 +904,9 @@ export default function App() {
                       onBatchSpam={handleBatchSpam}
                       onPage={setPage}
                       onRefresh={() => { refetchMessages(); refetchFolders(); }}
+                      onReply={(msg) => handleReply(false, msg)}
+                      onReplyAll={(msg) => handleReply(true, msg)}
+                      onForward={(msg) => handleForward(msg)}
                       activeAccount={activeAccount}
                       isProtonLocked={activeAccount?.provider === 'proton' && !isProtonUnlocked}
                       onUnlockProton={() => setShowProtonUnlock(true)}

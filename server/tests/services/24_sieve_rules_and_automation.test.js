@@ -52,4 +52,18 @@ assert.strictEqual(unsubParsed.httpUrl, 'https://example.com/unsub?id=123', 'HTT
 assert.strictEqual(unsubParsed.mailto, 'mailto:unsub@example.com?subject=unsubscribe', 'Mailto unsub parsed');
 assert.strictEqual(unsubParsed.isOneClick, true, 'One-Click flag recognized');
 
-console.log('✓ Suite 24: All Sieve rules & automation tests passed (7/7)');
+// Test 8: matchCondition - age_days / older_than_days
+const oldEmail = {
+  ...sampleEmail,
+  date: new Date(Date.now() - 45 * 86400000).toISOString(),
+};
+const condAge = { field: 'age_days', operator: 'is', value: 30 };
+assert.strictEqual(matchCondition(condAge, oldEmail), true, 'Email older than 30 days must match age_days condition');
+
+const recentEmail = {
+  ...sampleEmail,
+  date: new Date(Date.now() - 5 * 86400000).toISOString(),
+};
+assert.strictEqual(matchCondition(condAge, recentEmail), false, 'Recent email must not match age_days 30 threshold');
+
+console.log('✓ Suite 24: All Sieve rules & automation tests passed (8/8)');

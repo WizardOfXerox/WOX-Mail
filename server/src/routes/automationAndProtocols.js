@@ -4,7 +4,7 @@
 
 import { Router } from 'express';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
-import { getUserSieveRules, saveSieveRule, deleteSieveRule, evaluateSieveRules } from '../services/sieveService.js';
+import { getUserSieveRules, saveSieveRule, deleteSieveRule, evaluateSieveRules, purgeAgingEmailsByRules } from '../services/sieveService.js';
 import { createMailboxBackup, listUserBackups } from '../services/backupService.js';
 import { searchBlindIndex, indexMessageBlind } from '../services/zeroKnowledgeSearchService.js';
 import { executeUnsubscribe } from '../services/unsubscribeService.js';
@@ -49,20 +49,30 @@ router.delete('/sieve/rules/:id', requireAuth, async (req, res) => {
   }
 });
 
+router.post('/sieve/purge-aging', requireAuth, async (req, res) => {
+  try {
+    const result = await purgeAgingEmailsByRules(req.user.id, req.body?.emails || []);
+    return res.json({ success: true, ...result });
+  } catch (err) {
+    logger.error({ err, userId: req.user?.id }, 'Failed to execute purge aging emails');
+    return res.status(500).json({ error: 'Failed to purge aging emails' });
+  }
+});
+
 // ─── 2. Mailbox Backups & Cloudflare R2 Archiving ───────────────
 
 router.post('/backups/export', requireAuth, async (req, res) => {
   try {
-    const { format = 'mbox', destination, emails = [] } = req.body;
-    const backup = await createMailboxBackup(req.user.id, { format, destination, emails });
+    const { format = 'mbox', destination, emails = [], passphrase } = req.body;
+    const backup = await createMailboxBackup(req.user.id, { format, destination, emails, passphrase });
 
-    if (req.query.download === 'true' && backup.downloadBuffer) {
-      res.setHeader('Content-Type', 'application/mbox');
+    if (req.query.download === 'true' && backup.buffer) {
+      res.setHeader('Content-Type', backup.contentType || 'application/octet-stream');
       res.setHeader('Content-Disposition', `attachment; filename="${backup.filename}"`);
-      return res.send(backup.downloadBuffer);
+      return res.send(backup.buffer);
     }
 
-    return res.json({ success: true, backup });
+    return res.json({ success: true, backup: backup.backup, filename: backup.filename, sha256: backup.sha256 });
   } catch (err) {
     logger.error({ err, userId: req.user?.id }, 'Failed to create mailbox backup');
     return res.status(500).json({ error: err.message || 'Failed to generate backup' });

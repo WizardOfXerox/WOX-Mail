@@ -3,7 +3,7 @@
  */
 
 import assert from 'assert';
-import { stripTrackingParams, detectHomographRisk } from '../../src/services/linkSandboxService.js';
+import { stripTrackingParams, detectHomographRisk, auditTlsCertificate } from '../../src/services/linkSandboxService.js';
 
 console.log('[TEST] Running Suite 23: Link Isolation Sandbox & Security...');
 
@@ -36,4 +36,13 @@ assert.strictEqual(spoofResult.isSpoofRisk, true, 'Punycode domain should be fla
 const mixedResult = detectHomographRisk(mixedDomain);
 assert.strictEqual(mixedResult.isSpoofRisk, true, 'Cyrillic domain characters should be flagged as potential spoof');
 
-console.log('✓ Suite 23: All link sandbox & security tests passed (3/3)');
+// Test 4: TLS Certificate Audit
+const tlsResult = await auditTlsCertificate('cloudflare.com', 443);
+assert.ok(typeof tlsResult === 'object', 'TLS audit must return an object');
+assert.strictEqual(typeof tlsResult.valid, 'boolean', 'TLS audit must report valid boolean flag');
+if (tlsResult.valid) {
+  assert.ok(tlsResult.protocol.startsWith('TLS'), 'TLS audit must identify TLS protocol');
+  assert.ok(tlsResult.cipherName, 'TLS audit must identify cipher name');
+}
+
+console.log('✓ Suite 23: All link sandbox & security tests passed (4/4)');

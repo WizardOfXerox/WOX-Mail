@@ -17,12 +17,12 @@ const router = Router();
  */
 router.post('/inspect-link', requireAuth, async (req, res) => {
   try {
-    const { url } = req.body;
+    const { url, screenshot } = req.body;
     if (!url) {
       return res.status(400).json({ error: 'Target URL is required' });
     }
 
-    const report = await inspectLink(url);
+    const report = await inspectLink(url, Boolean(screenshot));
     return res.json({ success: true, report });
   } catch (err) {
     logger.error({ err, url: req.body?.url }, 'Failed to inspect link in sandbox');

@@ -1,9 +1,11 @@
 /**
  * WoxMail JMAP (JSON Meta Application Protocol - RFC 8620 & RFC 8621) Engine
  * High-performance modern JSON batch synchronization engine for webmail and mobile clients.
+ * Connected directly to database indexes and user mailboxes.
  */
 
 import { query } from '../config/database.js';
+import { generateBlindTokens } from './zeroKnowledgeSearchService.js';
 
 /**
  * Returns the JMAP Session Object (RFC 8620 Section 2).
@@ -60,6 +62,7 @@ export function getJmapSession(user, baseUrl = 'https://mail.wox.world') {
 
 /**
  * Executes a batch JMAP method call array (RFC 8620 Section 3.3).
+ * Connects directly to database mailboxes and user index.
  * @param {object} user
  * @param {{ using: Array<string>, methodCalls: Array<[string, object, string]> }} requestBody
  * @returns {Promise<{ methodResponses: Array<[string, object, string]>, sessionState: string }>}
@@ -72,36 +75,137 @@ export async function executeJmapBatch(user, requestBody) {
   for (const [methodName, args, callId] of methodCalls) {
     try {
       if (methodName === 'Mailbox/get') {
-        const mailboxes = [
-          { id: 'mbx_inbox', name: 'Inbox', role: 'inbox', unreadEmails: 0, totalEmails: 0 },
-          { id: 'mbx_sent', name: 'Sent', role: 'sent', unreadEmails: 0, totalEmails: 0 },
-          { id: 'mbx_drafts', name: 'Drafts', role: 'drafts', unreadEmails: 0, totalEmails: 0 },
-          { id: 'mbx_trash', name: 'Trash', role: 'trash', unreadEmails: 0, totalEmails: 0 },
-          { id: 'mbx_spam', name: 'Spam', role: 'junk', unreadEmails: 0, totalEmails: 0 },
-          { id: 'mbx_archive', name: 'Archive', role: 'archive', unreadEmails: 0, totalEmails: 0 },
+        // Query database for user folders and counts
+        const { rows: folderCounts } = await query(
+          `SELECT folder, COUNT(DISTINCT message_uid) as total_count
+           FROM encrypted_search_index
+           WHERE user_id = $1
+           GROUP BY folder`,
+          [user.id]
+        );
+
+        const folderMap = new Map();
+        for (const row of folderCounts) {
+          folderMap.set(row.folder.toUpperCase(), parseInt(row.total_count, 10) || 0);
+        }
+
+        const standardMailboxes = [
+          { id: 'mbx_inbox', name: 'Inbox', role: 'inbox', unreadEmails: 0, totalEmails: folderMap.get('INBOX') || 0 },
+          { id: 'mbx_sent', name: 'Sent', role: 'sent', unreadEmails: 0, totalEmails: folderMap.get('SENT') || 0 },
+          { id: 'mbx_drafts', name: 'Drafts', role: 'drafts', unreadEmails: 0, totalEmails: folderMap.get('DRAFTS') || 0 },
+          { id: 'mbx_trash', name: 'Trash', role: 'trash', unreadEmails: 0, totalEmails: folderMap.get('TRASH') || 0 },
+          { id: 'mbx_spam', name: 'Spam', role: 'junk', unreadEmails: 0, totalEmails: folderMap.get('SPAM') || 0 },
+          { id: 'mbx_archive', name: 'Archive', role: 'archive', unreadEmails: 0, totalEmails: folderMap.get('ARCHIVE') || 0 },
         ];
-        methodResponses.push(['Mailbox/get', { accountId, state: 'mbx_state_1', list: mailboxes }, callId]);
+
+        // Add custom user mailboxes if present in database
+        for (const [folderName, count] of folderMap.entries()) {
+          if (!['INBOX', 'SENT', 'DRAFTS', 'TRASH', 'SPAM', 'ARCHIVE'].includes(folderName)) {
+            standardMailboxes.push({
+              id: `mbx_${folderName.toLowerCase().replace(/[^a-z0-9_]/g, '_')}`,
+              name: folderName,
+              role: null,
+              unreadEmails: 0,
+              totalEmails: count,
+            });
+          }
+        }
+
+        methodResponses.push(['Mailbox/get', { accountId, state: 'mbx_state_1', list: standardMailboxes }, callId]);
       } else if (methodName === 'Email/query') {
+        const position = Number(args.position) || 0;
+        const limit = Math.min(Number(args.limit) || 50, 200);
+        const inMailbox = args.filter?.inMailbox ? args.filter.inMailbox.replace(/^mbx_/, '').toUpperCase() : null;
+        const textQuery = args.filter?.text || args.filter?.hasKeyword;
+
+        let querySql = `SELECT DISTINCT message_uid, MAX(created_at) as created_at FROM encrypted_search_index WHERE user_id = $1`;
+        const params = [user.id];
+
+        if (inMailbox) {
+          params.push(inMailbox);
+          querySql += ` AND UPPER(folder) = $${params.length}`;
+        }
+
+        if (textQuery) {
+          const userSalt = user.search_salt || `user_${user.id}_salt`;
+          const tokens = generateBlindTokens(textQuery, userSalt);
+          if (tokens.length > 0) {
+            params.push(tokens);
+            querySql += ` AND token_hash = ANY($${params.length})`;
+          }
+        }
+
+        querySql += ` GROUP BY message_uid ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+        params.push(limit, position);
+
+        const { rows } = await query(querySql, params);
+        const ids = rows.map((r) => String(r.message_uid));
+
+        // Get total count
+        const { rows: countRows } = await query(
+          `SELECT COUNT(DISTINCT message_uid) as total FROM encrypted_search_index WHERE user_id = $1`,
+          [user.id]
+        );
+        const total = parseInt(countRows[0]?.total || '0', 10);
+
         methodResponses.push([
           'Email/query',
           {
             accountId,
             queryState: 'q_state_1',
             canCalculateChanges: false,
-            position: args.position || 0,
-            ids: [],
-            total: 0,
+            position,
+            ids,
+            total,
           },
           callId,
         ]);
       } else if (methodName === 'Email/get') {
+        const requestedIds = (args.ids || []).map((id) => String(id));
+        const numericIds = requestedIds.map((id) => parseInt(id, 10)).filter((n) => !isNaN(n));
+
+        const list = [];
+        const notFound = [];
+
+        if (numericIds.length > 0) {
+          const { rows } = await query(
+            `SELECT DISTINCT message_uid, folder, MAX(created_at) as created_at
+             FROM encrypted_search_index
+             WHERE user_id = $1 AND message_uid = ANY($2::int[])
+             GROUP BY message_uid, folder`,
+            [user.id, numericIds]
+          );
+
+          const foundUids = new Set();
+          for (const row of rows) {
+            foundUids.add(String(row.message_uid));
+            list.push({
+              id: String(row.message_uid),
+              blobId: `blob_${row.message_uid}`,
+              threadId: `th_${row.message_uid}`,
+              mailboxIds: { [`mbx_${(row.folder || 'inbox').toLowerCase()}`]: true },
+              keywords: { '$seen': true },
+              size: 1024,
+              receivedAt: row.created_at || new Date().toISOString(),
+            });
+          }
+
+          for (const reqId of requestedIds) {
+            if (!foundUids.has(reqId)) {
+              notFound.push(reqId);
+            }
+          }
+        } else {
+          notFound.push(...requestedIds);
+        }
+
         methodResponses.push([
           'Email/get',
           {
             accountId,
             state: 'em_state_1',
-            list: [],
-            notFound: args.ids || [],
+            list,
+            notFound,
           },
           callId,
         ]);

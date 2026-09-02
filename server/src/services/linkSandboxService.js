@@ -1,11 +1,11 @@
 /**
  * WoxMail Link Isolation Sandbox Service
- * Provides server-side headless URL inspection, SSL certificate health audits,
- * marketing redirect stripping, Homograph spoof detection, and clean reader view extraction.
+ * Provides server-side headless URL inspection, TLS certificate health audits,
+ * step-by-step multi-hop redirect resolution, Playwright headless screenshot capture,
+ * marketing parameter stripping, Homograph spoof detection, and clean reader view extraction.
  */
 
-import https from 'https';
-import http from 'http';
+import tls from 'tls';
 import { URL } from 'url';
 import { JSDOM } from 'jsdom';
 import createDOMPurify from 'dompurify';
@@ -24,7 +24,7 @@ const TRACKING_PARAMS = [
 const HIGH_RISK_TLDS = ['.zip', '.mov', '.top', '.xyz', '.click', '.country', '.work', '.kim', '.gq', '.cf', '.tk', '.ml', '.ga'];
 
 /**
- * Strips tracking parameters from a URL.
+ * Strips marketing and analytics tracking parameters from a URL.
  * @param {string} rawUrl
  * @returns {string}
  */
@@ -52,7 +52,6 @@ export function stripTrackingParams(rawUrl) {
 export function detectHomographRisk(domain) {
   try {
     const isPunycode = domain.toLowerCase().includes('xn--');
-    // Check for mixed non-ASCII scripts
     const nonAscii = /[^\u0000-\u007F]/.test(domain);
     if (isPunycode || nonAscii) {
       return {
@@ -68,11 +67,103 @@ export function detectHomographRisk(domain) {
 }
 
 /**
- * Inspects an external URL by resolving redirect chains, auditing SSL, and extracting metadata.
- * @param {string} targetUrl
+ * Performs a real TLS socket handshake to audit SSL certificate health and cipher suites.
+ * @param {string} hostname
+ * @param {number} [port=443]
  * @returns {Promise<object>}
  */
-export async function inspectLink(targetUrl) {
+export async function auditTlsCertificate(hostname, port = 443) {
+  return new Promise((resolve) => {
+    const timeout = 4000;
+    let timer;
+
+    try {
+      const socket = tls.connect(
+        {
+          host: hostname,
+          port,
+          servername: hostname,
+          rejectUnauthorized: false,
+        },
+        () => {
+          clearTimeout(timer);
+          try {
+            const cert = socket.getPeerCertificate(true);
+            const cipher = socket.getCipher();
+            const protocol = socket.getProtocol();
+            const authorized = socket.authorized;
+            const validTo = cert ? new Date(cert.valid_to) : null;
+            const daysRemaining = validTo ? Math.round((validTo.getTime() - Date.now()) / (1000 * 3600 * 24)) : null;
+
+            socket.end();
+
+            resolve({
+              valid: authorized || (cert && validTo > new Date()),
+              authorized,
+              protocol,
+              cipherName: cipher?.name || 'Unknown',
+              cipherVersion: cipher?.version || protocol,
+              issuer: cert?.issuer ? (cert.issuer.O || cert.issuer.CN || 'Unknown') : 'Unknown',
+              subject: cert?.subject ? (cert.subject.CN || hostname) : hostname,
+              validFrom: cert?.valid_from,
+              validTo: cert?.valid_to,
+              daysRemaining,
+              fingerprint256: cert?.fingerprint256,
+            });
+          } catch {
+            socket.end();
+            resolve({ valid: false, error: 'Failed to inspect certificate data' });
+          }
+        }
+      );
+
+      socket.on('error', (err) => {
+        clearTimeout(timer);
+        resolve({ valid: false, error: err.message });
+      });
+
+      timer = setTimeout(() => {
+        try { socket.destroy(); } catch {}
+        resolve({ valid: false, error: 'TLS audit handshake timed out' });
+      }, timeout);
+    } catch (err) {
+      resolve({ valid: false, error: err.message });
+    }
+  });
+}
+
+/**
+ * Captures an isolated headless Playwright screenshot preview of the page.
+ * @param {string} targetUrl
+ * @returns {Promise<string|null>} Data URI string or null
+ */
+export async function captureHeadlessScreenshot(targetUrl) {
+  try {
+    const { chromium } = await import('playwright');
+    const browser = await chromium.launch({ headless: true });
+    try {
+      const page = await browser.newPage({ viewport: { width: 1024, height: 768 } });
+      await page.goto(targetUrl, { timeout: 6000, waitUntil: 'domcontentloaded' });
+      const buffer = await page.screenshot({ type: 'jpeg', quality: 70 });
+      await browser.close();
+      return `data:image/jpeg;base64,${buffer.toString('base64')}`;
+    } catch {
+      await browser.close();
+      return null;
+    }
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Inspects an external URL by resolving redirect chains step-by-step, auditing SSL,
+ * capturing headless screenshots, and extracting metadata.
+ * @param {string} targetUrl
+ * @param {boolean} [withScreenshot=false]
+ * @returns {Promise<object>}
+ */
+export async function inspectLink(targetUrl, withScreenshot = false) {
   if (!targetUrl || typeof targetUrl !== 'string') {
     throw new Error('Valid URL is required for sandbox inspection');
   }
@@ -85,53 +176,76 @@ export async function inspectLink(targetUrl) {
   const homograph = detectHomographRisk(domain);
   const isHighRiskTld = HIGH_RISK_TLDS.some((tld) => domain.toLowerCase().endsWith(tld));
 
+  // Multi-hop step-by-step redirect chain resolution
   const redirectChain = [cleanUrl];
-  let finalUrl = cleanUrl;
-  let sslDetails = { valid: isHttps, protocol: parsed.protocol };
+  let currUrl = cleanUrl;
   let pageTitle = domain;
   let pageSnippet = '';
 
   try {
-    // Perform quick HEAD / GET request to resolve redirects and headers
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6000);
+    for (let hop = 0; hop < 8; hop++) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4000);
 
-    const res = await fetch(cleanUrl, {
-      method: 'GET',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 WoxMailSandbox/1.0',
-        'Accept': 'text/html,application/xhtml+xml',
-      },
-      signal: controller.signal,
-      redirect: 'follow',
-    });
+      const res = await fetch(currUrl, {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 WoxMailSandbox/1.0',
+          'Accept': 'text/html,application/xhtml+xml',
+        },
+        signal: controller.signal,
+        redirect: 'manual',
+      });
 
-    clearTimeout(timeout);
+      clearTimeout(timeout);
 
-    if (res.url && res.url !== cleanUrl) {
-      finalUrl = res.url;
-      redirectChain.push(finalUrl);
-    }
+      // Follow HTTP redirects explicitly to record each intermediate hop
+      if ([301, 302, 303, 307, 308].includes(res.status)) {
+        const location = res.headers.get('location');
+        if (location) {
+          const nextUrl = new URL(location, currUrl).toString();
+          if (!redirectChain.includes(nextUrl)) {
+            currUrl = nextUrl;
+            redirectChain.push(currUrl);
+            continue;
+          }
+        }
+      }
 
-    const html = await res.text();
-    const dom = new JSDOM(html.slice(0, 150000));
-    const titleEl = dom.window.document.querySelector('title');
-    if (titleEl && titleEl.textContent) {
-      pageTitle = titleEl.textContent.trim().slice(0, 120);
-    }
+      // Reached destination, parse metadata
+      const html = await res.text();
+      const dom = new JSDOM(html.slice(0, 150000));
+      const titleEl = dom.window.document.querySelector('title');
+      if (titleEl && titleEl.textContent) {
+        pageTitle = titleEl.textContent.trim().slice(0, 120);
+      }
 
-    const descEl = dom.window.document.querySelector('meta[name="description"]') || dom.window.document.querySelector('meta[property="og:description"]');
-    if (descEl && descEl.getAttribute('content')) {
-      pageSnippet = descEl.getAttribute('content').trim().slice(0, 240);
+      const descEl = dom.window.document.querySelector('meta[name="description"]') || dom.window.document.querySelector('meta[property="og:description"]');
+      if (descEl && descEl.getAttribute('content')) {
+        pageSnippet = descEl.getAttribute('content').trim().slice(0, 240);
+      }
+      break;
     }
   } catch (err) {
-    pageSnippet = `Unable to fetch live page preview (${err.message}).`;
+    pageSnippet = `Preview extraction: ${err.message}`;
+  }
+
+  // Audit real TLS certificate if HTTPS
+  let sslDetails = { valid: isHttps, protocol: parsed.protocol };
+  if (isHttps) {
+    sslDetails = await auditTlsCertificate(domain, parsed.port ? parseInt(parsed.port, 10) : 443);
+  }
+
+  // Capture Playwright screenshot preview if requested
+  let screenshot = null;
+  if (withScreenshot) {
+    screenshot = await captureHeadlessScreenshot(currUrl);
   }
 
   return {
     originalUrl: targetUrl,
     cleanUrl,
-    finalUrl,
+    finalUrl: currUrl,
     domain,
     protocol: parsed.protocol,
     isHttps,
@@ -139,10 +253,12 @@ export async function inspectLink(targetUrl) {
     redirectCount: redirectChain.length - 1,
     homograph,
     isHighRiskTld,
+    sslDetails,
     pageTitle,
     pageSnippet,
+    screenshot,
     inspectedAt: new Date().toISOString(),
-    securityVerdict: !homograph.isSpoofRisk && !isHighRiskTld && isHttps ? 'SAFE' : 'CAUTION',
+    securityVerdict: !homograph.isSpoofRisk && !isHighRiskTld && isHttps && (sslDetails.valid !== false) ? 'SAFE' : 'CAUTION',
   };
 }
 
@@ -158,52 +274,51 @@ export async function renderSafeReader(targetUrl) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
 
-  const res = await fetch(cleanUrl, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) WoxMailReader/1.0',
-      'Accept': 'text/html,application/xhtml+xml',
-    },
-    signal: controller.signal,
-  });
-
-  clearTimeout(timeout);
-
-  if (!res.ok) {
-    throw new Error(`Failed to load webpage (Status: ${res.status})`);
+  let rawHtml = '';
+  try {
+    const res = await fetch(cleanUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 WoxMailSandbox/1.0',
+        'Accept': 'text/html,application/xhtml+xml',
+      },
+      signal: controller.signal,
+      redirect: 'follow',
+    });
+    rawHtml = await res.text();
+  } finally {
+    clearTimeout(timeout);
   }
 
-  const rawHtml = await res.text();
   const dom = new JSDOM(rawHtml);
   const doc = dom.window.document;
 
-  const title = doc.querySelector('title')?.textContent?.trim() || parsed.hostname;
+  // Extract page title
+  const title = doc.querySelector('title')?.textContent?.trim() || doc.querySelector('h1')?.textContent?.trim() || parsed.hostname;
 
-  // Remove all scripts, styles, forms, embeds, and iframes
-  const dangerousTags = doc.querySelectorAll('script, style, link, form, input, button, select, iframe, embed, object, noscript');
-  dangerousTags.forEach((el) => el.remove());
+  // Disarm all active elements
+  doc.querySelectorAll('script, style, link, form, input, button, select, iframe, embed, object, noscript').forEach((el) => el.remove());
 
-  // Find main body / article
-  const article = doc.querySelector('article') || doc.querySelector('main') || doc.querySelector('.content') || doc.body;
-  const innerHtml = article ? article.innerHTML : doc.body.innerHTML;
+  // Extract article body
+  const articleEl = doc.querySelector('article') || doc.querySelector('main') || doc.querySelector('.post-content') || doc.querySelector('.article-body') || doc.body;
 
-  // Sanitize with DOMPurify
-  const cleanHtml = DOMPurify.sanitize(innerHtml, {
-    ALLOWED_TAGS: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'b', 'i', 'strong', 'em', 'a', 'ul', 'ol', 'li', 'blockquote', 'code', 'pre', 'hr', 'br', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'img'],
+  const sanitized = DOMPurify.sanitize(articleEl ? articleEl.innerHTML : rawHtml, {
+    ALLOWED_TAGS: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'a', 'b', 'strong', 'i', 'em', 'u', 'ul', 'ol', 'li', 'blockquote', 'code', 'pre', 'hr', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'img'],
     ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'target', 'rel'],
   });
 
   return {
     title,
+    contentHtml: sanitized,
     domain: parsed.hostname,
     cleanUrl,
-    contentHtml: cleanHtml,
-    extractedAt: new Date().toISOString(),
   };
 }
 
 export default {
   stripTrackingParams,
   detectHomographRisk,
+  auditTlsCertificate,
+  captureHeadlessScreenshot,
   inspectLink,
   renderSafeReader,
 };

@@ -250,7 +250,19 @@
 
 ---
 
-### Phase 18: Native Cross-Platform Client Ecosystem
+### Phase 18: High-Performance Protocol Engine & External Accounts (MailCore 2-Inspired)
+- [ ] **Persistent IMAP IDLE Push Streamer**:
+  - Continuous idle socket pool with automatic heartbeat and zero-latency push delivery.
+- [ ] **BODYSTRUCTURE On-Demand Streamer**:
+  - Lazy-loads large email attachments and MIME parts on-demand without fetching entire message bodies.
+- [ ] **CONDSTORE & QRESYNC (RFC 4551 / 5162) Incremental Sync**:
+  - MODSEQ-based synchronization for instantaneous mailbox delta fetching.
+- [ ] **External Account OAuth2 Connectors**:
+  - Seamless unified inbox synchronization for Google Workspace, Microsoft 365, and iCloud via OAuth2 PKCE.
+
+---
+
+### Phase 19: Native Cross-Platform Client Ecosystem
 - [ ] **Native iOS & macOS Client (Swift / SwiftUI)**:
   - Powered by MailCore 2 C++ engine with local SQLite full-text search (FTS5), Face ID / Touch ID biometrics, and background IMAP IDLE push.
 - [ ] **Native Android Client (Kotlin / Jetpack Compose)**:
@@ -260,7 +272,7 @@
 
 ---
 
-### Phase 19: Sovereign Identity & Decentralized Communications
+### Phase 20: Sovereign Identity & Decentralized Communications
 - [ ] **WoxAuth Decentralized Identity (DID / Passkeys Federation)**:
   - Universal passwordless identity protocol for third-party web apps.
 - [ ] **Decentralized PGP Key Directory & Auto-Exchange**:

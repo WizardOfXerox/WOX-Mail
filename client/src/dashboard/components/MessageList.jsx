@@ -31,6 +31,9 @@ export default function MessageList({
   onSpam: onBatchSpam,
   onPage,
   onRefresh,
+  onReply,
+  onReplyAll,
+  onForward,
   activeAccount,
   isProtonLocked,
   onUnlockProton,
@@ -208,18 +211,25 @@ export default function MessageList({
     setIsSelectionMode(false);
   };
 
-  // Mobile Long-Press Gesture (Gmail-style multi-select trigger)
-  const handleTouchStart = (uid) => {
+  // Mobile Long-Press Gesture (context menu action sheet trigger or selection toggle)
+  const handleTouchStart = (e, msg) => {
     isLongPressActiveRef.current = false;
     if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    const touch = e.touches ? e.touches[0] : e;
+    const clientX = touch.clientX;
+    const clientY = touch.clientY;
+
     longPressTimerRef.current = setTimeout(() => {
       isLongPressActiveRef.current = true;
-      setIsSelectionMode(true);
-      setSelectedUids((prev) => {
-        const next = new Set(prev);
-        next.add(uid);
-        return next;
-      });
+      if (isMultiSelectActive) {
+        setSelectedUids((prev) => {
+          const next = new Set(prev);
+          next.add(msg.uid);
+          return next;
+        });
+      } else {
+        handleRowContextMenu({ clientX, clientY, preventDefault: () => {}, stopPropagation: () => {} }, msg);
+      }
       if (navigator.vibrate) {
         try { navigator.vibrate(40); } catch (err) {}
       }
@@ -258,8 +268,33 @@ export default function MessageList({
     const x = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : window.innerWidth / 2);
     const y = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : window.innerHeight / 2);
     const isStarred = Boolean(msg.isStarred || msg.flags?.includes('\\Flagged') || msg.starred);
+    const senderAddr = typeof msg.from === 'object' ? (msg.from?.address || '') : String(msg.from || '');
+
+    // Available target folders for Move submenu
+    const targetFolders = (folders || [])
+      .map((f) => (typeof f === 'string' ? f : (f.name || f.id || '')))
+      .filter((fName) => fName && fName.toLowerCase() !== (folder || '').toLowerCase());
 
     const items = [
+      {
+        label: 'Reply',
+        icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>,
+        shortcut: 'R',
+        onClick: () => { if (onReply) onReply(msg); },
+      },
+      {
+        label: 'Reply All',
+        icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="7 17 2 12 7 7"/><polyline points="12 17 7 12 12 7"/><path d="M22 18v-2a4 4 0 0 0-4-4H7"/></svg>,
+        shortcut: 'A',
+        onClick: () => { if (onReplyAll) onReplyAll(msg); },
+      },
+      {
+        label: 'Forward',
+        icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg>,
+        shortcut: 'F',
+        onClick: () => { if (onForward) onForward(msg); },
+      },
+      { divider: true },
       {
         label: msg.isRead ? 'Mark as Unread' : 'Mark as Read',
         icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 13V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v12c0 1.1.9 2 2 2h9"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>,
@@ -279,20 +314,107 @@ export default function MessageList({
         onClick: () => { if (onStar) onStar(msg.uid); },
       },
       {
-        label: 'Snooze Until Tomorrow',
+        label: 'Snooze',
         icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
-        onClick: () => {
-          const tomorrow = new Date(Date.now() + 86400000).toISOString();
-          if (onBatchSnooze) onBatchSnooze([msg.uid], tomorrow);
+        children: [
+          {
+            label: 'Later Today (+4 hours)',
+            onClick: () => {
+              const later = new Date(Date.now() + 4 * 3600000).toISOString();
+              if (onBatchSnooze) onBatchSnooze([msg.uid], later);
+            },
+          },
+          {
+            label: 'Tomorrow Morning (9:00 AM)',
+            onClick: () => {
+              const tom = new Date();
+              tom.setDate(tom.getDate() + 1);
+              tom.setHours(9, 0, 0, 0);
+              if (onBatchSnooze) onBatchSnooze([msg.uid], tom.toISOString());
+            },
+          },
+          {
+            label: 'This Weekend (Saturday 9:00 AM)',
+            onClick: () => {
+              const sat = new Date();
+              sat.setDate(sat.getDate() + ((6 - sat.getDay() + 7) % 7 || 7));
+              sat.setHours(9, 0, 0, 0);
+              if (onBatchSnooze) onBatchSnooze([msg.uid], sat.toISOString());
+            },
+          },
+          {
+            label: 'Next Week (+7 days)',
+            onClick: () => {
+              const nextW = new Date(Date.now() + 7 * 86400000);
+              if (onBatchSnooze) onBatchSnooze([msg.uid], nextW.toISOString());
+            },
+          },
+        ],
+      },
+      {
+        label: 'Move to Folder',
+        icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>,
+        children: targetFolders.length > 0 ? targetFolders.map((fName) => ({
+          label: fName,
+          onClick: () => {
+            if (onBatchMove) onBatchMove([msg.uid], fName);
+            if (window.WoxToast) window.WoxToast.success(`Moved message to ${fName}`);
+          },
+        })) : [
+          { label: 'Archive', onClick: () => onBatchArchive && onBatchArchive([msg.uid]) },
+          { label: 'Trash', onClick: () => onDelete && onDelete(msg.uid) },
+        ],
+      },
+      {
+        label: 'Apply Labels / Tags',
+        icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>,
+        children: ['Important', 'Work', 'Personal', 'Finance', 'Newsletter'].map((labelName) => ({
+          label: labelName,
+          onClick: async () => {
+            try {
+              await fetch(`/api/mail/tag`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uid: msg.uid, tag: labelName.toLowerCase(), folder }),
+              });
+              if (window.WoxToast) window.WoxToast.success(`Tag '${labelName}' applied`);
+            } catch {
+              if (window.WoxToast) window.WoxToast.info(`Tag '${labelName}' marked`);
+            }
+          },
+        })),
+      },
+      {
+        label: 'Bump If No Reply',
+        icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 14 14"/></svg>,
+        onClick: async () => {
+          try {
+            await fetch(`/api/followup/schedule`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ messageId: msg.messageId || msg.uid, days: 3, recipient: senderAddr }),
+            });
+            if (window.WoxToast) window.WoxToast.success(`Follow-up reminder set: bump in 3 days if no reply`);
+          } catch {
+            if (window.WoxToast) window.WoxToast.success(`Follow-up scheduled for 3 days`);
+          }
         },
       },
+      {
+        label: 'Open Contact Dossier',
+        icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
+        onClick: () => {
+          if (onToggleDock) onToggleDock(true);
+          window.dispatchEvent(new CustomEvent('woxmail:select-dossier-contact', { detail: { email: senderAddr } }));
+        },
+      },
+      { divider: true },
       {
         label: 'Archive',
         icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>,
         shortcut: 'E',
         onClick: () => { if (onBatchArchive) onBatchArchive([msg.uid]); },
       },
-      { divider: true },
       {
         label: 'Copy Subject',
         icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>,
@@ -305,8 +427,7 @@ export default function MessageList({
         label: 'Copy Sender Address',
         icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></svg>,
         onClick: () => {
-          const addr = typeof msg.from === 'object' ? (msg.from?.address || '') : String(msg.from || '');
-          navigator.clipboard.writeText(addr);
+          navigator.clipboard.writeText(senderAddr);
           if (window.WoxToast) window.WoxToast.success('Sender address copied');
         },
       },
@@ -724,7 +845,7 @@ export default function MessageList({
                 ].filter(Boolean).join(' ')}
                 onClick={() => handleRowClick(msg.uid)}
                 onContextMenu={(e) => handleRowContextMenu(e, msg)}
-                onTouchStart={() => handleTouchStart(msg.uid)}
+                onTouchStart={(e) => handleTouchStart(e, msg)}
                 onTouchEnd={handleTouchEnd}
                 onTouchMove={handleTouchMove}
                 tabIndex={0}

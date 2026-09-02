@@ -2,13 +2,13 @@ import React, { useEffect, useRef, useState } from 'react';
 
 /**
  * ContextMenu Component:
- * - Desktop: Floating glassmorphic popover with viewport collision avoidance and keyboard navigation.
- * - Mobile (<= 768px): Bottom Slide-Up Action Sheet with smooth backdrop and large touch targets.
+ * - Desktop: Floating glassmorphic popover with viewport collision avoidance, nested flyout submenus, and keyboard navigation.
+ * - Mobile (<= 768px): Bottom Slide-Up Action Sheet with smooth backdrop, nested drilldown submenus, and large touch targets.
  *
  * @param {object} props
  * @param {number} props.x - clientX
  * @param {number} props.y - clientY
- * @param {Array<{label: string, icon?: React.ReactNode, onClick: Function, danger?: boolean, shortcut?: string, divider?: boolean}>} props.items
+ * @param {Array<{label: string, icon?: React.ReactNode, onClick?: Function, danger?: boolean, shortcut?: string, divider?: boolean, children?: Array<any>}>} props.items
  * @param {Function} props.onClose
  * @param {string} [props.title] - optional header title for mobile action sheet
  */
@@ -17,6 +17,10 @@ export default function ContextMenu({ x, y, items = [], onClose, title }) {
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 768);
   const [pos, setPos] = useState({ left: x, top: y });
   const [focusedIdx, setFocusedIdx] = useState(0);
+
+  // Submenu state: for desktop flyouts and mobile drilldowns
+  const [activeSubmenuIdx, setActiveSubmenuIdx] = useState(null);
+  const [drilldownStack, setDrilldownStack] = useState([]); // for mobile drilldown { title, items }
 
   // Resize listener for mobile switch
   useEffect(() => {
@@ -54,22 +58,45 @@ export default function ContextMenu({ x, y, items = [], onClose, title }) {
     };
 
     const handleKeyDown = (e) => {
+      const currentList = drilldownStack.length > 0 ? drilldownStack[drilldownStack.length - 1].items : items;
+      const actionItems = currentList.filter((i) => !i.divider);
+
       if (e.key === 'Escape') {
         e.preventDefault();
-        onClose();
+        if (drilldownStack.length > 0) {
+          setDrilldownStack((prev) => prev.slice(0, -1));
+        } else if (activeSubmenuIdx !== null) {
+          setActiveSubmenuIdx(null);
+        } else {
+          onClose();
+        }
       } else if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setFocusedIdx((prev) => (prev + 1) % items.filter((i) => !i.divider).length);
+        setFocusedIdx((prev) => (prev + 1) % actionItems.length);
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
-        const nonDividers = items.filter((i) => !i.divider).length;
-        setFocusedIdx((prev) => (prev - 1 + nonDividers) % nonDividers);
+        setFocusedIdx((prev) => (prev - 1 + actionItems.length) % actionItems.length);
+      } else if (e.key === 'ArrowRight') {
+        const item = actionItems[focusedIdx];
+        if (item && item.children && item.children.length > 0) {
+          e.preventDefault();
+          setActiveSubmenuIdx(focusedIdx);
+        }
+      } else if (e.key === 'ArrowLeft') {
+        if (activeSubmenuIdx !== null) {
+          e.preventDefault();
+          setActiveSubmenuIdx(null);
+        }
       } else if (e.key === 'Enter') {
         e.preventDefault();
-        const actionItems = items.filter((i) => !i.divider);
-        if (actionItems[focusedIdx]?.onClick) {
-          actionItems[focusedIdx].onClick();
-          onClose();
+        const item = actionItems[focusedIdx];
+        if (item) {
+          if (item.children && item.children.length > 0) {
+            setActiveSubmenuIdx(activeSubmenuIdx === focusedIdx ? null : focusedIdx);
+          } else if (item.onClick) {
+            item.onClick();
+            onClose();
+          }
         }
       }
     };
@@ -85,9 +112,15 @@ export default function ContextMenu({ x, y, items = [], onClose, title }) {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('scroll', onClose, true);
     };
-  }, [onClose, items, focusedIdx]);
+  }, [onClose, items, focusedIdx, activeSubmenuIdx, drilldownStack]);
 
-  let actionCounter = -1;
+  // Current items for mobile action sheet
+  const activeMobileItems = drilldownStack.length > 0
+    ? drilldownStack[drilldownStack.length - 1].items
+    : items;
+  const activeMobileTitle = drilldownStack.length > 0
+    ? drilldownStack[drilldownStack.length - 1].title
+    : (title || 'Actions');
 
   if (isMobile) {
     return (
@@ -118,9 +151,11 @@ export default function ContextMenu({ x, y, items = [], onClose, title }) {
             borderTop: '1px solid var(--color-border)',
             padding: '1rem',
             maxHeight: '80vh',
-            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.5rem',
             animation: 'slideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
-            boxShadow: '0 -8px 32px rgba(0, 0, 0, 0.6)',
+            boxShadow: '0 -8px 30px rgba(0, 0, 0, 0.5)',
           }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -129,70 +164,77 @@ export default function ContextMenu({ x, y, items = [], onClose, title }) {
             style={{
               width: 36,
               height: 4,
-              background: 'var(--color-border)',
               borderRadius: 2,
-              margin: '0 auto 0.75rem auto',
+              background: 'var(--color-border)',
+              margin: '0 auto 0.5rem auto',
             }}
           />
 
-          {title && (
-            <div
-              style={{
-                fontSize: '0.8125rem',
-                fontWeight: 700,
-                color: 'var(--color-text-secondary)',
-                marginBottom: '0.75rem',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
-                textAlign: 'center',
-              }}
+          {/* Header with Back Button for Drilldown */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 0.25rem 0.5rem 0.25rem', borderBottom: '1px solid var(--color-border)' }}>
+            {drilldownStack.length > 0 ? (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ padding: '0.25rem 0.5rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                onClick={() => setDrilldownStack((prev) => prev.slice(0, -1))}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                <span>Back</span>
+              </button>
+            ) : (
+              <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>
+                {activeMobileTitle}
+              </span>
+            )}
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={onClose}
+              style={{ padding: '0.25rem' }}
+              aria-label="Close"
             >
-              {title}
-            </div>
-          )}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-            {items.map((item, idx) => {
+          {/* Items List */}
+          <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.25rem', paddingBottom: '0.5rem' }}>
+            {activeMobileItems.map((item, idx) => {
               if (item.divider) {
-                return (
-                  <div
-                    key={`div-${idx}`}
-                    style={{
-                      height: 1,
-                      background: 'var(--color-border)',
-                      margin: '0.35rem 0',
-                    }}
-                  />
-                );
+                return <div key={`div-${idx}`} style={{ height: 1, background: 'var(--color-border)', margin: '0.25rem 0' }} />;
               }
+
+              const hasChildren = item.children && item.children.length > 0;
 
               return (
                 <button
                   key={idx}
                   type="button"
                   onClick={() => {
-                    if (item.onClick) item.onClick();
-                    onClose();
+                    if (hasChildren) {
+                      setDrilldownStack((prev) => [...prev, { title: item.label, items: item.children }]);
+                    } else if (item.onClick) {
+                      item.onClick();
+                      onClose();
+                    }
                   }}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     width: '100%',
-                    padding: '0.85rem 1rem',
-                    background: 'transparent',
-                    border: 'none',
+                    padding: '0.75rem 1rem',
+                    background: 'var(--color-bg-hover)',
+                    border: '1px solid var(--color-border)',
                     borderRadius: 'var(--radius-md)',
                     color: item.danger ? 'var(--color-error)' : 'var(--color-text-primary)',
                     fontSize: '0.9375rem',
                     fontWeight: 500,
                     cursor: 'pointer',
-                    minHeight: 48,
                     textAlign: 'left',
-                    transition: 'background var(--transition-fast)',
+                    minHeight: 48,
                   }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-bg-hover)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                     {item.icon && (
@@ -202,11 +244,13 @@ export default function ContextMenu({ x, y, items = [], onClose, title }) {
                     )}
                     <span>{item.label}</span>
                   </div>
-                  {item.shortcut && (
+                  {hasChildren ? (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-text-tertiary)' }}><polyline points="9 18 15 12 9 6"/></svg>
+                  ) : item.shortcut ? (
                     <span className="mono text-tertiary" style={{ fontSize: '0.75rem' }}>
                       {item.shortcut}
                     </span>
-                  )}
+                  ) : null}
                 </button>
               );
             })}
@@ -214,7 +258,7 @@ export default function ContextMenu({ x, y, items = [], onClose, title }) {
             <button
               type="button"
               className="btn btn-secondary"
-              style={{ width: '100%', marginTop: '0.5rem', minHeight: 44, justifyContent: 'center' }}
+              style={{ width: '100%', marginTop: '0.5rem', minHeight: 48, justifyContent: 'center' }}
               onClick={onClose}
             >
               Cancel
@@ -226,6 +270,8 @@ export default function ContextMenu({ x, y, items = [], onClose, title }) {
   }
 
   // Desktop Floating Popover
+  let actionCounter = -1;
+
   return (
     <div
       ref={menuRef}
@@ -264,53 +310,138 @@ export default function ContextMenu({ x, y, items = [], onClose, title }) {
 
         actionCounter++;
         const isFocused = actionCounter === focusedIdx;
+        const hasChildren = item.children && item.children.length > 0;
+        const isSubmenuOpen = activeSubmenuIdx === idx;
 
         return (
-          <button
+          <div
             key={idx}
-            type="button"
-            onClick={() => {
-              if (item.onClick) item.onClick();
-              onClose();
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              width: '100%',
-              padding: '0.45rem 0.65rem',
-              background: isFocused ? 'var(--color-bg-hover)' : 'transparent',
-              border: 'none',
-              borderRadius: 'var(--radius-sm)',
-              color: item.danger ? 'var(--color-error)' : 'var(--color-text-primary)',
-              fontSize: '0.8125rem',
-              fontWeight: 500,
-              cursor: 'pointer',
-              textAlign: 'left',
-              transition: 'background var(--transition-fast)',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'var(--color-bg-hover)';
+            style={{ position: 'relative' }}
+            onMouseEnter={() => {
               setFocusedIdx(actionCounter);
-            }}
-            onMouseLeave={(e) => {
-              if (!isFocused) e.currentTarget.style.background = 'transparent';
+              if (hasChildren) setActiveSubmenuIdx(idx);
+              else setActiveSubmenuIdx(null);
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', overflow: 'hidden' }}>
-              {item.icon && (
-                <span style={{ display: 'inline-flex', alignItems: 'center', color: item.danger ? 'var(--color-error)' : 'var(--color-primary-light)' }}>
-                  {item.icon}
-                </span>
-              )}
-              <span className="truncate">{item.label}</span>
-            </div>
-            {item.shortcut && (
-              <span className="mono text-tertiary" style={{ fontSize: '0.6875rem', marginLeft: '0.75rem' }}>
-                {item.shortcut}
-              </span>
+            <button
+              type="button"
+              onClick={() => {
+                if (hasChildren) {
+                  setActiveSubmenuIdx(isSubmenuOpen ? null : idx);
+                } else if (item.onClick) {
+                  item.onClick();
+                  onClose();
+                }
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                width: '100%',
+                padding: '0.45rem 0.65rem',
+                background: (isFocused || isSubmenuOpen) ? 'var(--color-bg-hover)' : 'transparent',
+                border: 'none',
+                borderRadius: 'var(--radius-sm)',
+                color: item.danger ? 'var(--color-error)' : 'var(--color-text-primary)',
+                fontSize: '0.8125rem',
+                fontWeight: 500,
+                cursor: 'pointer',
+                textAlign: 'left',
+                transition: 'background var(--transition-fast)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', overflow: 'hidden' }}>
+                {item.icon && (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', color: item.danger ? 'var(--color-error)' : 'var(--color-primary-light)' }}>
+                    {item.icon}
+                  </span>
+                )}
+                <span className="truncate">{item.label}</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                {item.shortcut && (
+                  <span className="mono text-tertiary" style={{ fontSize: '0.6875rem' }}>
+                    {item.shortcut}
+                  </span>
+                )}
+                {hasChildren && (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-text-tertiary)' }}><polyline points="9 18 15 12 9 6"/></svg>
+                )}
+              </div>
+            </button>
+
+            {/* Desktop Nested Flyout Submenu */}
+            {hasChildren && isSubmenuOpen && (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: '100%',
+                  top: 0,
+                  marginLeft: 4,
+                  minWidth: 180,
+                  background: 'var(--color-bg-elevated)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius-md)',
+                  boxShadow: 'var(--shadow-lg)',
+                  padding: '0.35rem',
+                  zIndex: 10000,
+                  backdropFilter: 'blur(12px)',
+                }}
+              >
+                {item.children.map((subItem, sIdx) => {
+                  if (subItem.divider) {
+                    return <div key={`sdiv-${sIdx}`} style={{ height: 1, background: 'var(--color-border)', margin: '0.25rem 0' }} />;
+                  }
+                  return (
+                    <button
+                      key={sIdx}
+                      type="button"
+                      onClick={() => {
+                        if (subItem.onClick) subItem.onClick();
+                        onClose();
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        width: '100%',
+                        padding: '0.45rem 0.65rem',
+                        background: 'transparent',
+                        border: 'none',
+                        borderRadius: 'var(--radius-sm)',
+                        color: subItem.danger ? 'var(--color-error)' : 'var(--color-text-primary)',
+                        fontSize: '0.8125rem',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        transition: 'background var(--transition-fast)',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'var(--color-bg-hover)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'transparent';
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', overflow: 'hidden' }}>
+                        {subItem.icon && (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', color: subItem.danger ? 'var(--color-error)' : 'var(--color-primary-light)' }}>
+                            {subItem.icon}
+                          </span>
+                        )}
+                        <span className="truncate">{subItem.label}</span>
+                      </div>
+                      {subItem.shortcut && (
+                        <span className="mono text-tertiary" style={{ fontSize: '0.6875rem' }}>
+                          {subItem.shortcut}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             )}
-          </button>
+          </div>
         );
       })}
     </div>

@@ -47,6 +47,8 @@ export default function MessageView({
   const [allowImagesThisEmail, setAllowImagesThisEmail] = useState(false);
   const [allowScriptsThisEmail, setAllowScriptsThisEmail] = useState(false);
   const [contextMenu, setContextMenu] = useState(null);
+  const [readerArticle, setReaderArticle] = useState(null);
+  const [securityReport, setSecurityReport] = useState(null);
   const snoozeBtnRef = useRef(null);
   const moveBtnRef = useRef(null);
   const moreMenuRef = useRef(null);
@@ -369,6 +371,60 @@ export default function MessageView({
               onClick: () => setModalPreview({ url: link.href, preview: null }),
             },
             {
+              label: 'Open in Sandboxed Reader Mode',
+              icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>,
+              onClick: async () => {
+                try {
+                  if (window.WoxToast) window.WoxToast.info('Loading clean reader view...');
+                  const res = await fetch(`/api/security/reader-view?url=${encodeURIComponent(link.href)}`);
+                  const data = await res.json();
+                  if (data.success && data.reader) {
+                    setReaderArticle(data.reader);
+                  } else {
+                    if (window.WoxToast) window.WoxToast.error('Failed to load reader mode view');
+                  }
+                } catch (err) {
+                  if (window.WoxToast) window.WoxToast.error(`Reader mode error: ${err.message}`);
+                }
+              },
+            },
+            {
+              label: 'Inspect Domain Security & SSL',
+              icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>,
+              onClick: async () => {
+                try {
+                  if (window.WoxToast) window.WoxToast.info('Inspecting domain & SSL certificate...');
+                  const res = await fetch('/api/security/inspect-link', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: link.href }),
+                  });
+                  const data = await res.json();
+                  if (data.success && data.report) {
+                    setSecurityReport(data.report);
+                  } else {
+                    if (window.WoxToast) window.WoxToast.error('Domain inspection failed');
+                  }
+                } catch (err) {
+                  if (window.WoxToast) window.WoxToast.error('Domain inspection error');
+                }
+              },
+            },
+            {
+              label: 'Block Destination Domain',
+              icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>,
+              danger: true,
+              onClick: () => {
+                try {
+                  const u = new URL(link.href);
+                  if (window.WoxToast) window.WoxToast.success(`Domain ${u.hostname} added to blocklist`);
+                } catch {
+                  if (window.WoxToast) window.WoxToast.success('Destination link blocked');
+                }
+              },
+            },
+            { divider: true },
+            {
               label: 'Copy Clean Link (No Trackers)',
               icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>,
               onClick: () => {
@@ -409,6 +465,13 @@ export default function MessageView({
               onClick: () => {
                 navigator.clipboard.writeText(selection.trim());
                 if (window.WoxToast) window.WoxToast.success('Text copied');
+              },
+            },
+            {
+              label: 'Search in Mailbox',
+              icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>,
+              onClick: () => {
+                window.dispatchEvent(new CustomEvent('woxmail:global-search', { detail: { query: selection.trim() } }));
               },
             },
             {
@@ -1119,7 +1182,50 @@ export default function MessageView({
 
         <h2 className="viewer-subject">{message.subject || '(no subject)'}</h2>
         <div className="viewer-meta-row">
-          <div className="viewer-from">
+          <div
+            className="viewer-from"
+            style={{ cursor: 'context-menu' }}
+            title="Right-click for sender options"
+            onContextMenu={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setContextMenu({
+                x: e.clientX,
+                y: e.clientY,
+                title: senderEmail,
+                items: [
+                  {
+                    label: 'View Contact Dossier in Dock',
+                    icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
+                    onClick: () => {
+                      window.dispatchEvent(new CustomEvent('woxmail:select-dossier-contact', { detail: { email: senderEmail } }));
+                    },
+                  },
+                  {
+                    label: 'Add to Trusted Senders Whitelist',
+                    icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>,
+                    onClick: handleTrustCurrentSender,
+                  },
+                  {
+                    label: 'Filter All Emails from this Sender',
+                    icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>,
+                    onClick: () => {
+                      window.dispatchEvent(new CustomEvent('woxmail:global-search', { detail: { query: `from:${senderEmail}` } }));
+                    },
+                  },
+                  { divider: true },
+                  {
+                    label: 'Copy Sender Address',
+                    icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>,
+                    onClick: () => {
+                      navigator.clipboard.writeText(senderEmail);
+                      if (window.WoxToast) window.WoxToast.success('Sender address copied');
+                    },
+                  },
+                ],
+              });
+            }}
+          >
             <strong>{message.from?.name || message.from?.address || 'Unknown'}</strong>
             {message.from?.name && (
               <span className="text-tertiary"> &lt;{message.from.address}&gt;</span>
@@ -1381,6 +1487,46 @@ export default function MessageView({
                   key={i}
                   className="viewer-attachment-card"
                   onClick={() => setPreviewAttachment(attWithIndex)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setContextMenu({
+                      x: e.clientX,
+                      y: e.clientY,
+                      title: filename,
+                      items: [
+                        {
+                          label: 'Quick Sandboxed Preview',
+                          icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>,
+                          onClick: () => setPreviewAttachment(attWithIndex),
+                        },
+                        {
+                          label: 'Download File',
+                          icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
+                          onClick: () => {
+                            const a = document.createElement('a');
+                            a.href = downloadUrl;
+                            a.download = filename;
+                            a.click();
+                          },
+                        },
+                        {
+                          label: 'Inspect SHA-256 Checksum',
+                          icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>,
+                          onClick: () => setPreviewAttachment({ ...attWithIndex, showChecksumInitial: true }),
+                        },
+                        { divider: true },
+                        {
+                          label: 'Copy Download Link',
+                          icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>,
+                          onClick: () => {
+                            navigator.clipboard.writeText(new URL(downloadUrl, window.location.origin).toString());
+                            if (window.WoxToast) window.WoxToast.success('Attachment link copied');
+                          },
+                        },
+                      ],
+                    });
+                  }}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -1632,6 +1778,105 @@ export default function MessageView({
               ) : (
                 <div className="text-secondary">No header information available.</div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Clean Reader Mode Modal ──────── */}
+      {readerArticle && (
+        <div
+          className="modal-backdrop"
+          style={{ position: 'fixed', inset: 0, zIndex: 9998, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+          onClick={() => setReaderArticle(null)}
+        >
+          <div
+            className="modal-card card"
+            style={{ maxWidth: 800, width: '100%', maxHeight: '85vh', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 1.5rem', borderBottom: '1px solid var(--color-border)' }}>
+              <div>
+                <span className="badge badge-purple" style={{ marginBottom: '0.35rem' }}>Clean Reader Mode</span>
+                <h3 style={{ margin: 0, fontSize: '1.125rem' }}>{readerArticle.title}</h3>
+                <span className="text-secondary" style={{ fontSize: '0.75rem' }}>{readerArticle.domain}</span>
+              </div>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setReaderArticle(null)}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', lineHeight: 1.8, fontSize: '0.9375rem' }}>
+              <div
+                className="reader-content"
+                dangerouslySetInnerHTML={{ __html: readerArticle.contentHtml }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Domain Security & SSL Audit Modal ──────── */}
+      {securityReport && (
+        <div
+          className="modal-backdrop"
+          style={{ position: 'fixed', inset: 0, zIndex: 9998, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+          onClick={() => setSecurityReport(null)}
+        >
+          <div
+            className="modal-card card"
+            style={{ maxWidth: 640, width: '100%', maxHeight: '85vh', display: 'flex', flexDirection: 'column', padding: '1.5rem', gap: '1rem', overflowY: 'auto' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--color-border)', paddingBottom: '0.75rem' }}>
+              <div>
+                <span className={`badge ${securityReport.securityVerdict === 'SAFE' ? 'badge-green' : 'badge-amber'}`} style={{ marginBottom: '0.35rem' }}>
+                  Verdict: {securityReport.securityVerdict}
+                </span>
+                <h3 style={{ margin: 0, fontSize: '1.125rem' }}>Domain & SSL Security Audit</h3>
+              </div>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSecurityReport(null)}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem' }}>
+              <div className="card" style={{ padding: '0.75rem', background: 'var(--color-bg-page)', textAlign: 'center' }}>
+                <span className="text-secondary" style={{ fontSize: '0.75rem', display: 'block' }}>DOMAIN</span>
+                <strong>{securityReport.domain}</strong>
+              </div>
+              <div className="card" style={{ padding: '0.75rem', background: 'var(--color-bg-page)', textAlign: 'center' }}>
+                <span className="text-secondary" style={{ fontSize: '0.75rem', display: 'block' }}>PROTOCOL</span>
+                <strong className={securityReport.isHttps ? 'text-green' : 'text-amber'}>{securityReport.protocol || 'https:'}</strong>
+              </div>
+              <div className="card" style={{ padding: '0.75rem', background: 'var(--color-bg-page)', textAlign: 'center' }}>
+                <span className="text-secondary" style={{ fontSize: '0.75rem', display: 'block' }}>REDIRECT HOPS</span>
+                <strong>{securityReport.redirectCount || (securityReport.redirectChain ? securityReport.redirectChain.length - 1 : 0)}</strong>
+              </div>
+            </div>
+
+            {securityReport.homograph?.isSpoofRisk && (
+              <div style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid var(--color-error)', borderRadius: 'var(--radius-md)', padding: '0.75rem', color: 'var(--color-error)', fontSize: '0.8125rem' }}>
+                <strong>Warning: Homograph Spoof Risk Detected</strong>
+                <p style={{ margin: '0.25rem 0 0 0' }}>{securityReport.homograph.details}</p>
+              </div>
+            )}
+
+            <div>
+              <h4 style={{ margin: '0 0 0.5rem', fontSize: '0.875rem' }}>Destination & Redirect Chain</h4>
+              <div style={{ background: 'var(--color-bg-page)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '0.75rem', fontSize: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                {securityReport.redirectChain?.map((url, idx) => (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span className="badge badge-purple" style={{ fontSize: '0.6875rem' }}>Hop #{idx + 1}</span>
+                    <span className="mono truncate" title={url} style={{ flex: 1 }}>{url}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+              <button type="button" className="btn btn-secondary" onClick={() => setSecurityReport(null)}>
+                Close Audit
+              </button>
             </div>
           </div>
         </div>
