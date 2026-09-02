@@ -750,7 +750,7 @@ export default function MessageView({
                       }}
                       style={{ justifyContent: 'flex-start', padding: '0.5rem 0.65rem', fontSize: '0.8125rem', gap: '0.5rem' }}
                     >
-                      <span style={{ fontSize: '1rem' }}>⏰</span>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                       <span>Snooze Message</span>
                     </button>
                   )}
@@ -765,7 +765,7 @@ export default function MessageView({
                       }}
                       style={{ justifyContent: 'flex-start', padding: '0.5rem 0.65rem', fontSize: '0.8125rem', gap: '0.5rem' }}
                     >
-                      <span style={{ fontSize: '1rem' }}>📁</span>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
                       <span>Move to Folder</span>
                     </button>
                   )}
@@ -780,7 +780,7 @@ export default function MessageView({
                     }}
                     style={{ justifyContent: 'flex-start', padding: '0.5rem 0.65rem', fontSize: '0.8125rem', gap: '0.5rem' }}
                   >
-                    <span style={{ fontSize: '1rem' }}>📝</span>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15.5 3H5a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z"/><path d="M15 3v6h6"/><path d="M9 13h6"/><path d="M9 17h3"/></svg>
                     <span>{note ? 'View Private Note' : 'Add Private Note'}</span>
                   </button>
 
@@ -793,7 +793,7 @@ export default function MessageView({
                     }}
                     style={{ justifyContent: 'flex-start', padding: '0.5rem 0.65rem', fontSize: '0.8125rem', gap: '0.5rem' }}
                   >
-                    <span style={{ fontSize: '1rem' }}>👥</span>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="7 17 2 12 7 7"/><polyline points="12 17 7 12 12 7"/><path d="M22 18v-2a4 4 0 0 0-4-4H7"/></svg>
                     <span>Reply All</span>
                   </button>
 
@@ -806,7 +806,7 @@ export default function MessageView({
                     }}
                     style={{ justifyContent: 'flex-start', padding: '0.5rem 0.65rem', fontSize: '0.8125rem', gap: '0.5rem' }}
                   >
-                    <span style={{ fontSize: '1rem' }}>➡️</span>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg>
                     <span>Forward</span>
                   </button>
 
@@ -819,7 +819,7 @@ export default function MessageView({
                     }}
                     style={{ justifyContent: 'flex-start', padding: '0.5rem 0.65rem', fontSize: '0.8125rem', gap: '0.5rem' }}
                   >
-                    <span style={{ fontSize: '1rem' }}>✉️</span>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
                     <span>{message.flags?.includes('\\Seen') ? 'Mark as Unread' : 'Mark as Read'}</span>
                   </button>
 
@@ -832,7 +832,7 @@ export default function MessageView({
                     }}
                     style={{ justifyContent: 'flex-start', padding: '0.5rem 0.65rem', fontSize: '0.8125rem', gap: '0.5rem' }}
                   >
-                    <span style={{ fontSize: '1rem' }}>🛡️</span>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
                     <span>Privacy, Images & Scripts</span>
                   </button>
 
@@ -845,7 +845,7 @@ export default function MessageView({
                     }}
                     style={{ justifyContent: 'flex-start', padding: '0.5rem 0.65rem', fontSize: '0.8125rem', gap: '0.5rem' }}
                   >
-                    <span style={{ fontSize: '1rem' }}>🔍</span>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
                     <span>Raw Security Headers</span>
                   </button>
 
@@ -859,7 +859,7 @@ export default function MessageView({
                       }}
                       style={{ justifyContent: 'flex-start', padding: '0.5rem 0.65rem', fontSize: '0.8125rem', gap: '0.5rem' }}
                     >
-                      <span style={{ fontSize: '1rem' }}>📦</span>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>
                       <span>Archive</span>
                     </button>
                   )}
@@ -874,7 +874,7 @@ export default function MessageView({
                       }}
                       style={{ justifyContent: 'flex-start', padding: '0.5rem 0.65rem', fontSize: '0.8125rem', color: 'var(--color-error)', gap: '0.5rem' }}
                     >
-                      <span style={{ fontSize: '1rem' }}>🗑️</span>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
                       <span>Delete</span>
                     </button>
                   )}
@@ -889,8 +889,8 @@ export default function MessageView({
                       }}
                       style={{ justifyContent: 'flex-start', padding: '0.5rem 0.65rem', fontSize: '0.8125rem', color: 'var(--color-warning)', gap: '0.5rem' }}
                     >
-                      <span style={{ fontSize: '1rem' }}>⚠️</span>
-                      <span>Report Spam</span>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                      <span>{String(message.folder || '').toLowerCase().includes('spam') || String(message.folder || '').toLowerCase().includes('junk') ? 'Not Spam (Move to Inbox)' : 'Report Spam'}</span>
                     </button>
                   )}
 
@@ -902,7 +902,7 @@ export default function MessageView({
                     onClick={() => setShowMoreMenu(false)}
                     style={{ justifyContent: 'flex-start', padding: '0.5rem 0.65rem', fontSize: '0.8125rem', textDecoration: 'none', gap: '0.5rem' }}
                   >
-                    <span style={{ fontSize: '1rem' }}>📥</span>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                     <span>Download Raw .eml</span>
                   </a>
                 </div>
@@ -979,7 +979,7 @@ export default function MessageView({
                 onClick={() => setShowNoteBox(false)}
                 title="Close note view"
               >
-                ✕
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
               </button>
             </div>
           </div>
@@ -1267,8 +1267,12 @@ export default function MessageView({
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-              <span style={{ fontSize: '1.2rem' }}>
-                {message.trackingInfo.opened_at ? '👁️' : '⏳'}
+              <span style={{ display: 'inline-flex', alignItems: 'center', color: message.trackingInfo.opened_at ? 'var(--color-success)' : 'var(--color-warning)' }}>
+                {message.trackingInfo.opened_at ? (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                )}
               </span>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
@@ -1281,7 +1285,7 @@ export default function MessageView({
                     className={`badge ${message.trackingInfo.opened_at ? 'badge-green' : 'badge-amber'}`}
                     style={{ fontSize: '0.7rem', padding: '0.1rem 0.45rem' }}
                   >
-                    {message.trackingInfo.opened_at ? '✓✓ Read' : '✓ Unopened'}
+                    {message.trackingInfo.opened_at ? '[READ]' : '[UNOPENED]'}
                   </span>
                 </div>
                 <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
@@ -1357,7 +1361,7 @@ export default function MessageView({
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-              <span style={{ fontSize: '1.25rem' }}>🛡️</span>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary-light)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
               <div>
                 <strong style={{ fontSize: '0.85rem', color: 'var(--color-text-primary)' }}>Remote images & tracking beacons are blocked</strong>
                 <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>Images are blocked to prevent the sender from tracking your location and IP. You can safely load them below.</p>
@@ -1387,8 +1391,10 @@ export default function MessageView({
                 className="btn btn-ghost btn-xs"
                 onClick={() => setShowPrivacyModal(true)}
                 title="Configure viewer privacy & script permissions"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}
               >
-                ⚙️ Options
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                <span>Options</span>
               </button>
             </div>
           </div>
@@ -1411,7 +1417,7 @@ export default function MessageView({
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--color-error)' }}>
-              <span>⚡</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
               <span><strong>Dynamic JavaScript Active:</strong> Sandboxed execution is enabled for this email.</span>
             </div>
             <button
@@ -1710,7 +1716,9 @@ export default function MessageView({
           <div className="compose-modal card" style={{ maxWidth: 720, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
             <div className="compose-header">
               <h3>Security & RFC822 Header Inspector</h3>
-              <button type="button" className="btn btn-ghost btn-xs" onClick={() => setShowHeadersModal(false)}>✕</button>
+              <button type="button" className="btn btn-ghost btn-xs" onClick={() => setShowHeadersModal(false)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+              </button>
             </div>
 
             <div style={{ padding: '1.25rem', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem' }}>

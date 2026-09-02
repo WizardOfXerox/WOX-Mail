@@ -402,20 +402,18 @@ router.get('/folder/:name', async (req, res, next) => {
       });
     }
 
-    // If user is archive@wox.world or folder is Archive, return compliance archive stream
-    if (req.user.email?.toLowerCase() === 'archive@wox.world' || folderName.toLowerCase() === 'archive') {
+    // If user is archive@wox.world, return domain-wide compliance archive stream
+    if (req.user.email?.toLowerCase() === 'archive@wox.world') {
       const archiveResult = await complianceArchiveService.getArchivedMessages({
         page,
         limit,
         search: req.query.search || '',
         direction: folderName.toLowerCase() === 'sent' ? 'outbound' : (req.query.direction || 'all'),
       });
-      if (archiveResult.messages.length > 0 || req.user.email?.toLowerCase() === 'archive@wox.world') {
-        return res.json({
-          folder: folderName,
-          ...archiveResult,
-        });
-      }
+      return res.json({
+        folder: folderName,
+        ...archiveResult,
+      });
     }
 
     if (folderName.toLowerCase() === 'outbox') {
@@ -1994,7 +1992,7 @@ router.post('/batch',
         case 'spam': {
           let moveRes;
           try {
-            moveRes = await imapService.moveMessages(client, folder, uids, 'Junk');
+            moveRes = await imapService.moveMessages(client, folder, uids, 'Spam');
           } catch {
             await client.mailboxCreate('Junk').catch(() => {});
             moveRes = await imapService.moveMessages(client, folder, uids, 'Junk');
@@ -2064,8 +2062,10 @@ router.put('/spam/:uid', async (req, res, next) => {
     const folder = req.query.folder || 'INBOX';
     const uid = parseInt(req.params.uid, 10);
 
-    await imapService.moveMessages(client, folder, [uid], 'Junk');
-    res.json({ message: 'Marked as spam' });
+    const isAlreadySpam = folder.toLowerCase().includes('spam') || folder.toLowerCase().includes('junk');
+    const destination = isAlreadySpam ? 'INBOX' : 'Spam';
+    await imapService.moveMessages(client, folder, [uid], destination);
+    res.json({ message: isAlreadySpam ? 'Moved to Inbox' : 'Marked as spam' });
   } catch (err) {
     next(err);
   }

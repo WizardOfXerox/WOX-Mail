@@ -87,6 +87,43 @@ export async function getFolderListFast(client) {
 }
 
 /**
+ * Safely acquire a mailbox lock with timeout and deadlock prevention.
+ * If the timeout triggers before lock arrives, any late-arriving lock is immediately released,
+ * and the client is marked unusable to prevent connection poisoning.
+ */
+export async function acquireMailboxLock(client, folderPath, timeoutMs = 25000) {
+  let lockTimeoutOccurred = false;
+  let timer;
+
+  try {
+    const lock = await Promise.race([
+      client.getMailboxLock(folderPath).then((l) => {
+        if (lockTimeoutOccurred) {
+          try { l.release(); } catch {}
+          return null;
+        }
+        return l;
+      }),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          lockTimeoutOccurred = true;
+          reject(new Error(`IMAP mailbox lock timeout (${timeoutMs}ms) on ${folderPath}`));
+        }, timeoutMs);
+      }),
+    ]);
+    return lock;
+  } catch (err) {
+    if (lockTimeoutOccurred) {
+      client.usable = false;
+      try { client.close(); } catch {}
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * Resolve folder alias (e.g. 'Spam' -> 'Junk', 'Sent' -> 'Sent').
  * @param {ImapFlow} client
  * @param {string} folder
@@ -103,6 +140,12 @@ export async function resolveFolder(client, folder) {
   if (fLower === 'the feed' || fLower === 'thefeed' || fLower === '__feed') return 'The Feed';
   if (fLower === 'paper trail' || fLower === 'papertrail' || fLower === '__papertrail') return 'Paper Trail';
   if (fLower === 'outbox') return 'Outbox';
+
+  const isGmail = Boolean(
+    client?.options?.host?.includes('gmail') ||
+    client?.options?.auth?.user?.endsWith('@gmail.com') ||
+    client?.serverInfo?.vendor?.toLowerCase()?.includes('google')
+  );
 
   try {
     const folders = await getFolderListFast(client);
@@ -124,30 +167,35 @@ export async function resolveFolder(client, folder) {
     if (fLower === 'sent' || fLower === 'sent messages' || fLower === 'sent items') {
       match = folders.find((f) => f.specialUse === '\\Sent' || f.name.toLowerCase().includes('sent') || f.path.toLowerCase().includes('sent'));
       if (match) return match.path;
+      if (isGmail) return '[Gmail]/Sent Mail';
     }
 
     // Trash: Gmail [Gmail]/Bin, Outlook "Deleted Items", iCloud "Deleted Messages", Yahoo "Trash"
     if (fLower === 'trash' || fLower === 'deleted' || fLower === 'bin' || fLower === 'deleted items' || fLower === 'deleted messages') {
       match = folders.find((f) => f.specialUse === '\\Trash' || f.name.toLowerCase().includes('trash') || f.name.toLowerCase().includes('bin') || f.name.toLowerCase().includes('deleted') || f.path.toLowerCase().includes('trash') || f.path.toLowerCase().includes('bin') || f.path.toLowerCase().includes('deleted'));
       if (match) return match.path;
+      if (isGmail) return '[Gmail]/Bin';
     }
 
     // Spam: Gmail [Gmail]/Spam, Outlook "Junk Email", Yahoo "Bulk Mail", iCloud/Fastmail "Junk"
     if (fLower === 'spam' || fLower === 'junk' || fLower === 'junk email' || fLower === 'bulk' || fLower === 'bulk mail') {
       match = folders.find((f) => f.specialUse === '\\Junk' || f.name.toLowerCase().includes('spam') || f.name.toLowerCase().includes('junk') || f.name.toLowerCase().includes('bulk') || f.path.toLowerCase().includes('spam') || f.path.toLowerCase().includes('junk') || f.path.toLowerCase().includes('bulk'));
       if (match) return match.path;
+      if (isGmail) return '[Gmail]/Spam';
     }
 
     // Drafts: Gmail [Gmail]/Drafts, Yahoo "Draft", Outlook/iCloud/Zoho/Fastmail "Drafts"
     if (fLower === 'drafts' || fLower === 'draft') {
       match = folders.find((f) => f.specialUse === '\\Drafts' || f.name.toLowerCase().includes('draft') || f.path.toLowerCase().includes('draft'));
       if (match) return match.path;
+      if (isGmail) return '[Gmail]/Drafts';
     }
 
     // Archive: Gmail [Gmail]/All Mail, Outlook/iCloud/Zoho "Archive", Fastmail "Archive"
     if (fLower === 'archive' || fLower === 'all mail' || fLower === 'archives') {
       match = folders.find((f) => f.specialUse === '\\Archive' || f.specialUse === '\\All' || f.name.toLowerCase().includes('all mail') || f.path.toLowerCase().includes('all mail') || f.name.toLowerCase().includes('archive') || f.path.toLowerCase().includes('archive'));
       if (match) return match.path;
+      if (isGmail) return '[Gmail]/All Mail';
     }
 
     // Social: native folder or virtual filter
@@ -167,10 +215,20 @@ export async function resolveFolder(client, folder) {
     // Fallback to static resolution if list fails
   }
 
+  // Provider-aware static fallbacks
+  if (isGmail) {
+    if (fLower === 'spam' || fLower === 'junk' || fLower === 'bulk mail' || fLower === 'junk email') return '[Gmail]/Spam';
+    if (fLower === 'archive' || fLower === 'all mail' || fLower === 'archives') return '[Gmail]/All Mail';
+    if (fLower === 'trash' || fLower === 'bin' || fLower === 'deleted items' || fLower === 'deleted messages') return '[Gmail]/Bin';
+    if (fLower === 'sent' || fLower === 'sent items' || fLower === 'sent messages') return '[Gmail]/Sent Mail';
+    if (fLower === 'drafts' || fLower === 'draft') return '[Gmail]/Drafts';
+  }
+
   if (fLower === 'spam' || fLower === 'junk' || fLower === 'bulk mail' || fLower === 'junk email') return 'Junk';
   if (fLower === 'sent' || fLower === 'sent items' || fLower === 'sent messages') return 'Sent';
   if (fLower === 'trash' || fLower === 'bin' || fLower === 'deleted items' || fLower === 'deleted messages') return 'Trash';
   if (fLower === 'drafts' || fLower === 'draft') return 'Drafts';
+  if (fLower === 'archive' || fLower === 'all mail') return 'Archive';
   if (fLower === 'promotions') return 'Promotions';
   if (fLower === 'social') return 'Social';
   return folder;
@@ -206,10 +264,7 @@ export async function fetchMessages(client, folder = 'INBOX', { page = 1, limit 
 
   let lock;
   try {
-    lock = await Promise.race([
-      client.getMailboxLock(resolved),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('IMAP mailbox lock timeout')), 8000)),
-    ]);
+    lock = await acquireMailboxLock(client, resolved, 25000);
   } catch (lockErr) {
     logger.warn({ folder: resolved, err: lockErr.message }, 'Failed to acquire mailbox lock for fetchMessages');
     return { messages: [], total: 0 };
@@ -279,10 +334,7 @@ export async function fetchStarredMessages(client, { page = 1, limit = 25, folde
       searchFilter = { all: true };
     }
 
-    lock = await Promise.race([
-      client.getMailboxLock(targetFolder),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('lock timeout')), 5000)),
-    ]);
+    lock = await acquireMailboxLock(client, targetFolder, 25000);
     const uids = await client.search(searchFilter, { uid: true });
     if (Array.isArray(uids) && uids.length > 0) {
       for await (const msg of client.fetch(uids.join(','), {
@@ -435,16 +487,13 @@ export async function appendSentMessage(client, content) {
  */
 export async function fetchMessage(client, folder, uid) {
   let resolved = await resolveFolder(client, folder);
-  if (resolved === 'Starred' || resolved === 'The Feed' || resolved === 'Paper Trail') {
+  if (resolved === 'Starred' || resolved === 'The Feed' || resolved === 'Paper Trail' || resolved === 'Promotions' || resolved === 'Social') {
     resolved = 'INBOX';
   }
 
   let lock;
   try {
-    lock = await Promise.race([
-      client.getMailboxLock(resolved),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('IMAP mailbox lock timeout')), 8000)),
-    ]);
+    lock = await acquireMailboxLock(client, resolved, 25000);
   } catch (lockErr) {
     logger.warn({ folder: resolved, uid, err: lockErr.message }, 'Failed to acquire mailbox lock for fetchMessage');
     return null;
@@ -459,7 +508,7 @@ export async function fetchMessage(client, folder, uid) {
         uid: true,
         source: true,
       }, { uid: true }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('IMAP fetchOne timeout')), 8000)),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('IMAP fetchOne timeout')), 25000)),
     ]);
 
     if (!msg) return null;
@@ -497,7 +546,7 @@ export async function fetchMessage(client, folder, uid) {
 export async function moveMessages(client, fromFolder, uids, toFolder) {
   const resolvedFrom = await resolveFolder(client, fromFolder);
   const resolvedTo = await resolveFolder(client, toFolder);
-  const lock = await client.getMailboxLock(resolvedFrom);
+  const lock = await acquireMailboxLock(client, resolvedFrom, 25000);
   try {
     const res = await client.messageMove(uids.join(','), resolvedTo, { uid: true });
     const uidMap = {};
@@ -515,7 +564,7 @@ export async function moveMessages(client, fromFolder, uids, toFolder) {
     const newUids = Object.values(uidMap);
     return { ...res, uidMap, newUids: newUids.length > 0 ? newUids : uids };
   } finally {
-    lock.release();
+    if (lock) lock.release();
   }
 }
 
@@ -527,11 +576,11 @@ export async function moveMessages(client, fromFolder, uids, toFolder) {
  */
 export async function deleteMessages(client, folder, uids) {
   const resolved = await resolveFolder(client, folder);
-  const lock = await client.getMailboxLock(resolved);
+  const lock = await acquireMailboxLock(client, resolved, 25000);
   try {
     await client.messageDelete(uids.join(','), { uid: true });
   } finally {
-    lock.release();
+    if (lock) lock.release();
   }
 }
 
@@ -545,10 +594,10 @@ export async function deleteMessages(client, folder, uids) {
  */
 export async function toggleFlag(client, folder, uids, flag, add = true) {
   let resolved = await resolveFolder(client, folder);
-  if (resolved === 'Starred' || resolved === 'The Feed' || resolved === 'Paper Trail') {
+  if (resolved === 'Starred' || resolved === 'The Feed' || resolved === 'Paper Trail' || resolved === 'Promotions' || resolved === 'Social') {
     resolved = 'INBOX';
   }
-  const lock = await client.getMailboxLock(resolved);
+  const lock = await acquireMailboxLock(client, resolved, 25000);
   try {
     if (add) {
       await client.messageFlagsAdd(uids.join(','), [flag], { uid: true });
@@ -556,7 +605,7 @@ export async function toggleFlag(client, folder, uids, flag, add = true) {
       await client.messageFlagsRemove(uids.join(','), [flag], { uid: true });
     }
   } finally {
-    lock.release();
+    if (lock) lock.release();
   }
 }
 
@@ -568,12 +617,12 @@ export async function toggleFlag(client, folder, uids, flag, add = true) {
  * @returns {Promise<number[]>} Matching UIDs
  */
 export async function searchMessages(client, folder, criteria) {
-  const lock = await client.getMailboxLock(folder);
+  const resolved = await resolveFolder(client, folder);
+  const lock = await acquireMailboxLock(client, resolved, 25000);
   try {
-    const results = await client.search(criteria, { uid: true });
-    return results;
+    return await client.search(criteria, { uid: true });
   } finally {
-    lock.release();
+    if (lock) lock.release();
   }
 }
 
