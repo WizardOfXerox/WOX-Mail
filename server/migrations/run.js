@@ -27,6 +27,7 @@ import { up as m024Up } from './024_chat_forwarding_and_disposable.js';
 import { up as m025Up } from './025_spam_learning_and_quotas.js';
 import { up as m026Up } from './026_compliance_archive_journal.js';
 import { up as m027Up } from './027_intelligence_and_controlled_attachments.js';
+import { up as m028Up } from './028_sieve_rules_and_search_index.js';
 
 /**
  * Simple migration runner.
@@ -62,10 +63,11 @@ const migrations = [
   { name: '025_spam_learning_and_quotas', up: m025Up },
   { name: '026_compliance_archive_journal', up: m026Up },
   { name: '027_intelligence_and_controlled_attachments', up: m027Up },
+  { name: '028_sieve_rules_and_search_index', up: m028Up },
 ];
 
 async function run() {
-  console.log('🗄️  Running WoxMail migrations...\n');
+  console.log('[DATABASE] Running WoxMail migrations...\n');
 
   // Create migrations tracking table
   await query(`

@@ -25,7 +25,8 @@ const SHORTCUT_GROUPS = [
   {
     category: 'Compose & Reply',
     shortcuts: [
-      { key: 'c', desc: 'Compose new message' },
+      { key: 'c', desc: 'Compose new email (single key)' },
+      { key: 'Ctrl + C', desc: 'Copy selected text (native clipboard)' },
       { key: 'r', desc: 'Reply to current sender' },
       { key: 'a', desc: 'Reply All' },
       { key: 'f', desc: 'Forward message' },
@@ -33,7 +34,7 @@ const SHORTCUT_GROUPS = [
     ],
   },
   {
-    category: 'Layout & View Modes',
+    category: 'Layout & Navigation',
     shortcuts: [
       { key: 'Ctrl + 1', desc: 'Single column list view' },
       { key: 'Ctrl + 2', desc: '3-Pane vertical split layout' },
@@ -71,7 +72,9 @@ export default function KeyboardShortcutsModal({ isOpen, onClose }) {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#2a2a4a] bg-[#1a1a32]/80">
           <div className="flex items-center gap-3">
-            <span className="text-xl">⌨️</span>
+            <span className="text-xl inline-flex text-[#a78bfa]">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="M6 8h.001"/><path d="M10 8h.001"/><path d="M14 8h.001"/><path d="M18 8h.001"/><path d="M6 12h.001"/><path d="M10 12h.001"/><path d="M14 12h.001"/><path d="M18 12h.001"/><path d="M7 16h10"/></svg>
+            </span>
             <div>
               <h2 className="text-lg font-bold text-[#f0f0f5]">Keyboard Shortcuts</h2>
               <p className="text-xs text-[#9898b0]">Superhuman & VIM-grade velocity shortcuts</p>
@@ -89,7 +92,7 @@ export default function KeyboardShortcutsModal({ isOpen, onClose }) {
         <div className="px-6 pt-4 pb-2">
           <input
             type="text"
-            placeholder="Search shortcuts (e.g. reply, archive, j/k)..."
+            placeholder="Search shortcuts (e.g. compose, copy, archive, j/k)..."
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             autoFocus
@@ -98,23 +101,25 @@ export default function KeyboardShortcutsModal({ isOpen, onClose }) {
         </div>
 
         {/* Shortcuts Grid */}
-        <div className="p-6 overflow-y-auto space-y-6 flex-1">
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
           {filteredGroups.length === 0 ? (
-            <p className="text-sm text-center text-[#6868a0] py-8">No matching shortcuts found.</p>
+            <p className="text-center text-sm text-[#6868a0] py-8">
+              No shortcuts found for "{filter}"
+            </p>
           ) : (
             filteredGroups.map((group) => (
-              <div key={group.category} className="space-y-3">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-[#a78bfa]">
+              <div key={group.category}>
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-[#7c3aed] mb-3">
                   {group.category}
                 </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   {group.shortcuts.map((s) => (
                     <div
                       key={s.key}
-                      className="flex items-center justify-between px-3 py-2 bg-[#1a1a2e] border border-[#2a2a4a]/60 rounded-xl hover:border-[#7c3aed]/40 transition-colors"
+                      className="flex items-center justify-between p-2.5 rounded-lg bg-[#1a1a30] border border-[#252545] hover:border-[#7c3aed]/40 transition-colors"
                     >
-                      <span className="text-xs text-[#d0d0e0]">{s.desc}</span>
-                      <kbd className="px-2 py-1 text-xs font-mono font-semibold text-[#a78bfa] bg-[#0f0f1a] border border-[#3a3a60] rounded-md shadow-sm">
+                      <span className="text-sm text-[#d0d0e0]">{s.desc}</span>
+                      <kbd className="px-2 py-1 text-xs font-mono font-semibold text-[#a78bfa] bg-[#0f0f1a] border border-[#3a3a5e] rounded shadow-sm">
                         {s.key}
                       </kbd>
                     </div>
@@ -126,9 +131,10 @@ export default function KeyboardShortcutsModal({ isOpen, onClose }) {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3 bg-[#0f0f1a] border-t border-[#2a2a4a] flex items-center justify-between text-xs text-[#6868a0]">
-          <span>Press <kbd className="px-1.5 py-0.5 font-mono text-[#a78bfa] bg-[#1a1a2e] border border-[#2a2a4a] rounded">?</kbd> anywhere to toggle this menu</span>
-          <span>Press <kbd className="px-1.5 py-0.5 font-mono text-[#a78bfa] bg-[#1a1a2e] border border-[#2a2a4a] rounded">Esc</kbd> to close</span>
+        <div className="px-6 py-3 border-t border-[#2a2a4a] bg-[#1a1a32]/50 text-right">
+          <span className="text-xs text-[#6868a0]">
+            Press <kbd className="px-1.5 py-0.5 font-mono text-[10px] bg-[#0f0f1a] border border-[#3a3a5e] rounded text-[#9898b0]">Esc</kbd> or click outside to dismiss
+          </span>
         </div>
       </div>
     </div>

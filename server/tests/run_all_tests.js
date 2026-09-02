@@ -66,6 +66,13 @@ const SUITES = [
   'api/40_passkeys_api.test.js',
   'api/41_undo_send_api.test.js',
   'e2e/42_browser_keyboard_navigation_e2e.test.js',
+
+  // Category VIII: Enterprise Protocols, Sieve Rules & Privacy Enclave (43-47)
+  'unit/43_use_keyboard_and_shortcuts.test.js',
+  'services/23_link_sandbox_and_security.test.js',
+  'services/24_sieve_rules_and_automation.test.js',
+  'services/25_wkd_and_mta_sts.test.js',
+  'services/26_jmap_and_backups.test.js',
 ];
 
 async function runSuite(suiteRelPath, index, total) {
@@ -74,7 +81,7 @@ async function runSuite(suiteRelPath, index, total) {
   const start = Date.now();
 
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, ['--test', fullPath], {
+    const child = spawn(process.execPath, [fullPath], {
       cwd: path.join(__dirname, '..'),
       env: { ...process.env, NODE_ENV: 'test' },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -90,8 +97,8 @@ async function runSuite(suiteRelPath, index, total) {
       try { child.kill('SIGTERM'); } catch {}
 
       const durationMs = Date.now() - start;
-      const passed = !stdout.includes('✖ failing tests:') &&
-        (stdout.includes('✔ Suite') || stdout.includes('ℹ pass') || stdout.includes('✔ 1.') || stdout.includes('✔ Setup:'));
+      const passed = !stdout.includes('✖ failing tests:') && !stderr.includes('AssertionError') &&
+        (stdout.includes('✔ Suite') || stdout.includes('✓ Suite') || stdout.includes('ℹ pass') || stdout.includes('✔ 1.') || stdout.includes('✔ Setup:'));
 
       resolve({
         suiteRelPath,
@@ -108,8 +115,7 @@ async function runSuite(suiteRelPath, index, total) {
     child.stdout.on('data', (d) => {
       const text = d.toString();
       stdout += text;
-      // Complete as soon as the top-level suite line is logged
-      if (text.includes('✔ Suite') || text.includes('✖ Suite') || text.includes('✖ failing tests:')) {
+      if (text.includes('✔ Suite') || text.includes('✓ Suite') || text.includes('✖ Suite') || text.includes('✖ failing tests:')) {
         setTimeout(finish, 80);
       }
     });

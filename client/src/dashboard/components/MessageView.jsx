@@ -4,6 +4,7 @@ import LinkPreviewModal from './LinkPreviewModal.jsx';
 import AttachmentPreviewModal from './AttachmentPreviewModal.jsx';
 import SnoozePopover from './SnoozePopover.jsx';
 import FolderMovePopover from './FolderMovePopover.jsx';
+import ContextMenu from './ContextMenu.jsx';
 import EmailPrivacyModal, { getStoredPrivacyPrefs, saveStoredPrivacyPrefs } from './EmailPrivacyModal.jsx';
 
 const NOTE_COLORS = [
@@ -45,6 +46,7 @@ export default function MessageView({
   const [privacyPrefs, setPrivacyPrefs] = useState(() => getStoredPrivacyPrefs());
   const [allowImagesThisEmail, setAllowImagesThisEmail] = useState(false);
   const [allowScriptsThisEmail, setAllowScriptsThisEmail] = useState(false);
+  const [contextMenu, setContextMenu] = useState(null);
   const snoozeBtnRef = useRef(null);
   const moveBtnRef = useRef(null);
   const moreMenuRef = useRef(null);
@@ -344,6 +346,82 @@ export default function MessageView({
           imgTarget.setAttribute('alt', '');
           resize();
         }
+      }
+    });
+
+    doc.addEventListener('contextmenu', (e) => {
+      const link = e.target.closest('a');
+      const iframeRect = iframe.getBoundingClientRect();
+      const x = iframeRect.left + e.clientX;
+      const y = iframeRect.top + e.clientY;
+      const selection = doc.getSelection ? doc.getSelection().toString() : '';
+
+      if (link && link.href) {
+        e.preventDefault();
+        setContextMenu({
+          x,
+          y,
+          title: link.href,
+          items: [
+            {
+              label: 'Safe Sandbox Preview',
+              icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>,
+              onClick: () => setModalPreview({ url: link.href, preview: null }),
+            },
+            {
+              label: 'Copy Clean Link (No Trackers)',
+              icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>,
+              onClick: () => {
+                try {
+                  const u = new URL(link.href);
+                  const cleanParams = new URLSearchParams();
+                  for (const [k, v] of u.searchParams.entries()) {
+                    if (!k.startsWith('utm_') && !['fbclid', 'gclid', 'mc_eid', '_hsenc'].includes(k.toLowerCase())) {
+                      cleanParams.append(k, v);
+                    }
+                  }
+                  u.search = cleanParams.toString();
+                  navigator.clipboard.writeText(u.toString());
+                  if (window.WoxToast) window.WoxToast.success('Clean URL copied to clipboard');
+                } catch {
+                  navigator.clipboard.writeText(link.href);
+                  if (window.WoxToast) window.WoxToast.success('Link copied');
+                }
+              },
+            },
+            {
+              label: 'Open in New Tab',
+              icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>,
+              onClick: () => window.open(link.href, '_blank', 'noopener,noreferrer'),
+            },
+          ],
+        });
+      } else if (selection && selection.trim().length > 0) {
+        e.preventDefault();
+        setContextMenu({
+          x,
+          y,
+          title: `Selection (${selection.slice(0, 24)}...)`,
+          items: [
+            {
+              label: 'Copy Clean Text',
+              icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>,
+              onClick: () => {
+                navigator.clipboard.writeText(selection.trim());
+                if (window.WoxToast) window.WoxToast.success('Text copied');
+              },
+            },
+            {
+              label: 'Create Private Sticky Note',
+              icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>,
+              onClick: () => {
+                setShowNoteBox(true);
+                setIsEditingNote(true);
+                setNoteText((prev) => (prev ? `${prev}\n\n> ${selection.trim()}` : `> ${selection.trim()}`));
+              },
+            },
+          ],
+        });
       }
     });
   }, [message?.html, message?.uid, allowImagesThisEmail, allowScriptsThisEmail, privacyPrefs]);
@@ -1572,6 +1650,17 @@ export default function MessageView({
           setPrivacyPrefs(updated);
         }}
       />
+
+      {/* Context Menu on Links / Selections */}
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={contextMenu.items}
+          title={contextMenu.title}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
       </div>
     </section>
   );

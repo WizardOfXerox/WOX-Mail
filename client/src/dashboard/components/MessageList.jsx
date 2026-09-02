@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { useDebounce } from '../../shared/hooks.js';
 import { formatDate } from '../../shared/utils/formatters.js';
 import BatchToolbar from './BatchToolbar.jsx';
+import ContextMenu from './ContextMenu.jsx';
 import { getFolderIcon } from './Sidebar.jsx';
 
 export default function MessageList({
@@ -37,6 +38,7 @@ export default function MessageList({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUids, setSelectedUids] = useState(new Set());
   const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [contextMenu, setContextMenu] = useState(null);
   const longPressTimerRef = useRef(null);
   const isLongPressActiveRef = useRef(false);
   const listBodyRef = useRef(null);
@@ -248,6 +250,88 @@ export default function MessageList({
     } else {
       onSelect(uid);
     }
+  };
+
+  const handleRowContextMenu = (e, msg) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const x = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : window.innerWidth / 2);
+    const y = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : window.innerHeight / 2);
+    const isStarred = Boolean(msg.isStarred || msg.flags?.includes('\\Flagged') || msg.starred);
+
+    const items = [
+      {
+        label: msg.isRead ? 'Mark as Unread' : 'Mark as Read',
+        icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 13V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v12c0 1.1.9 2 2 2h9"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>,
+        shortcut: 'U',
+        onClick: () => {
+          if (msg.isRead) {
+            onBatchMarkUnread ? onBatchMarkUnread([msg.uid]) : null;
+          } else {
+            onBatchMarkRead ? onBatchMarkRead([msg.uid]) : null;
+          }
+        },
+      },
+      {
+        label: isStarred ? 'Unstar Message' : 'Star Message',
+        icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>,
+        shortcut: 'S',
+        onClick: () => { if (onStar) onStar(msg.uid); },
+      },
+      {
+        label: 'Snooze Until Tomorrow',
+        icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
+        onClick: () => {
+          const tomorrow = new Date(Date.now() + 86400000).toISOString();
+          if (onBatchSnooze) onBatchSnooze([msg.uid], tomorrow);
+        },
+      },
+      {
+        label: 'Archive',
+        icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>,
+        shortcut: 'E',
+        onClick: () => { if (onBatchArchive) onBatchArchive([msg.uid]); },
+      },
+      { divider: true },
+      {
+        label: 'Copy Subject',
+        icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>,
+        onClick: () => {
+          navigator.clipboard.writeText(msg.subject || '');
+          if (window.WoxToast) window.WoxToast.success('Subject copied');
+        },
+      },
+      {
+        label: 'Copy Sender Address',
+        icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></svg>,
+        onClick: () => {
+          const addr = typeof msg.from === 'object' ? (msg.from?.address || '') : String(msg.from || '');
+          navigator.clipboard.writeText(addr);
+          if (window.WoxToast) window.WoxToast.success('Sender address copied');
+        },
+      },
+      { divider: true },
+      {
+        label: 'Report as Spam',
+        icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>,
+        danger: true,
+        onClick: () => { if (onBatchSpam) onBatchSpam([msg.uid]); },
+      },
+      {
+        label: 'Delete Message',
+        icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>,
+        danger: true,
+        shortcut: '#',
+        onClick: () => { if (onDelete) onDelete(msg.uid); },
+      },
+    ];
+
+    setContextMenu({
+      x,
+      y,
+      items,
+      title: msg.subject || '(No Subject)',
+    });
   };
 
   // Retry failed outbox message
@@ -639,6 +723,7 @@ export default function MessageList({
                   msg.status === 'failed' ? 'outbox-item-failed' : '',
                 ].filter(Boolean).join(' ')}
                 onClick={() => handleRowClick(msg.uid)}
+                onContextMenu={(e) => handleRowContextMenu(e, msg)}
                 onTouchStart={() => handleTouchStart(msg.uid)}
                 onTouchEnd={handleTouchEnd}
                 onTouchMove={handleTouchMove}
@@ -1074,6 +1159,17 @@ export default function MessageList({
           </div>
         )}
       </div>
+
+      {/* Context Menu / Mobile Action Sheet */}
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={contextMenu.items}
+          title={contextMenu.title}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </section>
   );
 }

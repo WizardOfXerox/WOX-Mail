@@ -3,10 +3,15 @@ import React, { useState, useEffect } from 'react';
 const STORAGE_KEY = 'woxmail_email_privacy';
 
 export const DEFAULT_PRIVACY_PREFS = {
-  remoteImages: 'block_all', // 'block_all' | 'trusted_only' | 'allow_all'
+  remoteImages: 'proxy_cloak', // 'proxy_cloak' | 'neutralize_pixels' | 'block_all' | 'trusted_only' | 'allow_all'
   trustedSenders: [],
   allowScripts: false,
   interceptLinks: true,
+  blockWebFonts: true,
+  disarmForms: true,
+  homographShield: true,
+  stripMarketingRedirects: true,
+  authFailurePolicy: 'warning', // 'warning' | 'quarantine' | 'block'
 };
 
 export function getStoredPrivacyPrefs() {
@@ -99,11 +104,11 @@ export default function EmailPrivacyModal({
       <div
         className="card"
         style={{
-          maxWidth: '560px',
+          maxWidth: '580px',
           width: '100%',
           maxHeight: '90vh',
           overflowY: 'auto',
-          padding: '1.75rem',
+          padding: '1.5rem',
           background: 'var(--color-bg-card)',
           border: '1px solid var(--color-border)',
           borderRadius: 'var(--radius-xl)',
@@ -115,9 +120,11 @@ export default function EmailPrivacyModal({
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', borderBottom: '1px solid var(--color-border)', paddingBottom: '0.75rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-            <span style={{ fontSize: '1.4rem' }}>🛡️</span>
+            <span style={{ display: 'inline-flex', color: 'var(--color-primary-light)' }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </span>
             <div>
-              <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800 }}>Email Viewer Security & Privacy</h3>
+              <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800 }}>Email Viewer Security & Privacy</h3>
               <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>User preferences for remote images, JavaScript execution, and link shielding.</p>
             </div>
           </div>
@@ -132,7 +139,7 @@ export default function EmailPrivacyModal({
         </div>
 
         {/* Current Email Overrides */}
-        <div style={{ marginBottom: '1.5rem', padding: '0.85rem 1rem', background: 'rgba(124, 58, 237, 0.08)', borderRadius: 'var(--radius-md)', border: '1px solid rgba(139, 92, 246, 0.25)' }}>
+        <div style={{ marginBottom: '1.25rem', padding: '0.85rem 1rem', background: 'rgba(124, 58, 237, 0.08)', borderRadius: 'var(--radius-md)', border: '1px solid rgba(139, 92, 246, 0.25)' }}>
           <div style={{ fontSize: '0.8125rem', fontWeight: 700, marginBottom: '0.6rem', color: 'var(--color-primary-light)' }}>
             This Email Thread Controls:
           </div>
@@ -143,7 +150,7 @@ export default function EmailPrivacyModal({
               onClick={() => setAllowImagesThisEmail && setAllowImagesThisEmail(!allowImagesThisEmail)}
               style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
             >
-              <span>🖼️</span>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
               <span>{allowImagesThisEmail ? 'Images Allowed (Loaded)' : 'Load Remote Images'}</span>
             </button>
 
@@ -161,18 +168,49 @@ export default function EmailPrivacyModal({
               }}
               style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
             >
-              <span>⚡</span>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
               <span>{allowScriptsThisEmail ? 'JavaScript Enabled' : 'Allow JavaScript'}</span>
             </button>
           </div>
         </div>
 
-        {/* Global Preference 1: Remote Images */}
-        <div style={{ marginBottom: '1.5rem' }}>
-          <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 700, marginBottom: '0.4rem' }}>
-            🖼️ Remote Content & Tracking Pixels
-          </label>
+        {/* 1. Remote Content & Tracking Pixels */}
+        <div style={{ marginBottom: '1.25rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.4rem' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+            <strong style={{ fontSize: '0.875rem' }}>Remote Content & Tracking Pixels</strong>
+          </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', fontSize: '0.8125rem' }}>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="remoteImages"
+                value="proxy_cloak"
+                checked={prefs.remoteImages === 'proxy_cloak'}
+                onChange={() => updatePref('remoteImages', 'proxy_cloak')}
+                style={{ marginTop: '3px' }}
+              />
+              <div>
+                <strong>Cloak IP via Encrypted Image Proxy (Recommended)</strong>
+                <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.72rem' }}>Routes images through WoxMail backend cache. Sender never sees your real IP or location.</div>
+              </div>
+            </label>
+
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="remoteImages"
+                value="neutralize_pixels"
+                checked={prefs.remoteImages === 'neutralize_pixels'}
+                onChange={() => updatePref('remoteImages', 'neutralize_pixels')}
+                style={{ marginTop: '3px' }}
+              />
+              <div>
+                <strong>Neutralize Spy-Pixels Only (Preserve layout)</strong>
+                <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.72rem' }}>Disarms invisible 1x1 marketing trackers while rendering newsletter images safely.</div>
+              </div>
+            </label>
+
             <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', cursor: 'pointer' }}>
               <input
                 type="radio"
@@ -183,8 +221,8 @@ export default function EmailPrivacyModal({
                 style={{ marginTop: '3px' }}
               />
               <div>
-                <strong>Block all remote images by default (Recommended)</strong>
-                <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.75rem' }}>Prevents tracking pixels from recording your IP, device, and open times.</div>
+                <strong>Block all remote images by default</strong>
+                <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.72rem' }}>Prevents all external images from loading until explicitly allowed.</div>
               </div>
             </label>
 
@@ -199,32 +237,27 @@ export default function EmailPrivacyModal({
               />
               <div>
                 <strong>Always load images from trusted senders</strong>
-                <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.75rem' }}>Only loads images automatically if the sender is in your whitelist.</div>
-              </div>
-            </label>
-
-            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', cursor: 'pointer' }}>
-              <input
-                type="radio"
-                name="remoteImages"
-                value="allow_all"
-                checked={prefs.remoteImages === 'allow_all'}
-                onChange={() => updatePref('remoteImages', 'allow_all')}
-                style={{ marginTop: '3px' }}
-              />
-              <div>
-                <strong>Always load all remote images</strong>
-                <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.75rem' }}>Loads all external content automatically without asking.</div>
+                <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.72rem' }}>Only loads images automatically if the sender is in your whitelist.</div>
               </div>
             </label>
           </div>
+
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.6rem', fontSize: '0.78rem', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={Boolean(prefs.blockWebFonts)}
+              onChange={(e) => updatePref('blockWebFonts', e.target.checked)}
+            />
+            <span>Block remote web fonts (@font-face CDN tracking)</span>
+          </label>
         </div>
 
-        {/* Global Preference 2: JavaScript & Dynamic Scripts */}
-        <div style={{ marginBottom: '1.5rem' }}>
-          <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 700, marginBottom: '0.4rem' }}>
-            ⚡ JavaScript & Executable Content
-          </label>
+        {/* 2. JavaScript & Code Sandboxing */}
+        <div style={{ marginBottom: '1.25rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.4rem' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            <strong style={{ fontSize: '0.875rem' }}>JavaScript & Executable Content</strong>
+          </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', fontSize: '0.8125rem' }}>
             <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', cursor: 'pointer' }}>
               <input
@@ -235,55 +268,96 @@ export default function EmailPrivacyModal({
               />
               <div>
                 <strong>Block all JavaScript by default (Recommended)</strong>
-                <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.75rem' }}>Keeps email viewing completely sandboxed from malicious scripts.</div>
+                <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.72rem' }}>Keeps email viewing completely sandboxed from malicious scripts.</div>
+              </div>
+            </label>
+
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={Boolean(prefs.disarmForms)}
+                onChange={(e) => updatePref('disarmForms', e.target.checked)}
+                style={{ marginTop: '3px' }}
+              />
+              <div>
+                <strong>Disarm embedded HTML forms & password inputs (Anti-Phishing)</strong>
+                <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.72rem' }}>Neutralizes credential harvesting forms embedded in incoming emails.</div>
               </div>
             </label>
           </div>
         </div>
 
-        {/* Global Preference 3: Link Shield & Preview */}
-        <div style={{ marginBottom: '1.5rem' }}>
-          <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 700, marginBottom: '0.4rem' }}>
-            🔗 Link Inspection & Phishing Shield
-          </label>
+        {/* 3. Link Inspection & Phishing Shield */}
+        <div style={{ marginBottom: '1.25rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.4rem' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            <strong style={{ fontSize: '0.875rem' }}>Link Inspection & Phishing Shield</strong>
+          </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', fontSize: '0.8125rem' }}>
             <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', cursor: 'pointer' }}>
               <input
                 type="checkbox"
-                checked={prefs.interceptLinks}
+                checked={Boolean(prefs.interceptLinks)}
                 onChange={(e) => updatePref('interceptLinks', e.target.checked)}
                 style={{ marginTop: '3px' }}
               />
               <div>
                 <strong>Inspect external links with security preview before opening</strong>
-                <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.75rem' }}>Displays domain verification, SSL health, and site metadata before visiting.</div>
+                <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.72rem' }}>Displays domain verification, SSL health, and site metadata before visiting.</div>
+              </div>
+            </label>
+
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={Boolean(prefs.homographShield)}
+                onChange={(e) => updatePref('homographShield', e.target.checked)}
+                style={{ marginTop: '3px' }}
+              />
+              <div>
+                <strong>Detect Homograph / Punycode domain spoofing attacks</strong>
+                <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.72rem' }}>Alerts on deceptive Cyrillic/Unicode characters disguised as legitimate domains.</div>
+              </div>
+            </label>
+
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={Boolean(prefs.stripMarketingRedirects)}
+                onChange={(e) => updatePref('stripMarketingRedirects', e.target.checked)}
+                style={{ marginTop: '3px' }}
+              />
+              <div>
+                <strong>Strip marketing click-tracking redirect wrappers</strong>
+                <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.72rem' }}>Unwraps tracking links directly to the clean destination URL.</div>
               </div>
             </label>
           </div>
         </div>
 
-        {/* Whitelist: Trusted Senders */}
-        <div style={{ marginBottom: '1.5rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-            <label style={{ fontSize: '0.875rem', fontWeight: 700, margin: 0 }}>
-              🛡️ Trusted Senders Whitelist ({prefs.trustedSenders.length})
-            </label>
-            {currentSender && !prefs.trustedSenders.includes(currentSender.toLowerCase()) && (
+        {/* 4. Trusted Senders Whitelist */}
+        <div style={{ marginBottom: '1.25rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              <strong style={{ fontSize: '0.875rem' }}>Trusted Senders Whitelist ({prefs.trustedSenders.length})</strong>
+            </div>
+            {currentSender && (
               <button
                 type="button"
                 className="btn btn-ghost btn-xs"
                 onClick={() => addTrustedSender(currentSender)}
-                style={{ color: 'var(--color-primary-light)', fontSize: '0.75rem' }}
+                style={{ fontSize: '0.72rem', color: 'var(--color-primary-light)' }}
               >
                 + Trust Current Sender
               </button>
             )}
           </div>
 
-          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+          <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.5rem' }}>
             <input
               type="text"
-              className="input input-sm"
+              className="input"
               placeholder="e.g. newsletter@github.com or @company.com"
               value={newSenderInput}
               onChange={(e) => setNewSenderInput(e.target.value)}
@@ -293,7 +367,7 @@ export default function EmailPrivacyModal({
                   addTrustedSender(newSenderInput);
                 }
               }}
-              style={{ flex: 1, fontSize: '0.8125rem' }}
+              style={{ fontSize: '0.78rem', flex: 1 }}
             />
             <button
               type="button"
@@ -304,39 +378,41 @@ export default function EmailPrivacyModal({
             </button>
           </div>
 
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', maxHeight: '120px', overflowY: 'auto', padding: '0.5rem', background: 'var(--color-bg-elevated)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
+          <div style={{ maxHeight: '120px', overflowY: 'auto', background: 'var(--color-bg-input)', borderRadius: 'var(--radius-md)', padding: '0.4rem', border: '1px solid var(--color-border)' }}>
             {prefs.trustedSenders.length === 0 ? (
-              <span style={{ fontSize: '0.75rem', color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
+              <div style={{ fontSize: '0.72rem', color: 'var(--color-text-tertiary)', textAlign: 'center', padding: '0.5rem 0' }}>
                 No trusted senders added yet. Remote images from all senders will be blocked until approved.
-              </span>
+              </div>
             ) : (
-              prefs.trustedSenders.map((sender) => (
-                <span
-                  key={sender}
-                  className="badge badge-purple"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
-                >
-                  <span>{sender}</span>
-                  <button
-                    type="button"
-                    onClick={() => removeTrustedSender(sender)}
-                    style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, fontSize: '0.8rem', lineHeight: 1 }}
-                    title="Remove sender"
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                {prefs.trustedSenders.map((sender) => (
+                  <span
+                    key={sender}
+                    className="badge badge-purple"
+                    style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
                   >
-                    ✕
-                  </button>
-                </span>
-              ))
+                    <span>{sender}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeTrustedSender(sender)}
+                      style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0 }}
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+              </div>
             )}
           </div>
         </div>
 
         {/* Footer Actions */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--color-border)', paddingTop: '1rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '0.75rem', borderTop: '1px solid var(--color-border)', flexWrap: 'wrap', gap: '0.5rem' }}>
           <button
             type="button"
-            className="btn btn-ghost btn-xs text-secondary"
+            className="btn btn-ghost btn-xs"
             onClick={handleResetDefaults}
+            style={{ color: 'var(--color-text-tertiary)', fontSize: '0.75rem' }}
           >
             Reset to Safe Defaults
           </button>

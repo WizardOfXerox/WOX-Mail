@@ -63,6 +63,8 @@ import followupRouter from './src/routes/followup.js';
 import deliverabilityRouter from './src/routes/deliverability.js';
 import dossierRouter from './src/routes/dossier.js';
 import snippetsRouter from './src/routes/snippets.js';
+import securitySandboxRouter from './src/routes/securitySandbox.js';
+import automationAndProtocolsRouter from './src/routes/automationAndProtocols.js';
 import { setVerificationSocketIO } from './src/services/verificationService.js';
 
 // Background jobs
@@ -203,6 +205,9 @@ app.use('/api/followup', followupRouter);
 app.use('/api/deliverability', deliverabilityRouter);
 app.use('/api/dossier', dossierRouter);
 app.use('/api/snippets', snippetsRouter);
+app.use('/api/security', securitySandboxRouter);
+app.use('/api', automationAndProtocolsRouter);
+app.use('/', automationAndProtocolsRouter);
 app.use('/', autodiscoverRouter);
 
 // Global API rate limiter (after specific route limiters)
@@ -227,7 +232,7 @@ server.on('error', (err) => {
 });
 
 server.listen(PORT, () => {
-  logger.info(`🚀 WoxMail server running at http://localhost:${PORT}`);
+  logger.info(`[SERVER] WoxMail server running at http://localhost:${PORT}`);
   logger.info(`   Environment: ${process.env.NODE_ENV || 'development'}`);
   logger.info(`   Permanent domain: ${process.env.DOMAIN_PERMANENT || 'wox.world'}`);
   logger.info(`   Temp domain: ${process.env.DOMAIN_TEMP || 'mail.wox.world'}`);

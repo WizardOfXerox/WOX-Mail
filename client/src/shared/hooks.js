@@ -230,12 +230,13 @@ export function useDebounce(value, delay = 300) {
 /**
  * Hook for keyboard shortcuts with IME composition guards, contenteditable protection,
  * and cross-platform modifier normalization (Cmd/Ctrl).
+ * Strictly isolates modifier keys (Ctrl/Cmd) to prevent intercepting native copy/paste/cut.
  * @param {Object<string, Function>} shortcuts - key → handler
  */
 export function useKeyboard(shortcuts) {
   useEffect(() => {
     function handler(e) {
-      // 1. Guard against IME composition events (Chinese/Japanese/Korean text entry)
+      // 1. Guard against IME composition events
       if (e.isComposing || e.keyCode === 229) return;
 
       // 2. Guard against typing inside form inputs, textareas, selects, or rich text contenteditable elements
@@ -256,21 +257,46 @@ export function useKeyboard(shortcuts) {
         return;
       }
 
-      const hasMod = e.ctrlKey || e.metaKey;
-      const keyParts = [];
-      if (hasMod) keyParts.push('Ctrl+');
-      if (e.shiftKey) keyParts.push('Shift+');
-      if (e.altKey) keyParts.push('Alt+');
-      keyParts.push(e.key);
+      const hasCtrlOrCmd = e.ctrlKey || e.metaKey;
+      const hasAlt = e.altKey;
+      const hasShift = e.shiftKey;
 
-      const combinedKey = keyParts.join('');
+      // 3. If any modifier key (Ctrl/Cmd/Alt) is pressed:
+      if (hasCtrlOrCmd || hasAlt) {
+        const keyParts = [];
+        if (hasCtrlOrCmd) keyParts.push('Ctrl+');
+        if (hasShift) keyParts.push('Shift+');
+        if (hasAlt) keyParts.push('Alt+');
+        keyParts.push(e.key);
 
-      if (shortcuts[combinedKey]) {
-        e.preventDefault();
-        shortcuts[combinedKey](e);
-      } else if (shortcuts[e.key]) {
+        const combinedKey = keyParts.join('');
+        const lowerCombinedKey = keyParts.slice(0, -1).join('') + e.key.toLowerCase();
+
+        if (shortcuts[combinedKey]) {
+          e.preventDefault();
+          shortcuts[combinedKey](e);
+        } else if (shortcuts[lowerCombinedKey]) {
+          e.preventDefault();
+          shortcuts[lowerCombinedKey](e);
+        }
+        // When a modifier is pressed, NEVER fall back to single naked character shortcuts!
+        // This ensures native browser Ctrl+C (copy), Ctrl+V (paste), Ctrl+X (cut), Ctrl+A (select all) pass safely.
+        return;
+      }
+
+      // 4. Naked single key shortcuts (e.g. 'c', 'j', 'k', 'r', 'a', 'f', 'e', 'd', 's', 'u', '?')
+      // If user has active text selected in the document, do NOT intercept 'c' or alphanumeric keys
+      const selection = window.getSelection ? window.getSelection().toString() : '';
+      if (selection && selection.length > 0 && e.key.length === 1 && !['j', 'k', 'Escape'].includes(e.key)) {
+        return;
+      }
+
+      if (shortcuts[e.key]) {
         e.preventDefault();
         shortcuts[e.key](e);
+      } else if (shortcuts[e.key.toLowerCase()]) {
+        e.preventDefault();
+        shortcuts[e.key.toLowerCase()](e);
       }
     }
 
@@ -279,4 +305,40 @@ export function useKeyboard(shortcuts) {
   }, [shortcuts]);
 }
 
-export default { useApi, useUser, useFolders, useMessages, useMessage, useDebounce, useKeyboard };
+/**
+ * Hook for long-press gesture handling on mobile touch devices.
+ * @param {Function} callback - function to invoke on long press
+ * @param {number} ms - duration threshold in ms (default 500)
+ */
+export function useLongPress(callback, ms = 500) {
+  const timerRef = React.useRef(null);
+  const isLongPressRef = React.useRef(false);
+
+  const start = useCallback((e) => {
+    isLongPressRef.current = false;
+    timerRef.current = setTimeout(() => {
+      isLongPressRef.current = true;
+      if (callback) callback(e);
+    }, ms);
+  }, [callback, ms]);
+
+  const clear = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  return {
+    onTouchStart: start,
+    onTouchEnd: clear,
+    onTouchMove: clear,
+    onContextMenu: (e) => {
+      if (isLongPressRef.current) {
+        e.preventDefault();
+      }
+    },
+  };
+}
+
+export default { useApi, useUser, useFolders, useMessages, useMessage, useDebounce, useKeyboard, useLongPress };

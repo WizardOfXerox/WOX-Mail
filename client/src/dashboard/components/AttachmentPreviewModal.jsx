@@ -10,6 +10,9 @@ export default function AttachmentPreviewModal({
   const [loadingText, setLoadingText] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
   const [imgZoom, setImgZoom] = useState(1);
+  const [sha256Hash, setSha256Hash] = useState(null);
+  const [calculatingHash, setCalculatingHash] = useState(false);
+  const [hashCopied, setHashCopied] = useState(false);
 
   if (!attachment) return null;
 
@@ -22,6 +25,8 @@ export default function AttachmentPreviewModal({
   const isPdf = contentType === 'application/pdf' || ext === 'pdf';
   const isAudio = contentType.startsWith('audio/') || ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'].includes(ext);
   const isVideo = contentType.startsWith('video/') || ['mp4', 'webm', 'mov', 'avi', 'mkv'].includes(ext);
+  const isDocx = ext === 'docx' || contentType.includes('wordprocessingml');
+  const isXlsx = ['xlsx', 'xls', 'csv', 'tsv'].includes(ext) || contentType.includes('spreadsheetml');
   const isText = contentType.startsWith('text/') || ['txt', 'json', 'csv', 'log', 'dat', 'xml', 'md', 'html', 'js', 'ts', 'css', 'py', 'sh', 'env', 'yml', 'yaml', 'ini', 'conf'].includes(ext);
 
   const previewUrl = `/api/mail/message/${messageUid}/attachment/${encodeURIComponent(index)}?preview=true&folder=${encodeURIComponent(folder)}`;
@@ -42,6 +47,25 @@ export default function AttachmentPreviewModal({
     }
   }, [previewUrl, isText, isImage, isPdf]);
 
+  // Compute SHA-256 integrity hash on demand or on mount
+  const handleCalculateHash = async () => {
+    if (sha256Hash || calculatingHash) return;
+    setCalculatingHash(true);
+    try {
+      const res = await fetch(previewUrl, { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to fetch attachment buffer');
+      const buffer = await res.arrayBuffer();
+      const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+      setSha256Hash(hashHex);
+    } catch (err) {
+      setSha256Hash(`Hash computation failed: ${err.message}`);
+    } finally {
+      setCalculatingHash(false);
+    }
+  };
+
   // Keyboard close
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -56,6 +80,14 @@ export default function AttachmentPreviewModal({
     navigator.clipboard.writeText(textContent).then(() => {
       setCopySuccess(true);
       setTimeout(() => setCopySuccess(false), 2000);
+    });
+  };
+
+  const copyHash = () => {
+    if (!sha256Hash) return;
+    navigator.clipboard.writeText(sha256Hash).then(() => {
+      setHashCopied(true);
+      setTimeout(() => setHashCopied(false), 2000);
     });
   };
 
@@ -75,15 +107,15 @@ export default function AttachmentPreviewModal({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '1.5rem',
+        padding: '1rem',
       }}
     >
       <div
         className="card"
         style={{
           width: '100%',
-          maxWidth: isPdf || isText ? '920px' : '820px',
-          maxHeight: '90vh',
+          maxWidth: isPdf || isText ? '940px' : '840px',
+          maxHeight: '92vh',
           display: 'flex',
           flexDirection: 'column',
           background: 'var(--color-bg-elevated)',
@@ -101,7 +133,7 @@ export default function AttachmentPreviewModal({
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            padding: '1rem 1.25rem',
+            padding: '0.85rem 1.25rem',
             borderBottom: '1px solid var(--color-border)',
             background: 'var(--color-bg-card)',
             flexWrap: 'wrap',
@@ -109,12 +141,14 @@ export default function AttachmentPreviewModal({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', minWidth: 0 }}>
-            <span style={{ fontSize: '1.25rem' }}>
+            <span style={{ display: 'inline-flex', color: 'var(--color-primary-light)' }}>
               {isImage ? (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
-    ) : (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-    )}
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+              ) : isPdf ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+              )}
             </span>
             <div style={{ minWidth: 0 }}>
               <h3
@@ -138,7 +172,7 @@ export default function AttachmentPreviewModal({
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
             {isImage && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginRight: '0.5rem' }}>
                 <button
@@ -146,7 +180,6 @@ export default function AttachmentPreviewModal({
                   className="btn btn-ghost btn-xs"
                   onClick={() => setImgZoom((z) => Math.max(0.5, z - 0.25))}
                   title="Zoom Out"
-                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
                 </button>
@@ -158,7 +191,6 @@ export default function AttachmentPreviewModal({
                   className="btn btn-ghost btn-xs"
                   onClick={() => setImgZoom((z) => Math.min(3, z + 0.25))}
                   title="Zoom In"
-                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
                 </button>
@@ -175,6 +207,17 @@ export default function AttachmentPreviewModal({
                 {copySuccess ? 'Copied' : 'Copy Text'}
               </button>
             )}
+
+            <button
+              type="button"
+              className="btn btn-secondary btn-xs"
+              onClick={handleCalculateHash}
+              title="Verify SHA-256 Checksum"
+              disabled={calculatingHash}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              <span>{calculatingHash ? 'Hashing...' : sha256Hash ? 'SHA-256 Ready' : 'Inspect SHA-256'}</span>
+            </button>
 
             <a
               href={downloadUrl}
@@ -198,6 +241,36 @@ export default function AttachmentPreviewModal({
             </button>
           </div>
         </div>
+
+        {/* SHA-256 Checksum Banner (if computed) */}
+        {sha256Hash && (
+          <div
+            style={{
+              padding: '0.45rem 1.25rem',
+              background: 'rgba(124, 58, 237, 0.1)',
+              borderBottom: '1px solid var(--color-border)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              fontSize: '0.75rem',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', overflow: 'hidden' }}>
+              <span style={{ fontWeight: 700, color: 'var(--color-primary-light)' }}>SHA-256:</span>
+              <span className="mono truncate text-secondary" style={{ maxWidth: '480px' }}>
+                {sha256Hash}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="btn btn-ghost btn-xs"
+              onClick={copyHash}
+              style={{ padding: '0.1rem 0.4rem', fontSize: '0.7rem' }}
+            >
+              {hashCopied ? 'Copied' : 'Copy Hash'}
+            </button>
+          </div>
+        )}
 
         {/* Modal Body */}
         <div
@@ -278,15 +351,30 @@ export default function AttachmentPreviewModal({
                 </pre>
               )}
             </div>
+          ) : isDocx || isXlsx ? (
+            <div style={{ textAlign: 'center', padding: '3rem 1.5rem', maxWidth: '520px' }}>
+              <div style={{ display: 'inline-flex', color: 'var(--color-primary-light)', marginBottom: '1rem' }}>
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+              </div>
+              <h3 style={{ fontSize: '1.05rem', marginBottom: '0.5rem' }}>{filename}</h3>
+              <p className="text-secondary" style={{ fontSize: '0.8125rem', marginBottom: '1.5rem', lineHeight: 1.5 }}>
+                Office Document ({ext.toUpperCase()}). To prevent malicious macro or binary execution, WoxMail provides zero-trust sandboxed file download with client-side SHA-256 integrity inspection.
+              </p>
+              <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem' }}>
+                <a href={downloadUrl} download={filename} className="btn btn-primary btn-sm">
+                  Download Safe Document ({formatSize(attachment.size)})
+                </a>
+              </div>
+            </div>
           ) : (
             <div style={{ textAlign: 'center', padding: '3rem 1.5rem' }}>
               <div style={{ display: 'inline-flex', color: 'var(--color-primary-light)', marginBottom: '1rem' }}><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect width="22" height="5" x="1" y="3"/><line x1="10" x2="14" y1="12" y2="12"/></svg></div>
               <h3 style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>{filename}</h3>
               <p className="text-secondary" style={{ fontSize: '0.875rem', marginBottom: '1.5rem' }}>
-                Preview is not available for this binary file format (${ext.toUpperCase() || 'DAT'}). You can download the file to inspect it on your device.
+                Preview is not available for this binary file format ({ext.toUpperCase() || 'DAT'}). You can download the file to inspect it on your device.
               </p>
               <a href={downloadUrl} download={filename} className="btn btn-primary">
-                Download File (${formatSize(attachment.size)})
+                Download File ({formatSize(attachment.size)})
               </a>
             </div>
           )}
