@@ -52,11 +52,16 @@ const batchRequest = {
   methodCalls: [
     ['Mailbox/get', { accountId: 'usr_42', ids: null }, 'call_1'],
     ['Email/query', { accountId: 'usr_42' }, 'call_2'],
+    ['Email/get', { accountId: 'usr_42', ids: ['999'] }, 'call_3'],
   ],
 };
 
 const batchResponse = await executeJmapBatch(mockUser, batchRequest);
-assert.strictEqual(batchResponse.methodResponses.length, 2, 'Must return matching method responses count');
+assert.strictEqual(batchResponse.methodResponses.length, 3, 'Must return matching method responses count');
+assert.strictEqual(batchResponse.methodResponses[0][0], 'Mailbox/get', 'First method response should be Mailbox/get');
+assert.strictEqual(batchResponse.methodResponses[1][0], 'Email/query', 'Second method response should be Email/query');
+assert.strictEqual(batchResponse.methodResponses[2][0], 'Email/get', 'Third method response should be Email/get');
+assert.ok(batchResponse.methodResponses[2][1].notFound.includes('999'), 'Non-existent ID 999 must be reported in notFound');
 // Test 5: Native ZIP Archive Packaging
 const testFiles = [
   { name: '0001_welcome.eml', data: 'From: support@wox.world\r\nSubject: Welcome\r\n\r\nHello!' },
@@ -81,4 +86,4 @@ assert.notDeepStrictEqual(encryptedBuf, secretData, 'Encrypted buffer must not m
 const decryptedBuf = decryptBackupBuffer(encryptedBuf, passphrase);
 assert.strictEqual(decryptedBuf.toString('utf8'), 'Confidential Sovereign Mailbox Backup Content', 'Decrypted payload must match original');
 
-console.log('✓ Suite 26: All JMAP & Mailbox backup tests passed (6/6)');
+console.log('[PASS] Suite 26: All JMAP & Mailbox backup tests passed (6/6)');

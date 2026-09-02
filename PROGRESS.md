@@ -1,11 +1,11 @@
 # WoxMail Master Progression Tracker
 
-**Status:** ✅ MASTER IMPLEMENTATION 100% COMPLETE & VERIFIED  
+**Status:** [DONE] MASTER IMPLEMENTATION 100% COMPLETE & VERIFIED  
 **Suite:** Next-Gen Power, Campaign & Support Suite (13 Components Across 7 Phases)
 
 ---
 
-## 📊 Overall Progress: 100% Complete
+## [METRICS] Overall Progress: 100% Complete
 
 ```
 [██████████████████████████████] Phase 1: 100% | Phase 2: 100% | Phase 3: 100% | Phase 4: 100% | Phase 5: 100% | Phase 6: 100% | Phase 7: 100%
@@ -13,7 +13,7 @@
 
 ---
 
-## Phase 1: Database Migration & Core Backend Services (✅ 100% Completed)
+## Phase 1: Database Migration & Core Backend Services ([DONE] 100% Completed)
 - [x] **014_power_features.js Migration**: Tables for `email_notes`, `mailing_lists`, `subscribers`, `campaigns`, `support_tickets`, `ticket_messages`, `support_ticket_seq`.
 - [x] **Migration Execution**: Database migration executed and validated against PostgreSQL.
 - [x] **`notes.js` Route**: AES-256-CBC encrypted sticky notes on email threads with per-user key derivation.
@@ -29,7 +29,7 @@
 
 ---
 
-## Phase 2: Batch Selection Ribbon & Dual Split-Pane Layout Engine (✅ 100% Completed)
+## Phase 2: Batch Selection Ribbon & Dual Split-Pane Layout Engine ([DONE] 100% Completed)
 - [x] **`SnoozePopover.jsx`**: Floating popover for preset snooze timings (Later Today, Tomorrow Morning, Tomorrow Afternoon, Next Week, Custom DateTime).
 - [x] **`SplitDivider.jsx`**: Draggable resizable split divider with visual grip, bounds clamping (20%-80%), keyboard arrows, and touch support.
 - [x] **`BatchToolbar.jsx` Upgrade**: Added Snooze popover trigger, select-all / clear, and slide-down entry animation.
@@ -40,14 +40,14 @@
 
 ---
 
-## Phase 3: Superhuman Command Palette & Advanced Filter Chips & Private Sticky Notes (✅ 100% Completed)
+## Phase 3: Superhuman Command Palette & Advanced Filter Chips & Private Sticky Notes ([DONE] 100% Completed)
 - [x] **`CommandPalette.jsx` Upgrade**: Dynamic folder jumps, live unread badges, search operators, snippets, and frequency sorting with localStorage weighting.
 - [x] **`SearchBar.jsx` Filter Chips & Modal**: Quick chips (`Attachments`, `Unread`, `Starred`, `Past 7d`, `Past 30d`) and Advanced Search modal.
 - [x] **`MessageView.jsx` Sticky Notes UI**: Encrypted note editor, 5-color palette, auto-save, and visual sticky card.
 
 ---
 
-## Phase 4: Rich-Text WYSIWYG Composer & HEY Gatekeeper Visual Quarantine (✅ 100% Completed)
+## Phase 4: Rich-Text WYSIWYG Composer & HEY Gatekeeper Visual Quarantine ([DONE] 100% Completed)
 - [x] **`SchedulePopover.jsx`**: Presets for schedule send (Tomorrow 8 AM, Afternoon 1 PM, Monday, Custom).
 - [x] **`ComposeModal.jsx` Upgrade**: WYSIWYG ribbon (Bold, Italic, Underline, Strike, Lists, Quotes, Code, Links, Clear), HTML generation, Schedule Send split button.
 - [x] **`GatekeeperView.jsx`**: Visual quarantine queue with 4-way triage (Let In, Feed, Paper Trail, Block), domain rules, approved sender management.
@@ -55,7 +55,7 @@
 
 ---
 
-## Phase 5: Companion Productivity Dock, Newsletter Studio & Support Desk UI (✅ 100% Completed)
+## Phase 5: Companion Productivity Dock, Newsletter Studio & Support Desk UI ([DONE] 100% Completed)
 - [x] **`CompanionDock.jsx`**: Right-side dock with 4 tabs (Agenda/Calendar, Markdown Scratchpad with auto-save, Contacts quick compose, TempMail quick generator).
 - [x] **`CampaignsView.jsx`**: Mailing list management, CSV import with column mapping, campaign dashboard, analytics cards.
 - [x] **`CampaignComposer.jsx`**: Newsletter designer with merge tags (`{{first_name}}`, `{{last_name}}`, `{{email}}`, `{{unsubscribe_url}}`), live preview, test send.
@@ -65,7 +65,7 @@
 
 ---
 
-## Phase 6: Production CLI Package & Admin Developer Web Terminal (✅ 100% Completed)
+## Phase 6: Production CLI Package & Admin Developer Web Terminal ([DONE] 100% Completed)
 - [x] **`woxmail` CLI Package Rewrite (`bin/woxmail.js`)**: Full modular framework with `bin/lib/` (config, auth, api, formatter).
 - [x] **`package.json` Bin Registration**: `"bin": { "woxmail": "./bin/woxmail.js" }`.
 - [x] **Removed Terminal from Public Nav**: Purged terminal links from `base.ejs`, `Sidebar.jsx`, `CommandPalette.jsx`.
@@ -85,19 +85,19 @@
 
 ---
 
-## Phase 10: Admin User Management Suite & Real-Time Mailbox Impersonation (✅ 100% Completed)
+## Phase 10: Admin User Management Suite & Real-Time Mailbox Impersonation ([DONE] 100% Completed)
 - [x] **1-Click "Open Inbox" Impersonation**: Built `POST /api/admin/users/:id/impersonate` and `GET /api/admin/impersonate/:id` generating secure 1-hour access tokens, allowing administrators to open and inspect any user's webmail inbox directly in a new tab without knowing their password.
 - [x] **Comprehensive User CRUD Engine**: Added `POST /api/admin/users` (creates PostgreSQL record and provisions Purelymail mailbox), `PUT /api/admin/users/:id` (edits username, email, display name, roles, status), `DELETE /api/admin/users/:id` (purges user account & mailbox), and `POST /api/admin/users/:id/reset-password` (admin password reset with instant copyable credentials & session revocation).
 - [x] **Full-Featured Admin User Management UI**:
   - **Toolbar**: Added `+ Create New User` button and real-time live search filter.
-  - **Action Row Suite**: Added `📬 Open Inbox`, `🔑 Reset PW`, `✏️ Edit`, `🚫 Suspend/Unsuspend`, and `🗑️ Delete` actions per user row.
+  - **Action Row Suite**: Added `[MAIL] Open Inbox`, `[KEY] Reset PW`, `[EDIT] Edit`, `[BLOCK] Suspend/Unsuspend`, and `[DELETE] Delete` actions per user row.
   - **Interactive Modals**: Built `CreateUserModal`, `EditUserModal`, `ResetPasswordModal` (with strong password generator), and `DeleteUserModal` (with typed confirmation).
 - [x] **Centered Email View & Balanced Proportions**: Wrapped message reader elements in `.viewer-content-wrapper` (`max-width: 1000px; margin: 0 auto;`), eliminating awkward dead spaces on ultrawide displays.
-- [x] **Fixed Dock Button Clipping**: Integrated the Dock trigger (`✨`) directly into the compact message list layout toolstrip, ensuring 0 horizontal overflow or clipped borders.
+- [x] **Fixed Dock Button Clipping**: Integrated the Dock trigger (`[STAR]`) directly into the compact message list layout toolstrip, ensuring 0 horizontal overflow or clipped borders.
 
 ---
 
-## Phase 11: Dual-Mode Email Verification & Admin Impersonation Session Shield (✅ 100% Completed)
+## Phase 11: Dual-Mode Email Verification & Admin Impersonation Session Shield ([DONE] 100% Completed)
 - [x] **Dual-Mode Verification Engine (`server/src/services/verificationService.js`)**:
   - Implemented 6-digit PIN code + VERP reply-to (`verify+<token>@wox.world`) email dispatch.
   - Inbound reply parsing via background IMAP worker (`inboundReplyJob.js` running every 10s).
@@ -106,7 +106,7 @@
 - [x] **Admin Impersonation Session Shield & Exit Banner**:
   - Automatically preserves original admin session in `woxmail_admin_backup` cookie when clicking **"Open Inbox"**.
   - Added public exit route `GET /api/admin/impersonate/exit` to seamlessly restore the admin cookie.
-  - Rendered top amber Impersonation Banner in `client/src/dashboard/App.jsx` with 1-click **"↩️ Exit & Return to Admin"** button.
+  - Rendered top amber Impersonation Banner in `client/src/dashboard/App.jsx` with 1-click **"[RETURN] Exit & Return to Admin"** button.
 - [x] **Mailbox Email Deletion (`server/src/routes/mail.js`)**:
   - Added `DELETE /api/mail/message/:uid` supporting both Trash move and permanent deletion.
   - Added real-time deletion toast notifications (`Deleted X message(s)`).
@@ -114,7 +114,7 @@
 
 ---
 
-## Phase 12: Admin Deep Diagnostics, Database Snapshots, Backups & Control Center Suite (✅ 100% Completed)
+## Phase 12: Admin Deep Diagnostics, Database Snapshots, Backups & Control Center Suite ([DONE] 100% Completed)
 - [x] **Cluster Diagnostics Suite (`server/src/routes/admin.js` -> `GET /api/admin/diagnostics/full`)**:
   - Live PostgreSQL health check with latency telemetry (`XXms`), database storage size, and table row counts (`users`, `temp_addresses`, `invites`, `blocked_ips`, `audit_logs`, `service_controls`, `announcements`).
   - Node.js runtime memory telemetry (Heap Used, Heap Total, RSS, PID, Platform, Uptime).
@@ -133,53 +133,53 @@
 - [x] **Global System Governance Settings Tab**:
   - Interactive configuration editor for platform-wide registration policies, invite-only mode, rate limiters, and disposable email TTL limits with live persistence (`PUT /api/admin/settings`).
 - [x] **Global Announcements Broadcast Tab**:
-  - System-wide alert publisher with priority badges (ℹ️ Info, ⚠️ Warning, 🛠️ Maintenance) and live deletion controls.
+  - System-wide alert publisher with priority badges ([INFO] Info, [WARN] Warning, [MAINT] Maintenance) and live deletion controls.
 - [x] **Automated Test Suite (`test_admin_diagnostics_suite.cjs`)**: 100% passing across all diagnostics, snapshot exports, vacuum maintenance, backup creation, firewall rules, and announcement broadcasting.
 
 ---
 
-## Phase 13: Attachment Previews, Compose Redesign & Invitation Overhaul (✅ 100% Completed)
+## Phase 13: Attachment Previews, Compose Redesign & Invitation Overhaul ([DONE] 100% Completed)
 - [x] **Interactive Attachment Previews & Downloads**:
   - **Backend Streaming Endpoints**: Added `GET /api/mail/message/:uid/attachment/:index` and `GET /api/tempmail/message/:address/:uid/attachment/:index` with automatic MIME typing and `inline` / `attachment` streaming.
-  - **Clickable Attachment Cards**: In `MessageView.jsx`, replaced inert pills with interactive cards displaying file-type icons (🖼️ Images, 📑 PDFs, 📝 Text/Data/Logs, 🎵 Audio, 🎬 Video, 📦 Archives), formatted file sizes, and 1-click preview and download actions.
+  - **Clickable Attachment Cards**: In `MessageView.jsx`, replaced inert pills with interactive cards displaying file-type icons ([IMAGE] Images, [PDF] PDFs, [TEXT] Text/Data/Logs, [AUDIO] Audio, [VIDEO] Video, [ARCHIVE] Archives), formatted file sizes, and 1-click preview and download actions.
   - **In-App Lightbox Preview Modal (`AttachmentPreviewModal.jsx`)**:
     - High-res image viewer with zoom controls (50% to 300%).
     - In-app PDF reader iframe.
-    - Formatted text/code/data pre viewer with 1-click **📋 Copy Content** button.
+    - Formatted text/code/data pre viewer with 1-click **[COPY] Copy Content** button.
     - Media player for audio and video.
     - Safe binary download fallback.
 - [x] **Compose Modal UI & Form Redesign (`ComposeModal.jsx` + `style.css`)**:
   - Restyled `To:`, `Cc:`, `Bcc:`, and `Subject:` fields with borderless dark input themes, focus rings, and clear typography.
   - Styled `+ Cc/Bcc` toggle as an interactive badge pill.
-  - Redesigned `TRANSMISSION SECURITY` segmented control buttons (`Standard`, `🔐 Enclave Vault`, `🔥 In-Inbox Burner`, `⚡ Auto-Expunge`) with active glowing purple badges.
-  - Upgraded rich text formatting ribbon toolbar (`B`, `I`, `U`, `S`, `• List`, `1. List`, `” Quote`, `</>`, `🔗 Link`, `🧹 Clear`) with glassmorphic button styling.
+  - Redesigned `TRANSMISSION SECURITY` segmented control buttons (`Standard`, `[VAULT] Enclave Vault`, `[BURN] In-Inbox Burner`, `[FAST] Auto-Expunge`) with active glowing purple badges.
+  - Upgraded rich text formatting ribbon toolbar (`B`, `I`, `U`, `S`, `• List`, `1. List`, `” Quote`, `</>`, `[LINK] Link`, `[CLEAR] Clear`) with glassmorphic button styling.
   - Fixed full-width contenteditable email body area with proper line-height and padding.
 - [x] **Registration Invitation Codes Overhaul (`/admin#invites`)**:
   - **Accurate Metadata**: Updated `GET /api/admin/invites` to deliver true status (`is_used`, `used_by_username`, `used_by_email`, `used_at`, `expires_at`, `note`).
-  - **Segmented Sub-Views**: Split into **🟢 Available Unused**, **👤 Claimed & Used (Registered Users)**, and **All Records**.
-  - **1-Click Sharing**: Added direct **📋 Copy Code** and **🔗 Copy 1-Click Register URL** (`https://mail.wox.world/register?invite=WOX-...`).
+  - **Segmented Sub-Views**: Split into **[ONLINE] Available Unused**, **[USER] Claimed & Used (Registered Users)**, and **All Records**.
+  - **1-Click Sharing**: Added direct **[COPY] Copy Code** and **[LINK] Copy 1-Click Register URL** (`https://mail.wox.world/register?invite=WOX-...`).
   - **Revocation Protocol**: Revoking an unused code deletes it immediately and prevents registration (`"Invalid or expired invite code"`).
 - [x] **Public Directory Privacy Hardening**:
   - Removed `Export Inbox` button from the community public temp mail directory to protect user privacy.
 
 ---
 
-## Phase 14: User Directory Personal Temp Mail & Multi-Tier Management (✅ 100% Completed)
+## Phase 14: User Directory Personal Temp Mail & Multi-Tier Management ([DONE] 100% Completed)
 - [x] **Unified User Directory Engine (`server/src/routes/admin.js` -> `GET /api/admin/users`)**:
   - Combined `users` (Permanent Webmail `@wox.world`) and `temp_addresses` (Personal Temp Mail `@mail.wox.world` + Public Pools) in a unified, searchable, paginated directory with live tier summary counts.
-  - Added filter tabs: **🌐 All Accounts**, **💼 Permanent Webmail**, **⏳ Personal Temp Mail**, and **⚡ Active Public Pool**.
-  - Added visual tier badges (`👑 SUPER ADMIN`, `💼 PERMANENT`, `⏳ PERSONAL TEMP`, `⚡ PUBLIC DISPOSABLE`) and real-time expiration countdown badges (e.g. `28d 14h left`).
+  - Added filter tabs: **[GLOBAL] All Accounts**, **[WORK] Permanent Webmail**, **⏳ Personal Temp Mail**, and **[FAST] Active Public Pool**.
+  - Added visual tier badges (`[ADMIN] SUPER ADMIN`, `[WORK] PERMANENT`, `⏳ PERSONAL TEMP`, `[FAST] PUBLIC DISPOSABLE`) and real-time expiration countdown badges (e.g. `28d 14h left`).
 - [x] **Full Administrative Actions for Personal Temp Accounts**:
-  - **📬 Open Inbox**: Impersonates personal temp accounts via `GET /api/admin/impersonate/temp/:address` with session backup shield (`woxmail_admin_backup`), opening their temporary inbox in a separate tab without logging out the admin.
-  - **🔑 Reset PW**: Enables 1-click password resets for Personal Temp mailboxes directly from the User Directory.
-  - **✏️ Edit**: Edit username, display name, and details.
-  - **🚫 Suspend / Unsuspend**: Implemented suspension state with database check constraint migration (`015_temp_addresses_suspended_status.js`).
-  - **🗑️ Delete Account**: Purges personal temp mailbox from both PostgreSQL and Purelymail server.
+  - **[MAIL] Open Inbox**: Impersonates personal temp accounts via `GET /api/admin/impersonate/temp/:address` with session backup shield (`woxmail_admin_backup`), opening their temporary inbox in a separate tab without logging out the admin.
+  - **[KEY] Reset PW**: Enables 1-click password resets for Personal Temp mailboxes directly from the User Directory.
+  - **[EDIT] Edit**: Edit username, display name, and details.
+  - **[BLOCK] Suspend / Unsuspend**: Implemented suspension state with database check constraint migration (`015_temp_addresses_suspended_status.js`).
+  - **[DELETE] Delete Account**: Purges personal temp mailbox from both PostgreSQL and Purelymail server.
 - [x] **Admin Account Creation Suite (`CreateUserModal.jsx`)**:
-  - Added **Account Tier Selector** allowing admins to create either **💼 Permanent Webmail Accounts** or **⏳ Personal Temp Mail Accounts** with configurable lifespans (24h, 7d, 30d, 60d).
+  - Added **Account Tier Selector** allowing admins to create either **[WORK] Permanent Webmail Accounts** or **⏳ Personal Temp Mail Accounts** with configurable lifespans (24h, 7d, 30d, 60d).
 ---
 
-## Phase 15: Universal Compliance Journaling, Multi-Account Enclave & Security Protocol Hardening (✅ 100% Completed)
+## Phase 15: Universal Compliance Journaling, Multi-Account Enclave & Security Protocol Hardening ([DONE] 100% Completed)
 - [x] **Universal Compliance Archiving (`archive@wox.world`)**: Database migration `026_compliance_archive_journal`, real-time SHA-256 non-repudiation integrity hashing across all domain inbound/outbound traffic, and dedicated compliance webmail viewer.
 - [x] **Interactive Support Desk Mailbox (`support@wox.world`)**: Helpdesk streaming in webmail with ticket categories, priority indicators, conversation threading, and quick replies.
 - [x] **FutureMe Automated Dispatcher & Journaling**: Verification emails and scheduled time-capsule deliveries from `FutureMe Time Capsule <noreply@wox.world>` with automatic compliance archiving.
@@ -189,7 +189,7 @@
 
 ---
 
-## Phase 16: Next-Gen Email Intelligence, Controlled Attachments & Sovereign Productivity Suite (✅ 100% Completed)
+## Phase 16: Next-Gen Email Intelligence, Controlled Attachments & Sovereign Productivity Suite ([DONE] 100% Completed)
 - [x] **Controlled Secure Attachments (AES-256-GCM Vault)**:
   - Custom view limits (1 view, 3 views, unlimited).
   - Custom download restrictions (view-only / 0 downloads, 1 download, unlimited).
@@ -215,7 +215,7 @@
 
 ---
 
-### Phase 17: Enterprise Protocols, Context Menus, Link Sandboxing, Sieve Engine & Cloudflare R2 Backups (✅ 100% Completed)
+### Phase 17: Enterprise Protocols, Context Menus, Link Sandboxing, Sieve Engine & Cloudflare R2 Backups ([DONE] 100% Completed)
 - [x] **`Ctrl+C` / `Cmd+C` Clipboard Copy Fix & Shortcut Isolation**:
   - Decoupled modifier shortcuts in `useKeyboard` (`client/src/shared/hooks.js`). Native clipboard operations (`Ctrl+C`, `Ctrl+V`, `Ctrl+X`, `Ctrl+A`) are preserved while single-key `c` triggers Compose only when not typing or selecting text.
 - [x] **Contextual Right-Click & Mobile Long-Press Menu System**:
@@ -226,11 +226,11 @@
 - [x] **Safe Link Isolation Sandbox (Remote Browser Isolation & Reader View)**:
   - `linkSandboxService.js` and `/api/security`: Headless Playwright snapshots, SSL health audits, marketing redirect stripper, and sanitized script-free DOM reader view.
 - [x] **Office & Document Previewer Extension**:
-  - `AttachmentPreviewModal.jsx`: Sanitized in-browser previews for `.docx`, `.xlsx`, `.pptx`, `.csv`, `.log`, and on-demand client-side SHA-256 integrity inspection.
+  - `AttachmentPreviewModal.jsx` & `officeDocService.js`: In-browser spreadsheet table grid for `.xlsx` and CSV/TSV with column/cell search, formatted document reader for `.docx`, slide presentation deck for `.pptx`, touch pinch-to-zoom / pan gestures, and on-demand SHA-256 integrity inspection.
 - [x] **Cloudflare R2 & Local Mailbox Backup Engine**:
   - `backupService.js`: S3/R2 AWS SigV4 client for automated and manual encrypted `.mbox` / `.zip` backups to Cloudflare R2 bucket (`woxmail-backups`).
-- [x] **Server-Side Sieve Rule Engine (RFC 5228)**:
-  - `sieveService.js`: Inbound email rule evaluator with auto-sorting, auto-tagging, auto-purging, and Discord/Slack/Telegram webhook forwarding.
+- [x] **Server-Side Sieve Rule & Retention Engine**:
+  - `sieveService.js`: Inbound email rule evaluator with RFC 5228 condition semantics (from/to/subject/body/regex/has_attachment/age_days), auto-sorting, auto-tagging, auto-purging aging newsletters via real database deletion, and Discord/Slack/Telegram webhook forwarding.
 - [x] **One-Click List-Unsubscribe Automation Daemon (RFC 8058)**:
   - `unsubscribeService.js`: Background HTTP POST and mailto unsubscribe dispatcher.
 - [x] **Zero-Knowledge Blind Index Search Engine**:
@@ -242,11 +242,11 @@
 - [x] **Real-Time DNS Health Diagnostic Probe (DoH)**:
   - `dnsHealthService.js`: Live DoH inspection of MX, SPF, DKIM, DMARC, MTA-STS, WKD, and BIMI records.
 - [x] **JMAP Protocol Engine (RFC 8620 / RFC 8621)**:
-  - `jmapService.js`: High-performance JSON batch synchronization endpoint.
+  - `jmapService.js`: High-performance JSON batch synchronization endpoint with real PostgreSQL queries for `Mailbox/get`, `Email/query` (with blind search token evaluation), and `Email/get` (with rich compliance archive properties).
 - [x] **Database Migration 028**:
   - `028_sieve_rules_and_search_index.js` executed on PostgreSQL with tables for Sieve rules, blind search index, user privacy preferences, and mailbox backups.
 - [x] **Automated Test Matrix Verification**:
-  - All **47 test suites** passed with a 100% success rate (0 failures).
+  - All **48 test suites** passed with a 100% success rate (0 failures).
 
 ---
 

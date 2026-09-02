@@ -27,4 +27,4 @@ assert.strictEqual(adminHash, secondHash, 'WKD hash computation must be normaliz
 const validationResult = await validateOutboundEncryption('test@example.com', 'mail.example.com');
 assert.strictEqual(validationResult.compliant, true, 'Outbound mail to standard domains should be compliant');
 
-console.log('✓ Suite 25: All WKD & MTA-STS security tests passed (4/4)');
+console.log('[PASS] Suite 25: All WKD & MTA-STS security tests passed (4/4)');

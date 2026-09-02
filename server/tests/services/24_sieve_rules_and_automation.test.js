@@ -3,7 +3,7 @@
  */
 
 import assert from 'assert';
-import { matchCondition } from '../../src/services/sieveService.js';
+import { matchCondition, purgeAgingEmailsByRules } from '../../src/services/sieveService.js';
 import { parseUnsubscribeHeaders } from '../../src/services/unsubscribeService.js';
 
 console.log('[TEST] Running Suite 24: Sieve Rules & Automation Engine...');
@@ -66,4 +66,14 @@ const recentEmail = {
 };
 assert.strictEqual(matchCondition(condAge, recentEmail), false, 'Recent email must not match age_days 30 threshold');
 
-console.log('✓ Suite 24: All Sieve rules & automation tests passed (8/8)');
+// Test 9: purgeAgingEmailsByRules execution
+const purgeResult = await purgeAgingEmailsByRules(999999, [
+  { uid: 101, date: new Date(Date.now() - 40 * 86400000).toISOString(), from: 'promo@store.com', subject: 'Sale' },
+  { uid: 102, date: new Date().toISOString(), from: 'promo@store.com', subject: 'Today only' },
+]);
+assert.ok(typeof purgeResult === 'object', 'Purge result must be an object');
+assert.strictEqual(typeof purgeResult.purgedCount, 'number', 'Must return purgedCount number');
+assert.ok(Array.isArray(purgeResult.rulesApplied), 'Must return rulesApplied array');
+assert.ok(Array.isArray(purgeResult.purgedUids), 'Must return purgedUids array');
+
+console.log('[PASS] Suite 24: All Sieve rules & automation tests passed (9/9)');

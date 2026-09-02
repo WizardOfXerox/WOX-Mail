@@ -862,9 +862,24 @@ router.get('/message/:uid/attachment/:index', async (req, res, next) => {
     }
 
     const isPreview = req.query.preview === 'true';
+    const isExtract = req.query.extract === 'true';
     const filename = att.filename || `attachment-${index + 1}`;
     const contentType = att.contentType || 'application/octet-stream';
     const lowerType = contentType.toLowerCase().split(';')[0].trim();
+
+    if (isExtract) {
+      const { extractOfficeDocument } = await import('../services/officeDocService.js');
+      try {
+        const docData = extractOfficeDocument(att.content, filename);
+        return res.json({ success: true, filename, ...docData });
+      } catch (extractErr) {
+        return res.json({
+          success: false,
+          error: extractErr.message,
+          fallbackText: att.content ? att.content.toString('utf8').slice(0, 50000) : '',
+        });
+      }
+    }
 
     // Prevent XSS if an attacker sends an HTML or active SVG file as an attachment
     const isDangerousInlineType = ['text/html', 'application/xhtml+xml', 'image/svg+xml', 'application/xml', 'text/xml'].includes(lowerType);

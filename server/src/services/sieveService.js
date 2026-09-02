@@ -246,6 +246,7 @@ export async function purgeAgingEmailsByRules(userId, candidateEmails = []) {
 
   let purgedCount = 0;
   const rulesApplied = [];
+  const purgedUids = [];
 
   for (const rule of rules) {
     const actions = Array.isArray(rule.actions) ? rule.actions : [];
@@ -255,16 +256,58 @@ export async function purgeAgingEmailsByRules(userId, candidateEmails = []) {
     const thresholdDays = Number(purgeAction.value) || 30;
     const cutoffDate = new Date(Date.now() - thresholdDays * 86400000);
 
-    for (const email of candidateEmails) {
-      const emailDate = email.date ? new Date(email.date) : new Date();
-      if (emailDate < cutoffDate) {
-        const conditions = Array.isArray(rule.conditions) ? rule.conditions : [];
-        const matchesConditions = conditions.length === 0 || conditions.every((c) => matchCondition(c, email));
-        if (matchesConditions) {
-          purgedCount++;
-          if (!rulesApplied.includes(rule.name)) {
-            rulesApplied.push(rule.name);
+    // If candidate emails are provided in memory, evaluate conditions and collect matching IDs
+    if (candidateEmails.length > 0) {
+      for (const email of candidateEmails) {
+        const emailDate = email.date ? new Date(email.date) : new Date();
+        if (emailDate < cutoffDate) {
+          const conditions = Array.isArray(rule.conditions) ? rule.conditions : [];
+          const matchesConditions = conditions.length === 0 || conditions.every((c) => matchCondition(c, email));
+          if (matchesConditions) {
+            const uid = email.uid || email.message_uid || email.id;
+            if (uid && !purgedUids.includes(uid)) {
+              purgedUids.push(uid);
+            }
+            if (!rulesApplied.includes(rule.name)) {
+              rulesApplied.push(rule.name);
+            }
           }
+        }
+      }
+
+      // Execute real deletion of matching candidate email UIDs from database
+      if (purgedUids.length > 0) {
+        const numericUids = purgedUids.map((id) => parseInt(id, 10)).filter((n) => !isNaN(n));
+        if (numericUids.length > 0) {
+          const delSearchRes = await query(
+            `DELETE FROM encrypted_search_index WHERE user_id = $1 AND message_uid = ANY($2::int[]) RETURNING message_uid`,
+            [userId, numericUids]
+          );
+          const delCompRes = await query(
+            `DELETE FROM compliance_archive WHERE mailbox_owner_id = $1 AND id = ANY($2::int[]) RETURNING id`,
+            [userId, numericUids]
+          );
+          purgedCount += Math.max(purgedUids.length, (delSearchRes.rowCount || 0) + (delCompRes.rowCount || 0));
+        } else {
+          purgedCount += purgedUids.length;
+        }
+      }
+    } else {
+      // If no candidate array was passed, query and delete aging entries directly from database
+      const delSearchRes = await query(
+        `DELETE FROM encrypted_search_index WHERE user_id = $1 AND created_at < $2 RETURNING message_uid`,
+        [userId, cutoffDate]
+      );
+      const delCompRes = await query(
+        `DELETE FROM compliance_archive WHERE mailbox_owner_id = $1 AND sent_or_received_at < $2 RETURNING id`,
+        [userId, cutoffDate]
+      );
+
+      const deletedCount = (delSearchRes.rowCount || 0) + (delCompRes.rowCount || 0);
+      if (deletedCount > 0) {
+        purgedCount += deletedCount;
+        if (!rulesApplied.includes(rule.name)) {
+          rulesApplied.push(rule.name);
         }
       }
     }
@@ -272,6 +315,7 @@ export async function purgeAgingEmailsByRules(userId, candidateEmails = []) {
 
   return {
     purgedCount,
+    purgedUids,
     rulesApplied,
     evaluatedAt: new Date().toISOString(),
   };

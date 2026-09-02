@@ -8,6 +8,8 @@ export default function AttachmentPreviewModal({
 }) {
   const [textContent, setTextContent] = useState(null);
   const [loadingText, setLoadingText] = useState(false);
+  const [officeData, setOfficeData] = useState(null);
+  const [loadingOffice, setLoadingOffice] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
   const [imgZoom, setImgZoom] = useState(1);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
@@ -43,7 +45,7 @@ export default function AttachmentPreviewModal({
 
   // Fetch text/dat/log content if text-like or CSV
   useEffect(() => {
-    if ((isText || ext === 'csv' || ext === 'tsv') && !isImage && !isPdf) {
+    if ((isText || ext === 'csv' || ext === 'tsv') && !isImage && !isPdf && !isDocx && !isPptx && ext !== 'xlsx' && ext !== 'xls') {
       setLoadingText(true);
       fetch(previewUrl, { credentials: 'include' })
         .then((res) => {
@@ -54,7 +56,30 @@ export default function AttachmentPreviewModal({
         .catch((err) => setTextContent(`Error loading preview: ${err.message}`))
         .finally(() => setLoadingText(false));
     }
-  }, [previewUrl, isText, isImage, isPdf, ext]);
+  }, [previewUrl, isText, isImage, isPdf, isDocx, isPptx, ext]);
+
+  // Fetch structured Office document extraction from server
+  useEffect(() => {
+    if (isDocx || isXlsx || isPptx) {
+      setLoadingOffice(true);
+      fetch(`${previewUrl}&extract=true`, { credentials: 'include' })
+        .then((res) => {
+          if (!res.ok) throw new Error('Failed to extract document');
+          return res.json();
+        })
+        .then((data) => {
+          if (data && data.success) {
+            setOfficeData(data);
+          } else if (data && data.fallbackText) {
+            setTextContent(data.fallbackText);
+          }
+        })
+        .catch((err) => {
+          console.warn('Office preview extraction note:', err.message);
+        })
+        .finally(() => setLoadingOffice(false));
+    }
+  }, [previewUrl, isDocx, isXlsx, isPptx]);
 
   // Compute SHA-256 integrity hash on demand or on mount if requested
   const handleCalculateHash = async () => {
@@ -129,15 +154,20 @@ export default function AttachmentPreviewModal({
     isDraggingRef.current = false;
   };
 
-  // Parsed CSV / TSV spreadsheet rows
-  const parsedSheet = useMemo(() => {
-    if (!textContent || (!ext.includes('csv') && !ext.includes('tsv') && !isXlsx)) return null;
+  // Parsed spreadsheet data (from real .xlsx extraction or CSV/TSV)
+  const sheetData = useMemo(() => {
+    if (officeData?.type === 'xlsx' && officeData.headers) {
+      return {
+        headers: officeData.headers,
+        dataRows: officeData.rows || [],
+      };
+    }
+    if (!textContent || (!ext.includes('csv') && !ext.includes('tsv'))) return null;
     const delimiter = ext === 'tsv' ? '\t' : ',';
     const lines = textContent.split(/\r?\n/).filter((l) => l.trim().length > 0);
     if (lines.length === 0) return null;
 
     const rows = lines.map((line) => {
-      // Basic CSV splitter handling quotes
       const cells = [];
       let inQuote = false;
       let current = '';
@@ -159,18 +189,19 @@ export default function AttachmentPreviewModal({
     const headers = rows[0] || [];
     const dataRows = rows.slice(1);
     return { headers, dataRows };
-  }, [textContent, ext, isXlsx]);
+  }, [officeData, textContent, ext]);
 
   const filteredSheetRows = useMemo(() => {
-    if (!parsedSheet) return [];
-    if (!sheetSearch.trim()) return parsedSheet.dataRows;
+    if (!sheetData) return [];
+    if (!sheetSearch.trim()) return sheetData.dataRows;
     const q = sheetSearch.toLowerCase();
-    return parsedSheet.dataRows.filter((r) => r.some((cell) => cell.toLowerCase().includes(q)));
-  }, [parsedSheet, sheetSearch]);
+    return sheetData.dataRows.filter((r) => r.some((cell) => String(cell).toLowerCase().includes(q)));
+  }, [sheetData, sheetSearch]);
 
   const copyText = () => {
-    if (!textContent) return;
-    navigator.clipboard.writeText(textContent).then(() => {
+    const textToCopy = textContent || officeData?.fullText || '';
+    if (!textToCopy) return;
+    navigator.clipboard.writeText(textToCopy).then(() => {
       setCopySuccess(true);
       setTimeout(() => setCopySuccess(false), 2000);
     });
@@ -282,7 +313,7 @@ export default function AttachmentPreviewModal({
             </div>
           )}
 
-          {textContent && (
+          {(textContent || officeData?.fullText) && (
             <button
               type="button"
               className="btn btn-secondary btn-sm"
@@ -454,7 +485,7 @@ export default function AttachmentPreviewModal({
             <source src={previewUrl} type={contentType || 'video/mp4'} />
             Your browser does not support video playback.
           </video>
-        ) : parsedSheet ? (
+        ) : sheetData ? (
           /* Interactive Spreadsheet Preview (.xlsx / .csv / .tsv) */
           <div
             className="card"
@@ -470,9 +501,9 @@ export default function AttachmentPreviewModal({
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <span className="badge badge-green">Spreadsheet Grid</span>
+                <span className="badge badge-green">{isXlsx && !ext.includes('csv') ? 'Excel Spreadsheet (.xlsx)' : 'Spreadsheet Grid'}</span>
                 <span className="text-secondary" style={{ fontSize: '0.8125rem' }}>
-                  {filteredSheetRows.length} rows &bull; {parsedSheet.headers.length} columns
+                  {filteredSheetRows.length} rows &bull; {sheetData.headers.length} columns
                 </span>
               </div>
               <input
@@ -489,7 +520,7 @@ export default function AttachmentPreviewModal({
                 <thead>
                   <tr style={{ background: 'var(--color-bg-elevated)', borderBottom: '1px solid var(--color-border)' }}>
                     <th style={{ padding: '0.5rem', width: 40, color: 'var(--color-text-tertiary)', borderRight: '1px solid var(--color-border)' }}>#</th>
-                    {parsedSheet.headers.map((h, idx) => (
+                    {sheetData.headers.map((h, idx) => (
                       <th key={idx} style={{ padding: '0.5rem 0.75rem', borderRight: '1px solid var(--color-border)', fontWeight: 600 }}>
                         {h || `Col ${idx + 1}`}
                       </th>
@@ -502,7 +533,7 @@ export default function AttachmentPreviewModal({
                       <td style={{ padding: '0.45rem', color: 'var(--color-text-tertiary)', borderRight: '1px solid var(--color-border)', textAlign: 'center' }}>{rIdx + 1}</td>
                       {row.map((cell, cIdx) => (
                         <td key={cIdx} style={{ padding: '0.45rem 0.75rem', borderRight: '1px solid var(--color-border)', whiteSpace: 'nowrap' }}>
-                          {cell}
+                          {String(cell)}
                         </td>
                       ))}
                     </tr>
@@ -529,8 +560,14 @@ export default function AttachmentPreviewModal({
               <span className="badge badge-purple">Word Document (.docx)</span>
               <h3 style={{ margin: 0, fontSize: '1.1rem' }}>{filename}</h3>
             </div>
-            {loadingText ? (
-              <p className="text-secondary">Extracting document text...</p>
+            {loadingOffice ? (
+              <p className="text-secondary">Extracting document text from sandboxed archive...</p>
+            ) : officeData?.paragraphs?.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', fontSize: '0.9375rem' }}>
+                {officeData.paragraphs.map((para, pIdx) => (
+                  <p key={pIdx} style={{ margin: 0, lineHeight: 1.65 }}>{para}</p>
+                ))}
+              </div>
             ) : textContent ? (
               <div style={{ whiteSpace: 'pre-wrap', fontSize: '0.9375rem' }}>
                 {textContent}
@@ -549,7 +586,7 @@ export default function AttachmentPreviewModal({
           <div
             className="card"
             style={{
-              maxWidth: '850px',
+              maxWidth: '900px',
               width: '100%',
               maxHeight: '80vh',
               overflowY: 'auto',
@@ -559,39 +596,57 @@ export default function AttachmentPreviewModal({
               gap: '1rem',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid var(--color-border)', paddingBottom: '0.75rem' }}>
-              <span className="badge badge-amber">PowerPoint Deck (.pptx)</span>
-              <h3 style={{ margin: 0, fontSize: '1.1rem' }}>{filename}</h3>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--color-border)', paddingBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span className="badge badge-amber">PowerPoint Deck (.pptx)</span>
+                <h3 style={{ margin: 0, fontSize: '1.1rem' }}>{filename}</h3>
+              </div>
+              {officeData?.slides && (
+                <span className="text-secondary" style={{ fontSize: '0.8125rem' }}>
+                  {officeData.slides.length} slides extracted
+                </span>
+              )}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
-              {[1, 2, 3].map((slideNum) => (
-                <div
-                  key={slideNum}
-                  style={{
-                    aspectRatio: '16/9',
-                    background: 'var(--color-bg-page)',
-                    border: '1px solid var(--color-border)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: '1rem',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                  }}
-                >
-                  <span className="text-secondary" style={{ fontSize: '0.75rem' }}>Slide #{slideNum}</span>
-                  <div style={{ textAlign: 'center' }}>
-                    <strong style={{ fontSize: '0.9375rem' }}>{slideNum === 1 ? filename : `Section ${slideNum}`}</strong>
-                    <p className="text-secondary" style={{ fontSize: '0.75rem', margin: '0.25rem 0 0 0' }}>Presentation Deck Overview</p>
+            {loadingOffice ? (
+              <p className="text-secondary">Extracting presentation slides from sandboxed archive...</p>
+            ) : officeData?.slides?.length > 0 ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
+                {officeData.slides.map((slide) => (
+                  <div
+                    key={slide.slideNumber}
+                    style={{
+                      aspectRatio: '16/9',
+                      background: 'var(--color-bg-page)',
+                      border: '1px solid var(--color-border)',
+                      borderRadius: 'var(--radius-md)',
+                      padding: '1rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      overflowY: 'auto',
+                    }}
+                  >
+                    <span className="text-secondary" style={{ fontSize: '0.75rem' }}>Slide #{slide.slideNumber}</span>
+                    <div style={{ margin: '0.5rem 0' }}>
+                      <strong style={{ fontSize: '0.9375rem', display: 'block', marginBottom: '0.35rem' }}>{slide.title}</strong>
+                      {slide.content?.map((line, lIdx) => (
+                        <p key={lIdx} className="text-secondary" style={{ fontSize: '0.75rem', margin: '0.2rem 0' }}>
+                          &bull; {line}
+                        </p>
+                      ))}
+                    </div>
+                    <span className="text-tertiary mono" style={{ fontSize: '0.6875rem' }}>Sandboxed Slide Preview</span>
                   </div>
-                  <span className="text-tertiary mono" style={{ fontSize: '0.6875rem' }}>Sandboxed Slide Preview</span>
-                </div>
-              ))}
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'center', marginTop: '0.5rem' }}>
-              <a href={downloadUrl} download={filename} className="btn btn-primary btn-sm">
-                Download Original Presentation ({formatSize(attachment.size)})
-              </a>
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '2rem' }}>
+                <p className="text-secondary">Binary presentation protected in sandboxed container.</p>
+                <a href={downloadUrl} download={filename} className="btn btn-primary btn-sm">
+                  Download Safe Presentation ({formatSize(attachment.size)})
+                </a>
+              </div>
+            )}
           </div>
         ) : isText ? (
           <div

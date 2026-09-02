@@ -45,4 +45,4 @@ if (tlsResult.valid) {
   assert.ok(tlsResult.cipherName, 'TLS audit must identify cipher name');
 }
 
-console.log('✓ Suite 23: All link sandbox & security tests passed (4/4)');
+console.log('[PASS] Suite 23: All link sandbox & security tests passed (4/4)');

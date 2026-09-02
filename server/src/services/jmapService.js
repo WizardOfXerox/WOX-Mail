@@ -118,33 +118,59 @@ export async function executeJmapBatch(user, requestBody) {
         const inMailbox = args.filter?.inMailbox ? args.filter.inMailbox.replace(/^mbx_/, '').toUpperCase() : null;
         const textQuery = args.filter?.text || args.filter?.hasKeyword;
 
-        let querySql = `SELECT DISTINCT message_uid, MAX(created_at) as created_at FROM encrypted_search_index WHERE user_id = $1`;
-        const params = [user.id];
+        let ids = [];
 
-        if (inMailbox) {
-          params.push(inMailbox);
-          querySql += ` AND UPPER(folder) = $${params.length}`;
+        // Query compliance archive first
+        let archiveSql = `SELECT id, sent_or_received_at FROM compliance_archive WHERE (mailbox_owner_id = $1 OR mailbox_owner_email = $2)`;
+        const archiveParams = [user.id, user.email];
+
+        if (inMailbox === 'SENT') {
+          archiveSql += ` AND direction = 'outbound'`;
+        } else if (inMailbox === 'INBOX') {
+          archiveSql += ` AND direction = 'inbound'`;
         }
 
         if (textQuery) {
-          const userSalt = user.search_salt || `user_${user.id}_salt`;
-          const tokens = generateBlindTokens(textQuery, userSalt);
-          if (tokens.length > 0) {
-            params.push(tokens);
-            querySql += ` AND token_hash = ANY($${params.length})`;
-          }
+          archiveParams.push(`%${textQuery}%`);
+          archiveSql += ` AND (subject ILIKE $${archiveParams.length} OR body_text ILIKE $${archiveParams.length})`;
         }
 
-        querySql += ` GROUP BY message_uid ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
-        params.push(limit, position);
+        archiveSql += ` ORDER BY sent_or_received_at DESC LIMIT $${archiveParams.length + 1} OFFSET $${archiveParams.length + 2}`;
+        archiveParams.push(limit, position);
 
-        const { rows } = await query(querySql, params);
-        const ids = rows.map((r) => String(r.message_uid));
+        const { rows: archiveRows } = await query(archiveSql, archiveParams);
+        ids = archiveRows.map((r) => String(r.id));
 
-        // Get total count
+        // If archive is empty, query encrypted search index
+        if (ids.length === 0) {
+          let searchSql = `SELECT DISTINCT message_uid, MAX(created_at) as created_at FROM encrypted_search_index WHERE user_id = $1`;
+          const searchParams = [user.id];
+
+          if (inMailbox) {
+            searchParams.push(inMailbox);
+            searchSql += ` AND UPPER(folder) = $${searchParams.length}`;
+          }
+
+          if (textQuery) {
+            const userSalt = user.search_salt || `user_${user.id}_salt`;
+            const tokens = generateBlindTokens(textQuery, userSalt);
+            if (tokens.length > 0) {
+              searchParams.push(tokens);
+              searchSql += ` AND token_hash = ANY($${searchParams.length})`;
+            }
+          }
+
+          searchSql += ` GROUP BY message_uid ORDER BY created_at DESC LIMIT $${searchParams.length + 1} OFFSET $${searchParams.length + 2}`;
+          searchParams.push(limit, position);
+
+          const { rows: searchRows } = await query(searchSql, searchParams);
+          ids = searchRows.map((r) => String(r.message_uid));
+        }
+
         const { rows: countRows } = await query(
-          `SELECT COUNT(DISTINCT message_uid) as total FROM encrypted_search_index WHERE user_id = $1`,
-          [user.id]
+          `SELECT (SELECT COUNT(*) FROM compliance_archive WHERE mailbox_owner_id = $1 OR mailbox_owner_email = $2) +
+                  (SELECT COUNT(DISTINCT message_uid) FROM encrypted_search_index WHERE user_id = $1) as total`,
+          [user.id, user.email]
         );
         const total = parseInt(countRows[0]?.total || '0', 10);
 
@@ -168,30 +194,80 @@ export async function executeJmapBatch(user, requestBody) {
         const notFound = [];
 
         if (numericIds.length > 0) {
-          const { rows } = await query(
-            `SELECT DISTINCT message_uid, folder, MAX(created_at) as created_at
-             FROM encrypted_search_index
-             WHERE user_id = $1 AND message_uid = ANY($2::int[])
-             GROUP BY message_uid, folder`,
-            [user.id, numericIds]
+          // Check compliance archive for rich real RFC 8621 properties
+          const { rows: archiveRows } = await query(
+            `SELECT id, message_id, direction, sender_address, sender_name, recipient_addresses, cc_addresses,
+                    subject, body_text, body_html, has_attachments, is_read, is_starred, sent_or_received_at, created_at, checksum
+             FROM compliance_archive
+             WHERE (mailbox_owner_id = $1 OR mailbox_owner_email = $2) AND id = ANY($3::int[])`,
+            [user.id, user.email, numericIds]
           );
 
-          const foundUids = new Set();
-          for (const row of rows) {
-            foundUids.add(String(row.message_uid));
+          const foundIds = new Set();
+          for (const row of archiveRows) {
+            foundIds.add(String(row.id));
+            const bodyStr = row.body_html || row.body_text || '';
+            const sizeBytes = Buffer.byteLength(bodyStr, 'utf8') || 1024;
+            const keywords = {};
+            if (row.is_read) keywords['$seen'] = true;
+            if (row.is_starred) keywords['$flagged'] = true;
+
             list.push({
-              id: String(row.message_uid),
-              blobId: `blob_${row.message_uid}`,
-              threadId: `th_${row.message_uid}`,
-              mailboxIds: { [`mbx_${(row.folder || 'inbox').toLowerCase()}`]: true },
-              keywords: { '$seen': true },
-              size: 1024,
-              receivedAt: row.created_at || new Date().toISOString(),
+              id: String(row.id),
+              blobId: row.checksum || `blob_${row.id}`,
+              threadId: `th_${row.message_id ? row.message_id.replace(/[^a-zA-Z0-9_-]/g, '_') : row.id}`,
+              mailboxIds: { [`mbx_${row.direction === 'outbound' ? 'sent' : 'inbox'}`]: true },
+              keywords,
+              size: sizeBytes,
+              receivedAt: row.sent_or_received_at || row.created_at,
+              messageId: row.message_id ? [row.message_id] : [`<msg_${row.id}@wox.world>`],
+              from: [{ name: row.sender_name || '', email: row.sender_address || 'unknown@wox.world' }],
+              to: (row.recipient_addresses || []).map((addr) => ({ email: addr })),
+              cc: (row.cc_addresses || []).map((addr) => ({ email: addr })),
+              subject: row.subject || '(No Subject)',
+              preview: (row.body_text || '').slice(0, 256),
+              hasAttachment: Boolean(row.has_attachments),
+              bodyValues: {
+                '1': {
+                  value: bodyStr,
+                  isTruncated: false,
+                },
+              },
             });
           }
 
+          // Check encrypted search index for any remaining IDs
+          const remainingUids = numericIds.filter((id) => !foundIds.has(String(id)));
+          if (remainingUids.length > 0) {
+            const { rows: searchRows } = await query(
+              `SELECT DISTINCT message_uid, folder, MAX(created_at) as created_at
+               FROM encrypted_search_index
+               WHERE user_id = $1 AND message_uid = ANY($2::int[])
+               GROUP BY message_uid, folder`,
+              [user.id, remainingUids]
+            );
+
+            for (const row of searchRows) {
+              foundIds.add(String(row.message_uid));
+              list.push({
+                id: String(row.message_uid),
+                blobId: `blob_${row.message_uid}`,
+                threadId: `th_${row.message_uid}`,
+                mailboxIds: { [`mbx_${(row.folder || 'inbox').toLowerCase()}`]: true },
+                keywords: { '$seen': true },
+                size: 2048,
+                receivedAt: row.created_at || new Date().toISOString(),
+                subject: `Message #${row.message_uid}`,
+                from: [{ name: 'Sender', email: 'sender@wox.world' }],
+                to: [{ email: user.email }],
+                preview: 'Encrypted message indexed in zero-knowledge store',
+                hasAttachment: false,
+              });
+            }
+          }
+
           for (const reqId of requestedIds) {
-            if (!foundUids.has(reqId)) {
+            if (!foundIds.has(reqId)) {
               notFound.push(reqId);
             }
           }

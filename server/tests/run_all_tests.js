@@ -67,12 +67,13 @@ const SUITES = [
   'api/41_undo_send_api.test.js',
   'e2e/42_browser_keyboard_navigation_e2e.test.js',
 
-  // Category VIII: Enterprise Protocols, Sieve Rules & Privacy Enclave (43-47)
+  // Category VIII: Enterprise Protocols, Sieve Rules & Privacy Enclave (43-48)
   'unit/43_use_keyboard_and_shortcuts.test.js',
   'services/23_link_sandbox_and_security.test.js',
   'services/24_sieve_rules_and_automation.test.js',
   'services/25_wkd_and_mta_sts.test.js',
   'services/26_jmap_and_backups.test.js',
+  'services/27_office_doc_preview.test.js',
 ];
 
 async function runSuite(suiteRelPath, index, total) {
@@ -98,7 +99,7 @@ async function runSuite(suiteRelPath, index, total) {
 
       const durationMs = Date.now() - start;
       const passed = !stdout.includes('✖ failing tests:') && !stderr.includes('AssertionError') &&
-        (stdout.includes('✔ Suite') || stdout.includes('✓ Suite') || stdout.includes('ℹ pass') || stdout.includes('✔ 1.') || stdout.includes('✔ Setup:'));
+        (stdout.includes('✔ Suite') || stdout.includes('✓ Suite') || stdout.includes('[PASS] Suite') || stdout.includes('ℹ pass') || stdout.includes('✔ 1.') || stdout.includes('✔ Setup:'));
 
       resolve({
         suiteRelPath,
@@ -115,7 +116,7 @@ async function runSuite(suiteRelPath, index, total) {
     child.stdout.on('data', (d) => {
       const text = d.toString();
       stdout += text;
-      if (text.includes('✔ Suite') || text.includes('✓ Suite') || text.includes('✖ Suite') || text.includes('✖ failing tests:')) {
+      if (text.includes('✔ Suite') || text.includes('✓ Suite') || text.includes('[PASS] Suite') || text.includes('✖ Suite') || text.includes('✖ failing tests:')) {
         setTimeout(finish, 80);
       }
     });

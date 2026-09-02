@@ -396,8 +396,23 @@ router.get('/message/:address/:uid/attachment/:index', async (req, res, next) =>
     }
 
     const isPreview = req.query.preview === 'true';
+    const isExtract = req.query.extract === 'true';
     const filename = att.filename || `attachment-${index + 1}`;
     const contentType = att.contentType || 'application/octet-stream';
+
+    if (isExtract) {
+      const { extractOfficeDocument } = await import('../services/officeDocService.js');
+      try {
+        const docData = extractOfficeDocument(att.content, filename);
+        return res.json({ success: true, filename, ...docData });
+      } catch (extractErr) {
+        return res.json({
+          success: false,
+          error: extractErr.message,
+          fallbackText: att.content ? att.content.toString('utf8').slice(0, 50000) : '',
+        });
+      }
+    }
 
     res.setHeader('Content-Type', contentType);
     res.setHeader(
