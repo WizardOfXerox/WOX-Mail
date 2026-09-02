@@ -3,6 +3,11 @@ import { useUser } from '../shared/hooks.js';
 import { get, put, post, del, patch } from '../shared/api.js';
 import AdminTickets from './components/AdminTickets.jsx';
 import AdminTerminal from './components/AdminTerminal.jsx';
+import AdminDomainsTab from './components/AdminDomainsTab.jsx';
+import AdminQueueTab from './components/AdminQueueTab.jsx';
+import AdminEDiscoveryTab from './components/AdminEDiscoveryTab.jsx';
+import AdminGovernanceTab from './components/AdminGovernanceTab.jsx';
+import AdminStorageTab from './components/AdminStorageTab.jsx';
 import ThemeCustomizerModal from '../dashboard/components/ThemeCustomizerModal.jsx';
 import BackgroundCanvas from '../dashboard/components/BackgroundCanvas.jsx';
 import '../shared/styles/globals.css';
@@ -13,6 +18,16 @@ const getAdminIcon = (id, width = 15, height = 15) => {
       return <svg width={width} height={height} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>;
     case 'diagnostics':
       return <svg width={width} height={height} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>;
+    case 'domains':
+      return <svg width={width} height={height} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>;
+    case 'queue':
+      return <svg width={width} height={height} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><polyline points="3 6 4 7 6 5"/><polyline points="3 12 4 13 6 11"/><polyline points="3 18 4 19 6 17"/></svg>;
+    case 'ediscovery':
+      return <svg width={width} height={height} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>;
+    case 'governance':
+      return <svg width={width} height={height} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>;
+    case 'storage':
+      return <svg width={width} height={height} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>;
     case 'users':
       return <svg width={width} height={height} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
     case 'admins':
@@ -108,6 +123,7 @@ export default function App() {
       items: [
         { id: 'overview', label: 'Executive Overview' },
         { id: 'diagnostics', label: 'Diagnostics & Backups' },
+        { id: 'storage', label: 'Storage & Quotas' },
       ],
     },
     {
@@ -121,6 +137,8 @@ export default function App() {
     {
       title: 'Mail Engines',
       items: [
+        { id: 'domains', label: 'Domain & DNS Center' },
+        { id: 'queue', label: 'Delivery Queue & Quarantine' },
         { id: 'pool', label: 'Temp Mail Pool' },
         { id: 'futureme', label: 'Time Capsule Letters' },
         { id: 'services', label: 'System Mailboxes' },
@@ -129,6 +147,8 @@ export default function App() {
     {
       title: 'Infrastructure & SecOps',
       items: [
+        { id: 'ediscovery', label: 'eDiscovery & Compliance' },
+        { id: 'governance', label: 'Security Policies & DLP' },
         { id: 'ips', label: 'Firewall & IP Bans' },
         { id: 'tickets', label: 'Support Desk' },
         { id: 'settings', label: 'System Configuration' },
@@ -321,6 +341,11 @@ export default function App() {
           {activeTab === 'settings' && <SettingsTab />}
           {activeTab === 'audit' && <AuditTab />}
           {activeTab === 'announcements' && <AnnouncementsTab />}
+          {activeTab === 'domains' && <AdminDomainsTab />}
+          {activeTab === 'queue' && <AdminQueueTab />}
+          {activeTab === 'ediscovery' && <AdminEDiscoveryTab />}
+          {activeTab === 'governance' && <AdminGovernanceTab />}
+          {activeTab === 'storage' && <AdminStorageTab />}
         </div>
       </main>
 

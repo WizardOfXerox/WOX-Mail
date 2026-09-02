@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { requireAuth } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/admin.js';
@@ -14,6 +15,7 @@ import { getPoolStats, replenishPool, purgeAllTempPoolAndRecreate } from '../ser
 import { refreshFilterCache } from '../services/serviceFilter.js';
 import { parsePagination, paginationMeta } from '../utils/helpers.js';
 import { runBackup } from '../../jobs/backup.js';
+import { auditDomainDnsHealth } from '../services/dnsHealthService.js';
 import {
   getAdminFutureLetters,
   getAdminFutureLetter,
@@ -85,8 +87,13 @@ router.get('/analytics', async (req, res, next) => {
     const days = parseInt(req.query.days, 10) || 30;
 
     const daily = await query(
-      `SELECT date, registrations, emails_sent, emails_received,
-              temp_public_generated, temp_personal_generated, active_users
+      `SELECT date,
+              COALESCE(permanent_signups, 0) AS registrations,
+              COALESCE(emails_sent, 0) AS emails_sent,
+              COALESCE(emails_received, 0) AS emails_received,
+              COALESCE(temp_public_created, 0) AS temp_public_generated,
+              COALESCE(temp_personal_created, 0) AS temp_personal_generated,
+              COALESCE(logins, 0) AS active_users
        FROM daily_stats
        WHERE date >= CURRENT_DATE - $1::int
        ORDER BY date ASC`,
@@ -1728,6 +1735,473 @@ router.delete('/future-letters/:id', async (req, res, next) => {
     );
 
     res.json({ message: 'Future letter deleted from vault permanently.' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ═════════════════════════════════════════════════════════
+// 1. DOMAIN & DNS HEALTH CENTER
+// ═════════════════════════════════════════════════════════
+
+/**
+ * GET /api/admin/domains
+ * List all configured and hosted domains.
+ */
+router.get('/domains', async (req, res, next) => {
+  try {
+    const primaryDomain = process.env.DOMAIN_PERMANENT || 'wox.world';
+    const tempDomain = process.env.DOMAIN_TEMP || 'mail.wox.world';
+
+    const customDomainsRes = await query(
+      `SELECT id, domain, source, created_at FROM disposable_domains ORDER BY id ASC`
+    );
+
+    const domains = [
+      { id: 'primary', domain: primaryDomain, is_primary: true, is_temp: false, type: 'Permanent Primary' },
+      { id: 'temp', domain: tempDomain, is_primary: false, is_temp: true, type: 'Disposable Temp' },
+      ...customDomainsRes.rows.map((r) => ({
+        id: r.id,
+        domain: r.domain,
+        is_primary: false,
+        is_temp: r.source === 'disposable',
+        type: r.source === 'disposable' ? 'Secondary Disposable' : 'Custom Organization Domain',
+        created_at: r.created_at,
+      })),
+    ];
+
+    res.json({ domains });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/admin/domains/audit
+ * Run real-time DoH security & deliverability health probe on a domain.
+ */
+router.post('/domains/audit', async (req, res, next) => {
+  try {
+    const { domain } = req.body;
+    if (!domain) return res.status(400).json({ error: 'Domain is required' });
+
+    const audit = await auditDomainDnsHealth(domain);
+    res.json(audit);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/admin/domains/dkim-generate
+ * Generates an RSA-2048 keypair and formats the DNS TXT record.
+ */
+router.post('/domains/dkim-generate', async (req, res, next) => {
+  try {
+    const domain = (req.body.domain || 'wox.world').toLowerCase().trim();
+    const selector = (req.body.selector || 'woxmail').toLowerCase().trim();
+
+    const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    });
+
+    const pubKeyClean = publicKey
+      .replace(/-----BEGIN PUBLIC KEY-----/, '')
+      .replace(/-----END PUBLIC KEY-----/, '')
+      .replace(/\r?\n|\r/g, '')
+      .trim();
+
+    const recordName = `${selector}._domainkey.${domain}`;
+    const dnsRecord = `v=DKIM1; k=rsa; p=${pubKeyClean}`;
+
+    res.json({
+      domain,
+      selector,
+      recordName,
+      dnsRecord,
+      publicKey,
+      privateKey,
+      generatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ═════════════════════════════════════════════════════════
+// 2. MAIL DELIVERY QUEUE & QUARANTINE BAY
+// ═════════════════════════════════════════════════════════
+
+/**
+ * GET /api/admin/queue
+ * Returns active, deferred, and failed outbound delivery queue jobs.
+ */
+router.get('/queue', async (req, res, next) => {
+  try {
+    const [jobsRes, statsRes] = await Promise.all([
+      query(`
+        SELECT id, user_id, dispatch_id, from_address, to_addresses, subject, status,
+               error_message, scheduled_at, sent_at, retry_count, created_at, updated_at
+        FROM outbox_emails
+        ORDER BY created_at DESC
+        LIMIT 100
+      `),
+      query(`
+        SELECT
+          COUNT(*)::int AS total,
+          COUNT(*) FILTER (WHERE status = 'queued')::int AS queued,
+          COUNT(*) FILTER (WHERE status = 'retrying' OR status = 'deferred')::int AS retrying,
+          COUNT(*) FILTER (WHERE status = 'sent')::int AS sent,
+          COUNT(*) FILTER (WHERE status = 'failed')::int AS failed
+        FROM outbox_emails
+      `),
+    ]);
+
+    res.json({
+      jobs: jobsRes.rows,
+      stats: statsRes.rows[0] || { total: 0, queued: 0, retrying: 0, sent: 0, failed: 0 },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/admin/queue/flush
+ * Force-retry all deferred and retrying delivery queue jobs immediately.
+ */
+router.post('/queue/flush', async (req, res, next) => {
+  try {
+    const result = await query(`
+      UPDATE outbox_emails
+      SET status = 'queued', scheduled_at = NOW(), retry_count = 0, updated_at = NOW()
+      WHERE status IN ('retrying', 'deferred', 'failed')
+      RETURNING id
+    `);
+
+    res.json({
+      success: true,
+      flushedCount: result.rowCount,
+      message: `Successfully flushed ${result.rowCount} queue item(s) for immediate dispatch.`,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * DELETE /api/admin/queue/:id
+ * Remove or cancel a queued email from the delivery queue.
+ */
+router.delete('/queue/:id', async (req, res, next) => {
+  try {
+    const result = await query(
+      `DELETE FROM outbox_emails WHERE id = $1 RETURNING id`,
+      [req.params.id]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Queue item not found' });
+    res.json({ success: true, message: 'Queue item deleted' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/admin/quarantine
+ * Inspect screener quarantined messages and spam filter holds.
+ */
+router.get('/quarantine', async (req, res, next) => {
+  try {
+    const rules = await query(`
+      SELECT s.id, s.user_id, u.email as user_email, s.sender_pattern, s.match_type, s.destination, s.created_at, s.last_used_at
+      FROM screener_rules s
+      LEFT JOIN users u ON s.user_id = u.id
+      ORDER BY s.created_at DESC
+      LIMIT 100
+    `);
+
+    const spamRules = await query(`
+      SELECT id, user_id, type, value, created_at
+      FROM spam_rules
+      ORDER BY created_at DESC
+      LIMIT 100
+    `);
+
+    res.json({
+      screenerRules: rules.rows,
+      spamRules: spamRules.rows,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ═════════════════════════════════════════════════════════
+// 3. EDISCOVERY & COMPLIANCE ARCHIVE
+// ═════════════════════════════════════════════════════════
+
+/**
+ * GET /api/admin/ediscovery
+ * Search across the universal compliance archive with filters.
+ */
+router.get('/ediscovery', async (req, res, next) => {
+  try {
+    const {
+      search = '',
+      sender = '',
+      recipient = '',
+      direction = '',
+      startDate,
+      endDate,
+    } = req.query;
+
+    const { page, limit, offset } = parsePagination(req.query, 25);
+
+    const conditions = [];
+    const values = [];
+    let idx = 1;
+
+    if (search) {
+      conditions.push(`(subject ILIKE $${idx} OR body_text ILIKE $${idx} OR sender_address ILIKE $${idx})`);
+      values.push(`%${search}%`);
+      idx++;
+    }
+    if (sender) {
+      conditions.push(`sender_address ILIKE $${idx}`);
+      values.push(`%${sender}%`);
+      idx++;
+    }
+    if (recipient) {
+      conditions.push(`($${idx} = ANY(recipient_addresses) OR mailbox_owner_email ILIKE $${idx})`);
+      values.push(recipient);
+      idx++;
+    }
+    if (direction) {
+      conditions.push(`direction = $${idx}`);
+      values.push(direction);
+      idx++;
+    }
+    if (startDate) {
+      conditions.push(`sent_or_received_at >= $${idx}::timestamp`);
+      values.push(startDate);
+      idx++;
+    }
+    if (endDate) {
+      conditions.push(`sent_or_received_at <= $${idx}::timestamp`);
+      values.push(endDate);
+      idx++;
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const countRes = await query(
+      `SELECT COUNT(*)::int as count FROM compliance_archive ${whereClause}`,
+      values
+    );
+    const total = countRes.rows[0].count;
+
+    values.push(limit, offset);
+    const rowsRes = await query(
+      `SELECT id, message_id, direction, mailbox_owner_email, sender_address, sender_name,
+              recipient_addresses, subject, has_attachments, checksum, is_read,
+              ip_address, provider, created_at, sent_or_received_at
+       FROM compliance_archive
+       ${whereClause}
+       ORDER BY sent_or_received_at DESC
+       LIMIT $${idx} OFFSET $${idx + 1}`,
+      values
+    );
+
+    res.json({
+      messages: rowsRes.rows,
+      pagination: paginationMeta(page, limit, total),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/admin/ediscovery/verify-hash
+ * Recalculate SHA-256 and prove non-repudiation cryptographic integrity.
+ */
+router.post('/ediscovery/verify-hash', async (req, res, next) => {
+  try {
+    const { id } = req.body;
+    if (!id) return res.status(400).json({ error: 'Archive ID is required' });
+
+    const msgRes = await query(
+      `SELECT id, subject, body_html, body_text, checksum, sent_or_received_at FROM compliance_archive WHERE id = $1`,
+      [id]
+    );
+    if (msgRes.rowCount === 0) return res.status(404).json({ error: 'Archived email not found' });
+
+    const msg = msgRes.rows[0];
+    const rawContent = (msg.subject || '') + '\n' + (msg.body_html || msg.body_text || '');
+    const calculatedHash = crypto.createHash('sha256').update(rawContent, 'utf8').digest('hex');
+
+    const isValid = calculatedHash === msg.checksum;
+
+    res.json({
+      id: msg.id,
+      storedChecksum: msg.checksum,
+      calculatedChecksum: calculatedHash,
+      isVerified: isValid,
+      timestamp: msg.sent_or_received_at,
+      status: isValid ? 'CRYPTOGRAPHIC INTEGRITY VERIFIED (NO TAMPERING)' : 'INTEGRITY MISMATCH',
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/admin/ediscovery/export
+ * Export compliance archive results in MBOX format.
+ */
+router.get('/ediscovery/export', async (req, res, next) => {
+  try {
+    const records = await query(`
+      SELECT id, message_id, direction, mailbox_owner_email, sender_address,
+             recipient_addresses, subject, body_text, checksum, sent_or_received_at
+      FROM compliance_archive
+      ORDER BY sent_or_received_at DESC
+      LIMIT 500
+    `);
+
+    let mbox = '';
+    for (const r of records.rows) {
+      const fromAddr = r.sender_address || 'unknown@wox.world';
+      const dateStr = new Date(r.sent_or_received_at || Date.now()).toUTCString();
+      mbox += `From ${fromAddr} ${dateStr}\n`;
+      mbox += `Message-ID: <${r.message_id || r.id}@wox.world>\n`;
+      mbox += `From: ${fromAddr}\n`;
+      mbox += `To: ${(r.recipient_addresses || []).join(', ')}\n`;
+      mbox += `Subject: ${r.subject || '(no subject)'}\n`;
+      mbox += `Date: ${dateStr}\n`;
+      mbox += `X-WoxMail-Checksum: ${r.checksum || ''}\n`;
+      mbox += `Content-Type: text/plain; charset=utf-8\n\n`;
+      mbox += `${r.body_text || ''}\n\n`;
+    }
+
+    res.setHeader('Content-Type', 'application/mbox');
+    res.setHeader('Content-Disposition', 'attachment; filename="woxmail_ediscovery_export.mbox"');
+    res.send(mbox);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ═════════════════════════════════════════════════════════
+// 4. SECURITY GOVERNANCE & DLP POLICIES
+// ═════════════════════════════════════════════════════════
+
+const DEFAULT_GOVERNANCE = {
+  mfa_enforced: false,
+  session_timeout_minutes: 480,
+  max_attachment_size_mb: 25,
+  blocked_extensions: ['.exe', '.bat', '.cmd', '.scr', '.vbs', '.js', '.jar', '.iso', '.ps1'],
+  outbound_rate_limit_per_hour: 100,
+  dlp_enabled: true,
+  dlp_rules: [
+    { id: 'cc', name: 'Credit Card Numbers', pattern: '\\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13})\\b', action: 'quarantine', enabled: true },
+    { id: 'ssn', name: 'Social Security Numbers (SSN)', pattern: '\\b\\d{3}-\\d{2}-\\d{4}\\b', action: 'quarantine', enabled: true },
+    { id: 'api_keys', name: 'API Keys & Secrets', pattern: '(?i)(?:bearer\\s+[a-zA-Z0-9_\\-\\.]+|sk_live_[0-9a-zA-Z]{24}|ghp_[0-9a-zA-Z]{36})', action: 'block', enabled: true },
+    { id: 'private_keys', name: 'Private Crypto Keys', pattern: '-----BEGIN (?:RSA|OPENSSH|EC|DSA) PRIVATE KEY-----', action: 'block', enabled: true },
+  ],
+};
+
+/**
+ * GET /api/admin/governance
+ * Retrieve security governance policies.
+ */
+router.get('/governance', async (req, res, next) => {
+  try {
+    const govSetting = await query(`SELECT value FROM settings WHERE key = 'security_governance'`);
+    if (govSetting.rowCount > 0 && govSetting.rows[0].value) {
+      try {
+        const policy = JSON.parse(govSetting.rows[0].value);
+        return res.json({ policy: { ...DEFAULT_GOVERNANCE, ...policy } });
+      } catch {
+        // fallback
+      }
+    }
+    res.json({ policy: DEFAULT_GOVERNANCE });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * PUT /api/admin/governance
+ * Update security governance policies.
+ */
+router.put('/governance', async (req, res, next) => {
+  try {
+    const policy = req.body;
+    const jsonVal = JSON.stringify(policy);
+
+    await query(`
+      INSERT INTO settings (key, value, description, updated_at)
+      VALUES ('security_governance', $1, 'Global security and DLP governance policies', NOW())
+      ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()
+    `, [jsonVal]);
+
+    await query(
+      `INSERT INTO audit_log (actor_type, actor_id, action, target_type, target_id, details, ip_address)
+       VALUES ('admin', $1, 'update_security_governance', 'settings', 'security_governance', $2, $3)`,
+      [String(req.user.id), jsonVal, req.ip]
+    );
+
+    res.json({ success: true, policy });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ═════════════════════════════════════════════════════════
+// 5. STORAGE & QUOTAS TELEMETRY
+// ═════════════════════════════════════════════════════════
+
+/**
+ * GET /api/admin/storage
+ * System disk storage, database table metrics, and user quota leaderboard.
+ */
+router.get('/storage', async (req, res, next) => {
+  try {
+    const [dbSizeRes, tableMetricsRes, topUsersRes] = await Promise.all([
+      query(`SELECT pg_size_pretty(pg_database_size(current_database())) AS total_size, pg_database_size(current_database()) AS total_bytes`),
+      query(`
+        SELECT relname AS table_name,
+               pg_total_relation_size(relid) AS total_bytes,
+               pg_size_pretty(pg_total_relation_size(relid)) AS total_size,
+               pg_size_pretty(pg_relation_size(relid)) AS table_size,
+               pg_size_pretty(pg_total_relation_size(relid) - pg_relation_size(relid)) AS index_size
+        FROM pg_catalog.pg_statio_user_tables
+        ORDER BY pg_total_relation_size(relid) DESC
+        LIMIT 12
+      `),
+      query(`
+        SELECT u.id, u.email, COALESCE(u.display_name, u.username) AS name,
+               COALESCE(q.max_storage_bytes, 10737418240) AS max_bytes,
+               COALESCE(q.current_mail_bytes, 0) AS mail_bytes,
+               COALESCE(q.current_attach_bytes, 0) AS attach_bytes,
+               (COALESCE(q.current_mail_bytes, 0) + COALESCE(q.current_attach_bytes, 0)) AS total_used_bytes
+        FROM users u
+        LEFT JOIN user_quotas q ON u.id = q.user_id
+        ORDER BY (COALESCE(q.current_mail_bytes, 0) + COALESCE(q.current_attach_bytes, 0)) DESC
+        LIMIT 10
+      `),
+    ]);
+
+    res.json({
+      database: dbSizeRes.rows[0],
+      tables: tableMetricsRes.rows,
+      topUsers: topUsersRes.rows,
+      generatedAt: new Date().toISOString(),
+    });
   } catch (err) {
     next(err);
   }

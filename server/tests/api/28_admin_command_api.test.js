@@ -68,4 +68,89 @@ test('Suite 28: REST API — Root Admin Command Center & Metrics API', async (t)
     assert.ok(typeof res.body.memoryKeysCleared === 'number');
     assert.ok(typeof res.body.redisFlushed === 'boolean');
   });
+
+  await t.test('5. GET /api/admin/domains and POST /api/admin/domains/dkim-generate', async () => {
+    const listRes = await apiRequest('/api/admin/domains', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(listRes.status, 200);
+    assert.ok(Array.isArray(listRes.body.domains));
+
+    const dkimRes = await apiRequest('/api/admin/domains/dkim-generate', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: { domain: 'wox.world', selector: 'woxmail' },
+    });
+    assert.equal(dkimRes.status, 200);
+    assert.ok(dkimRes.body.dnsRecord.startsWith('v=DKIM1;'));
+    assert.ok(dkimRes.body.publicKey);
+  });
+
+  await t.test('6. GET /api/admin/queue and POST /api/admin/queue/flush', async () => {
+    const queueRes = await apiRequest('/api/admin/queue', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(queueRes.status, 200);
+    assert.ok(Array.isArray(queueRes.body.jobs));
+    assert.ok(typeof queueRes.body.stats === 'object');
+
+    const flushRes = await apiRequest('/api/admin/queue/flush', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(flushRes.status, 200);
+    assert.equal(flushRes.body.success, true);
+  });
+
+  await t.test('7. GET /api/admin/quarantine returns holding bay entries', async () => {
+    const res = await apiRequest('/api/admin/quarantine', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(res.status, 200);
+    assert.ok(Array.isArray(res.body.screenerRules));
+  });
+
+  await t.test('8. GET /api/admin/ediscovery returns compliance archive search results', async () => {
+    const res = await apiRequest('/api/admin/ediscovery?limit=10', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(res.status, 200);
+    assert.ok(Array.isArray(res.body.messages));
+    assert.ok(typeof res.body.pagination === 'object');
+  });
+
+  await t.test('9. GET /api/admin/governance and PUT /api/admin/governance', async () => {
+    const getRes = await apiRequest('/api/admin/governance', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(getRes.status, 200);
+    assert.ok(getRes.body.policy);
+
+    const putRes = await apiRequest('/api/admin/governance', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        ...getRes.body.policy,
+        outbound_rate_limit_per_hour: 120,
+      },
+    });
+    assert.equal(putRes.status, 200);
+    assert.equal(putRes.body.success, true);
+  });
+
+  await t.test('10. GET /api/admin/storage returns database and quota metrics', async () => {
+    const res = await apiRequest('/api/admin/storage', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(res.status, 200);
+    assert.ok(res.body.database);
+    assert.ok(Array.isArray(res.body.tables));
+    assert.ok(Array.isArray(res.body.topUsers));
+  });
 });
