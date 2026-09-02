@@ -94,7 +94,8 @@ export async function getFolderListFast(client) {
  */
 export async function resolveFolder(client, folder) {
   if (!folder) return 'INBOX';
-  const fLower = folder.toLowerCase().trim();
+  const fTrimmed = folder.trim();
+  const fLower = fTrimmed.toLowerCase();
 
   if (fLower === 'inbox' || fLower === 'inboxes') return 'INBOX';
   if (fLower === '__all_inboxes' || fLower === 'all inboxes' || fLower === 'all_inbox' || fLower === '__all') return 'INBOX';
@@ -106,36 +107,57 @@ export async function resolveFolder(client, folder) {
   try {
     const folders = await getFolderListFast(client);
 
-    // 1. Direct name or path match
-    let match = folders.find((f) => f.name.toLowerCase() === fLower || f.path.toLowerCase() === fLower);
+    // 1. Direct path or name exact match (handles custom folders, Dovecot/Cyrus paths)
+    let match = folders.find((f) => f.path === fTrimmed || f.name === fTrimmed || f.path.toLowerCase() === fLower || f.name.toLowerCase() === fLower);
     if (match) return match.path;
 
-    // 2. Special-use flags or provider path patterns (e.g. Gmail [Gmail]/Sent Mail)
+    // 2. Trailing subfolder / delimiter normalization (e.g. INBOX/Work, INBOX.Work, Projects/Alpha)
+    match = folders.find((f) => {
+      const pLower = f.path.toLowerCase();
+      const nLower = f.name.toLowerCase();
+      return pLower.endsWith('/' + fLower) || pLower.endsWith('.' + fLower) || nLower.endsWith('/' + fLower) || nLower.endsWith('.' + fLower);
+    });
+    if (match) return match.path;
+
+    // 3. Provider-specific & standard RFC 6154 special-use aliases
+    // Sent: Gmail [Gmail]/Sent Mail, Outlook "Sent Items", iCloud "Sent Messages", Zoho/Yahoo "Sent"
     if (fLower === 'sent' || fLower === 'sent messages' || fLower === 'sent items') {
       match = folders.find((f) => f.specialUse === '\\Sent' || f.name.toLowerCase().includes('sent') || f.path.toLowerCase().includes('sent'));
       if (match) return match.path;
     }
-    if (fLower === 'trash' || fLower === 'deleted' || fLower === 'bin') {
-      match = folders.find((f) => f.specialUse === '\\Trash' || f.name.toLowerCase().includes('trash') || f.name.toLowerCase().includes('bin') || f.path.toLowerCase().includes('trash') || f.path.toLowerCase().includes('bin'));
+
+    // Trash: Gmail [Gmail]/Bin, Outlook "Deleted Items", iCloud "Deleted Messages", Yahoo "Trash"
+    if (fLower === 'trash' || fLower === 'deleted' || fLower === 'bin' || fLower === 'deleted items' || fLower === 'deleted messages') {
+      match = folders.find((f) => f.specialUse === '\\Trash' || f.name.toLowerCase().includes('trash') || f.name.toLowerCase().includes('bin') || f.name.toLowerCase().includes('deleted') || f.path.toLowerCase().includes('trash') || f.path.toLowerCase().includes('bin') || f.path.toLowerCase().includes('deleted'));
       if (match) return match.path;
     }
-    if (fLower === 'spam' || fLower === 'junk') {
-      match = folders.find((f) => f.specialUse === '\\Junk' || f.name.toLowerCase().includes('spam') || f.name.toLowerCase().includes('junk') || f.path.toLowerCase().includes('spam') || f.path.toLowerCase().includes('junk'));
+
+    // Spam: Gmail [Gmail]/Spam, Outlook "Junk Email", Yahoo "Bulk Mail", iCloud/Fastmail "Junk"
+    if (fLower === 'spam' || fLower === 'junk' || fLower === 'junk email' || fLower === 'bulk' || fLower === 'bulk mail') {
+      match = folders.find((f) => f.specialUse === '\\Junk' || f.name.toLowerCase().includes('spam') || f.name.toLowerCase().includes('junk') || f.name.toLowerCase().includes('bulk') || f.path.toLowerCase().includes('spam') || f.path.toLowerCase().includes('junk') || f.path.toLowerCase().includes('bulk'));
       if (match) return match.path;
     }
+
+    // Drafts: Gmail [Gmail]/Drafts, Yahoo "Draft", Outlook/iCloud/Zoho/Fastmail "Drafts"
     if (fLower === 'drafts' || fLower === 'draft') {
       match = folders.find((f) => f.specialUse === '\\Drafts' || f.name.toLowerCase().includes('draft') || f.path.toLowerCase().includes('draft'));
       if (match) return match.path;
     }
-    if (fLower === 'archive' || fLower === 'all mail') {
-      match = folders.find((f) => f.specialUse === '\\Archive' || f.specialUse === '\\All' || f.name.toLowerCase().includes('all mail') || f.path.toLowerCase().includes('all mail'));
+
+    // Archive: Gmail [Gmail]/All Mail, Outlook/iCloud/Zoho "Archive", Fastmail "Archive"
+    if (fLower === 'archive' || fLower === 'all mail' || fLower === 'archives') {
+      match = folders.find((f) => f.specialUse === '\\Archive' || f.specialUse === '\\All' || f.name.toLowerCase().includes('all mail') || f.path.toLowerCase().includes('all mail') || f.name.toLowerCase().includes('archive') || f.path.toLowerCase().includes('archive'));
       if (match) return match.path;
     }
+
+    // Social: native folder or virtual filter
     if (fLower === 'social') {
       match = folders.find((f) => f.specialUse === '\\Social' || f.name.toLowerCase().includes('social') || f.path.toLowerCase().includes('social'));
       if (match) return match.path;
       return 'Social';
     }
+
+    // Promotions: native folder or virtual filter
     if (fLower === 'promotions' || fLower === 'promotion') {
       match = folders.find((f) => f.specialUse === '\\Promotions' || f.name.toLowerCase().includes('promotion') || f.path.toLowerCase().includes('promotion'));
       if (match) return match.path;
@@ -145,10 +167,10 @@ export async function resolveFolder(client, folder) {
     // Fallback to static resolution if list fails
   }
 
-  if (fLower === 'spam' || fLower === 'junk') return 'Junk';
-  if (fLower === 'sent') return 'Sent';
-  if (fLower === 'trash') return 'Trash';
-  if (fLower === 'drafts') return 'Drafts';
+  if (fLower === 'spam' || fLower === 'junk' || fLower === 'bulk mail' || fLower === 'junk email') return 'Junk';
+  if (fLower === 'sent' || fLower === 'sent items' || fLower === 'sent messages') return 'Sent';
+  if (fLower === 'trash' || fLower === 'bin' || fLower === 'deleted items' || fLower === 'deleted messages') return 'Trash';
+  if (fLower === 'drafts' || fLower === 'draft') return 'Drafts';
   if (fLower === 'promotions') return 'Promotions';
   if (fLower === 'social') return 'Social';
   return folder;
@@ -246,12 +268,22 @@ export async function fetchMessages(client, folder = 'INBOX', { page = 1, limit 
 export async function fetchStarredMessages(client, { page = 1, limit = 25, folder = 'INBOX' } = {}) {
   const allStarred = [];
   let lock;
+  let targetFolder = folder;
+  let searchFilter = { flagged: true };
+
   try {
+    const fastFolders = await getFolderListFast(client);
+    const flaggedFolder = fastFolders.find((f) => f.specialUse === '\\Flagged' || f.name.toLowerCase() === 'starred' || f.path.toLowerCase().includes('starred'));
+    if (flaggedFolder) {
+      targetFolder = flaggedFolder.path;
+      searchFilter = { all: true };
+    }
+
     lock = await Promise.race([
-      client.getMailboxLock(folder),
+      client.getMailboxLock(targetFolder),
       new Promise((_, reject) => setTimeout(() => reject(new Error('lock timeout')), 5000)),
     ]);
-    const uids = await client.search({ flagged: true }, { uid: true });
+    const uids = await client.search(searchFilter, { uid: true });
     if (Array.isArray(uids) && uids.length > 0) {
       for await (const msg of client.fetch(uids.join(','), {
         envelope: true,

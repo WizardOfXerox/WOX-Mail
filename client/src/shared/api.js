@@ -35,13 +35,21 @@ export async function api(path, options = {}) {
     ? path
     : `${BASE}${path.startsWith('/') ? path : '/' + path}`;
 
-  const res = await fetch(cleanPath, {
-    method,
-    headers,
-    credentials: 'include',
-    body: body instanceof FormData ? body : body ? JSON.stringify(body) : undefined,
-    ...rest,
-  });
+  let res;
+  try {
+    res = await fetch(cleanPath, {
+      method,
+      headers,
+      credentials: 'include',
+      body: body instanceof FormData ? body : body ? JSON.stringify(body) : undefined,
+      ...rest,
+    });
+  } catch (networkErr) {
+    if (typeof window !== 'undefined' && window.WoxBeep) {
+      window.WoxBeep(`Network Error: ${method} ${cleanPath} (${networkErr.message})`, networkErr);
+    }
+    throw networkErr;
+  }
 
   // Auth redirect
   if (res.status === 401) {
@@ -55,6 +63,9 @@ export async function api(path, options = {}) {
     const err = new Error(data.error || `API error ${res.status}`);
     err.status = res.status;
     err.details = data.details;
+    if (typeof window !== 'undefined' && window.WoxBeep) {
+      window.WoxBeep(`API Error: ${method} ${cleanPath} -> HTTP ${res.status} (${err.message})`, err);
+    }
     throw err;
   }
 

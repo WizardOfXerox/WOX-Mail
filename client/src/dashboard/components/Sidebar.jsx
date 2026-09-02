@@ -237,10 +237,19 @@ export default function Sidebar({
 
   // Custom folders (not in system list)
   const systemNames = new Set(SYSTEM_FOLDERS.map((f) => (f.name || '').toLowerCase()));
+  const providerSystemPatterns = [
+    '[gmail]', 'important', 'all mail', 'bin', 'sent mail',
+    'sent items', 'deleted items', 'junk email', 'bulk mail',
+    'sent messages', 'deleted messages', 'conversation history', 'sync issues'
+  ];
   const customFolders = (folders || []).filter((f) => {
     if (!f) return false;
-    const fName = (typeof f === 'string' ? f : f.name || f.path || '').toLowerCase();
-    return fName && !systemNames.has(fName) && !f.specialUse;
+    const fName = (typeof f === 'string' ? f : f.name || f.path || '').toLowerCase().trim();
+    const fPath = (typeof f === 'string' ? f : f.path || f.name || '').toLowerCase().trim();
+    if (!fName || systemNames.has(fName)) return false;
+    if (f.specialUse) return false;
+    if (providerSystemPatterns.includes(fName) || providerSystemPatterns.includes(fPath)) return false;
+    return true;
   });
 
   const handleCreateFolder = async (e) => {

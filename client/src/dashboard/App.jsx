@@ -120,9 +120,23 @@ export default function App() {
   const initialLoadDoneRef = React.useRef(false);
   const previousFolderRef = React.useRef(activeFolder);
 
-  // Request notifications on load
+  // Request notifications on load & register global error audio debugger
   useEffect(() => {
     NotificationService.requestPermission();
+
+    const handleError = (e) => {
+      NotificationService.playErrorBeep(`Uncaught Error: ${e.message} (${e.filename || 'unknown'}:${e.lineno || 0})`, e.error);
+    };
+    const handleUnhandledRejection = (e) => {
+      NotificationService.playErrorBeep(`Unhandled Rejection: ${e.reason?.message || e.reason}`, e.reason);
+    };
+
+    window.addEventListener('error', handleError);
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+    return () => {
+      window.removeEventListener('error', handleError);
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+    };
   }, []);
 
   const { folders, refetch: refetchFolders } = useFolders(activeAccount);
