@@ -189,13 +189,67 @@
 
 ---
 
-## 🏆 Final Verification Matrix
-* **Active Port**: `3001`
-* **Test Suites**: 42/42 PASSED (100% Success)
-* **Production Build**: Vite Multi-Entry React Client Bundled
-* **Compliance Vault**: Live and active on `archive@wox.world`
-* **Helpdesk Stream**: Live and active on `support@wox.world`
-* **OpenAPI Documentation**: OpenAPI 3.1.0 Interactive Portal active on `/api/docs`
+---
+
+## Future Roadmap & Planned Phases
+
+### Phase 16: Next-Gen Email Intelligence & Controlled Attachments Suite
+- [ ] **Controlled Secure Attachments**:
+  - Customizable view limits (e.g. 1 view, 3 views, custom).
+  - Customizable download limits (e.g. View-only / 0 downloads, 1 download, custom).
+  - Sandboxed in-browser viewer with dynamic vector watermarking (recipient email + timestamp).
+  - Automatic lockout / asset burn upon limit exhaustion.
+  - Real-time view and download alerts pushed to the sender.
+- [ ] **Advanced Interaction & Link Tracking**:
+  - Outbound link wrapping with signed redirect proxies (`/api/analytics/click/:token`).
+  - Multi-open timeline and dwell telemetry.
+  - Real-time desktop/push notification alerts on open.
+- [ ] **Automated Follow-Up Reminders ("Bump If No Reply")**:
+  - Configurable reminder buffers (2 days, 3 days, 1 week, custom date).
+  - Automatic thread resurfacing to the top of the Inbox when unreplied.
+  - Auto-cancellation upon recipient reply detection via `In-Reply-To` headers.
+- [ ] **Pre-Flight Deliverability & Spam Score Inspector**:
+  - 0-100 score analyzing spam trigger words, HTML-to-text balance, DNS alignment, and broken URLs.
+- [ ] **Recipient Intelligence & Contact Dossier**:
+  - Companion Dock side-panel with contact interaction history, response speed graph, and recipient local timezone clock.
+- [ ] **Remote Message & Attachment Revocation**:
+  - 1-click remote kill-switch for sent confidential messages and attachments in the Sent folder.
+- [ ] **Smart Snippets & WYSIWYG Macro Expansion**:
+  - Slash command macros (`/intro`, `/meeting`, `/pricing`) in the composer.
+
+---
+
+### Phase 17: MailCore 2-Inspired High-Performance Protocol Engine
+- [ ] **Granular `BODYSTRUCTURE` & Range Slicing**:
+  - Fetch metadata and 1KB text preview slices (`BODY.PEEK[1]<0.1024>`) during mailbox listing, skipping multi-megabyte attachment downloads until explicit message open.
+- [ ] **Persistent Webmail IMAP `IDLE` Push Daemon**:
+  - Dedicated background socket holding IMAP `IDLE` with 20-minute `NOOP` keep-alives and automatic reconnects, piping events straight to Socket.IO for sub-second real-time delivery.
+- [ ] **On-Demand MIME Part Streaming**:
+  - Stream individual attachment parts directly from IMAP to client without buffering entire emails in Node.js server RAM.
+- [ ] **Delta Synchronization (`MODSEQ` / `UIDVALIDITY`)**:
+  - Skip re-fetching unchanged message lists when folder `highestModseq` matches the cache.
+- [ ] **External Account Multi-Mailbox Support (OAuth2 / XOAUTH2)**:
+  - Connect external Gmail, Microsoft 365, and Yahoo accounts into WoxMail side-by-side using OAuth2 token authentication.
+
+---
+
+### Phase 18: Native Cross-Platform Client Ecosystem
+- [ ] **Native iOS & macOS Client (Swift / SwiftUI)**:
+  - Powered by MailCore 2 C++ engine with local SQLite full-text search (FTS5), Face ID / Touch ID biometrics, and background IMAP IDLE push.
+- [ ] **Native Android Client (Kotlin / Jetpack Compose)**:
+  - Powered by MailCore 2 (JNI) with battery-optimized background sync, encrypted offline storage, and notification channels.
+- [ ] **Native Desktop Client (Electron / Tauri / C#)**:
+  - Cross-platform desktop application with system tray integration, offline cache, and hardware security key support.
+
+---
+
+### Phase 19: Sovereign Identity & Decentralized Communications
+- [ ] **WoxAuth Decentralized Identity (DID / Passkeys Federation)**:
+  - Universal passwordless identity protocol for third-party web apps.
+- [ ] **Decentralized PGP Key Directory & Auto-Exchange**:
+  - Automatic Web Key Directory (WKD) and HKP keyserver integration for zero-friction end-to-end PGP email exchange.
+- [ ] **ActivityPub & Federation Bridge**:
+  - Bridge email threads with decentralized social streams and sovereign newsletter feeds.
 
 
 
