@@ -26,8 +26,8 @@ const logger = pino({ name: 'woxmail:jobs' });
  * Start all background jobs.
  */
 export function startJobs() {
-  // Every 1 minute: process inbound email verification replies (Dual-Mode Inbound Challenge)
-  cron.schedule('*/1 * * * *', async () => {
+  // Every 10 seconds: process inbound email verification replies (Dual-Mode Inbound Challenge)
+  cron.schedule('*/10 * * * * *', async () => {
     try {
       const count = await processInboundVerificationReplies();
       if (count > 0) logger.info({ count }, 'Verification: processed inbound reply confirmations');

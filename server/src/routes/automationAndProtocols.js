@@ -3,7 +3,8 @@
  */
 
 import { Router } from 'express';
-import { requireAuth, requireAdmin } from '../middleware/auth.js';
+import { requireAuth } from '../middleware/auth.js';
+import { requireAdmin } from '../middleware/admin.js';
 import { getUserSieveRules, saveSieveRule, deleteSieveRule, evaluateSieveRules, purgeAgingEmailsByRules } from '../services/sieveService.js';
 import { createMailboxBackup, listUserBackups } from '../services/backupService.js';
 import { searchBlindIndex, indexMessageBlind } from '../services/zeroKnowledgeSearchService.js';

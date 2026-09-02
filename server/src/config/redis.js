@@ -145,4 +145,28 @@ export async function incr(key) {
   return nextVal;
 }
 
+/**
+ * Flush all in-memory keys and Redis database buffers.
+ * @returns {Promise<{ redisFlushed: boolean, memoryKeysCleared: number }>}
+ */
+export async function flushCache() {
+  const memoryKeysCleared = memoryStore.size;
+  memoryStore.clear();
+
+  let redisFlushed = false;
+  try {
+    if (redis.status === 'ready') {
+      await redis.flushdb();
+      redisFlushed = true;
+    }
+  } catch (err) {
+    logger.warn({ err: err.message }, 'Redis flushdb failed');
+  }
+
+  return {
+    redisFlushed,
+    memoryKeysCleared,
+  };
+}
+
 export default redis;

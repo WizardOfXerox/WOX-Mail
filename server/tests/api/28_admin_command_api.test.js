@@ -56,4 +56,16 @@ test('Suite 28: REST API — Root Admin Command Center & Metrics API', async (t)
     assert.equal(res.status, 200);
     assert.ok(res.body.pool !== undefined);
   });
+
+  await t.test('4. POST /api/admin/diagnostics/flush-cache clears in-memory and redis cache buffers', async () => {
+    const res = await apiRequest('/api/admin/diagnostics/flush-cache', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.success, true);
+    assert.ok(typeof res.body.memoryKeysCleared === 'number');
+    assert.ok(typeof res.body.redisFlushed === 'boolean');
+  });
 });

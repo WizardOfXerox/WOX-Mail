@@ -1513,7 +1513,13 @@ router.post('/diagnostics/vacuum', async (req, res, next) => {
  */
 router.post('/diagnostics/flush-cache', async (req, res, next) => {
   try {
-    res.json({ success: true, message: 'All in-memory & Redis cache buffers purged successfully.' });
+    const { flushCache } = await import('../config/redis.js');
+    const result = await flushCache();
+    res.json({
+      success: true,
+      message: `All in-memory & Redis cache buffers purged successfully. (${result.memoryKeysCleared} in-memory keys cleared, Redis status: ${result.redisFlushed ? 'flushed' : 'offline/bypassed'})`,
+      ...result,
+    });
   } catch (err) {
     next(err);
   }
