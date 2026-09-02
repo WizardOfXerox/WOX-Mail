@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Unlock Confidential Message — WoxMail</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="/css/style.css?v=2.0.1">
+  <link rel="stylesheet" href="/css/backgrounds.css?v=2.0.1">
+  
+  <style>
+    html {
+      background-color: #070710 !important;
+      background-image: 
+        radial-gradient(circle at 50% 12%, rgba(124, 58, 237, 0.32) 0%, transparent 65%),
+        radial-gradient(circle at 85% 85%, rgba(109, 74, 255, 0.2) 0%, transparent 55%),
+        radial-gradient(circle at 15% 75%, rgba(139, 92, 246, 0.14) 0%, transparent 50%);
+      color: #f0f0f5;
+      min-height: 100vh;
+    }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: transparent !important;
+      font-family: var(--font-body, 'Inter', sans-serif);
+      color: var(--color-text-primary, #f0f0f5);
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    .interactive-bg-canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .unlock-container {
+      width: 100%;
+      max-width: 620px;
+      margin: 2rem auto;
+      padding: 0 1.25rem;
+      position: relative;
+      z-index: 10;
+    }
+
+    .brand-header {
+      text-align: center;
+      margin-bottom: 1.75rem;
+    }
+
+    .brand-logo {
+      font-size: 1.75rem;
+      font-weight: 800;
+      font-family: 'Outfit', var(--font-body), sans-serif;
+      letter-spacing: -0.02em;
+      color: var(--color-text-primary, #ffffff);
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .brand-logo .accent {
+      color: var(--color-primary-light, #a78bfa);
+      text-shadow: 0 0 20px rgba(124, 58, 237, 0.5);
+    }
+
+    .brand-subtitle {
+      font-size: 0.8125rem;
+      color: var(--color-text-secondary, #9898b0);
+      margin-top: 0.35rem;
+      letter-spacing: 0.02em;
+    }
+
+    .unlock-card {
+      background: rgba(18, 18, 36, 0.88);
+      backdrop-filter: blur(28px);
+      -webkit-backdrop-filter: blur(28px);
+      border: 1px solid rgba(124, 58, 237, 0.32);
+      border-radius: var(--radius-xl, 24px);
+      padding: 2.25rem;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.75), 0 0 35px rgba(124, 58, 237, 0.18);
+      transition: all 0.3s ease;
+    }
+
+    .unlock-card:hover {
+      border-color: rgba(124, 58, 237, 0.5);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.85), 0 0 45px rgba(124, 58, 237, 0.3);
+    }
+
+    .lock-icon-wrap {
+      width: 60px;
+      height: 60px;
+      margin: 0 auto 1.25rem;
+      border-radius: 18px;
+      background: rgba(124, 58, 237, 0.15);
+      border: 1px solid rgba(124, 58, 237, 0.35);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--color-primary-light, #a78bfa);
+      box-shadow: 0 0 24px rgba(124, 58, 237, 0.25);
+    }
+
+    .pin-group {
+      display: flex;
+      gap: 0.6rem;
+      justify-content: center;
+      margin: 1.75rem 0 1.25rem;
+    }
+
+    .pin-box {
+      width: 52px;
+      height: 60px;
+      font-size: 1.65rem;
+      text-align: center;
+      font-family: var(--font-mono, 'JetBrains Mono', monospace);
+      font-weight: 700;
+      border-radius: var(--radius-md, 14px);
+      background: rgba(14, 14, 28, 0.95);
+      border: 2px solid rgba(255, 255, 255, 0.1);
+      color: var(--color-text-primary, #ffffff);
+      transition: all 0.18s ease;
+      outline: none;
+    }
+
+    .pin-box:focus {
+      border-color: var(--color-primary, #7c3aed);
+      background: rgba(26, 26, 52, 0.98);
+      box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.35), 0 0 20px rgba(124, 58, 237, 0.3);
+      transform: translateY(-2px);
+    }
+
+    .btn-unlock {
+      width: 100%;
+      padding: 0.85rem 1.5rem;
+      border-radius: var(--radius-pill, 9999px);
+      background: linear-gradient(135deg, #7c3aed, #6d28d9);
+      color: #ffffff;
+      font-weight: 600;
+      font-size: 1rem;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 4px 20px rgba(124, 58, 237, 0.4);
+      transition: all 0.2s ease;
+    }
+
+    .btn-unlock:hover:not(:disabled) {
+      background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+      box-shadow: 0 6px 28px rgba(124, 58, 237, 0.6);
+      transform: translateY(-1px);
+    }
+
+    .btn-unlock:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .watermark-container {
+      position: relative;
+      overflow: hidden;
+      border-radius: var(--radius-lg, 18px);
+      background: rgba(10, 10, 20, 0.85);
+      padding: 1.75rem;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      line-height: 1.7;
+      margin-top: 1.5rem;
+    }
+
+    .watermark-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      pointer-events: none;
+      opacity: 0.06;
+      font-size: 13px;
+      font-family: var(--font-mono, monospace);
+      display: flex;
+      flex-wrap: wrap;
+      align-content: space-around;
+      transform: rotate(-22deg) scale(1.35);
+      user-select: none;
+      color: var(--color-text-primary, #ffffff);
+    }
+
+    .watermark-text {
+      padding: 18px;
+      white-space: nowrap;
+    }
+
+    .burn-pill {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      color: #fca5a5;
+      padding: 0.75rem 1rem;
+      border-radius: var(--radius-md, 12px);
+      font-size: 0.8125rem;
+      margin-bottom: 1.25rem;
+      animation: pulseAlert 2.5s infinite ease-in-out;
+    }
+
+    @keyframes pulseAlert {
+      0%, 100% { border-color: rgba(239, 68, 68, 0.35); }
+      50% { border-color: rgba(239, 68, 68, 0.7); box-shadow: 0 0 15px rgba(239, 68, 68, 0.2); }
+    }
+
+    .error-alert-box {
+      display: none;
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.45);
+      color: #fca5a5;
+      padding: 0.85rem 1.25rem;
+      border-radius: var(--radius-md, 14px);
+      font-size: 0.875rem;
+      font-weight: 500;
+      text-align: center;
+      margin: 0 auto 1.25rem;
+      line-height: 1.5;
+      box-sizing: border-box;
+      animation: fadeIn 0.25s ease;
+    }
+
+    .msg-rendered-content {
+      position: relative;
+      z-index: 2;
+      font-size: 0.9375rem;
+      color: var(--color-text-primary, #f0f0f5);
+      word-break: break-word;
+    }
+
+    .msg-rendered-content a {
+      color: var(--color-primary-light, #a78bfa);
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <!-- Interactive Cursor-Reactive Background Canvas -->
+  <canvas id="interactive-bg-canvas" class="interactive-bg-canvas"></canvas>
+
+  <div class="unlock-container">
+    <div class="brand-header">
+      <a href="/" class="brand-logo">
+        Wox<span class="accent">Mail</span>
+      </a>
+      <div class="brand-subtitle">
+        Zero-Knowledge Confidential Email Vault
+      </div>
+    </div>
+
+    <div class="unlock-card">
+      <!-- 1. PIN Unlock Form View -->
+      <div id="unlock-form-view">
+        <div style="text-align: center; margin-bottom: 1.5rem;">
+          <div class="lock-icon-wrap">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </div>
+          <h2 style="margin: 0.25rem 0 0.4rem; font-size: 1.35rem; font-weight: 700; font-family: 'Outfit', sans-serif;">Confidential Message</h2>
+          <p class="text-secondary" style="font-size: 0.875rem; max-width: 420px; margin: 0 auto; line-height: 1.5;">
+            This email payload is encrypted inside an AES-256 Enclave Vault. Enter the passcode provided by the sender to decrypt.
+          </p>
+        </div>
+
+        <div id="error-box" class="error-alert-box"></div>
+
+        <form id="unlock-form" onsubmit="handleUnlock(event)">
+          <div class="pin-group">
+            <input type="text" inputmode="numeric" maxlength="1" class="pin-box" data-index="0" autofocus autocomplete="off">
+            <input type="text" inputmode="numeric" maxlength="1" class="pin-box" data-index="1" autocomplete="off">
+            <input type="text" inputmode="numeric" maxlength="1" class="pin-box" data-index="2" autocomplete="off">
+            <input type="text" inputmode="numeric" maxlength="1" class="pin-box" data-index="3" autocomplete="off">
+            <input type="text" inputmode="numeric" maxlength="1" class="pin-box" data-index="4" autocomplete="off">
+            <input type="text" inputmode="numeric" maxlength="1" class="pin-box" data-index="5" autocomplete="off">
+          </div>
+
+          <div style="margin-bottom: 1rem; text-align: center;">
+            <input type="hidden" id="full-passcode" name="passcode">
+          </div>
+
+          <button type="submit" id="unlock-btn" class="btn-unlock" style="display:inline-flex; align-items:center; justify-content:center; gap:0.45rem;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+            <span>Unlock Secure Message</span>
+          </button>
+        </form>
+
+        <div style="margin-top: 1.5rem; text-align: center; font-size: 0.75rem; display:flex; align-items:center; justify-content:center; gap:0.35rem;" class="text-secondary">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <span>End-to-end encrypted with AES-256-GCM and Argon2id hash derivation.</span>
+        </div>
+      </div>
+
+      <!-- 2. Decrypted Message View -->
+      <div id="decrypted-view" style="display: none; animation: fadeIn 0.3s ease;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 1.25rem; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.5rem;">
+          <div>
+            <span class="badge badge-purple" style="font-size: 0.72rem; padding: 0.2rem 0.55rem; letter-spacing: 0.05em; font-weight: 700;">CONFIDENTIAL ENCLAVE PAYLOAD</span>
+            <h2 id="msg-subject" style="margin: 0.5rem 0 0.25rem; font-size: 1.35rem; font-family: 'Outfit', sans-serif;"></h2>
+            <div class="text-secondary" style="font-size: 0.8125rem;">
+              From: <strong id="msg-sender" class="mono" style="color: var(--color-primary-light);"></strong>
+              &bull; Opened: <span id="msg-date"></span>
+            </div>
+          </div>
+        </div>
+
+        <div id="burn-notice" class="burn-pill" style="display: none;">
+          <span style="display: inline-flex; color: var(--color-error); margin-right: 6px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          </span>
+          <div>
+            <strong>Self-Destruct Active:</strong> This message was permanently destroyed upon opening. Reloading or leaving this page will permanently render it unrecoverable.
+          </div>
+        </div>
+
+        <div class="watermark-container">
+          <div id="watermark-overlay" class="watermark-overlay"></div>
+          <div id="msg-content" class="msg-rendered-content"></div>
+        </div>
+
+        <div style="margin-top: 1.75rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+          <a href="/" class="btn btn-ghost btn-sm" style="color: var(--color-text-secondary);">← Return to WoxMail</a>
+          <button class="btn btn-secondary btn-sm" onclick="window.print()" style="display: inline-flex; align-items: center; gap: 0.4rem;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>
+            <span>Print Confidential Copy</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/theme.js"></script>
+  <script src="/js/interactive-bg.js" defer></script>
+  <script>
+    const token = '<%= token %>' || window.location.pathname.split('/').filter(Boolean).pop();
+    const pinInputs = Array.from(document.querySelectorAll('.pin-box'));
+
+    // PIN auto-navigation, Enter submission, and paste handler
+    pinInputs.forEach((input, index) => {
+      input.addEventListener('input', (e) => {
+        const val = e.target.value;
+        if (val.length >= 1) {
+          input.value = val.slice(-1);
+          if (index < pinInputs.length - 1) {
+            pinInputs[index + 1].focus();
+          }
+        }
+        collectPin();
+      });
+
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Backspace' && !e.target.value && index > 0) {
+          pinInputs[index - 1].focus();
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          document.getElementById('unlock-btn').click();
+        }
+      });
+
+      input.addEventListener('paste', (e) => {
+        e.preventDefault();
+        const pasted = (e.clipboardData.getData('text') || '').trim();
+        if (pasted.length > 0) {
+          const chars = pasted.slice(0, pinInputs.length).split('');
+          chars.forEach((char, i) => {
+            if (pinInputs[i]) pinInputs[i].value = char;
+          });
+          collectPin();
+          if (chars.length === pinInputs.length) {
+            document.getElementById('unlock-btn').click();
+          }
+        }
+      });
+    });
+
+    function collectPin() {
+      let pin = '';
+      pinInputs.forEach(input => pin += (input.value || '').trim());
+      const direct = (document.getElementById('full-passcode').value || '').trim();
+      if (pin.length >= 4) return pin;
+      if (direct.length >= 4) return direct;
+      return pin;
+    }
+
+    async function handleUnlock(e) {
+      e.preventDefault();
+      const passcode = collectPin();
+      const errorBox = document.getElementById('error-box');
+      const unlockBtn = document.getElementById('unlock-btn');
+
+      if (!passcode || passcode.length < 4) {
+        errorBox.textContent = 'Please enter the complete passcode.';
+        errorBox.style.display = 'block';
+        return;
+      }
+
+      unlockBtn.disabled = true;
+      unlockBtn.innerHTML = 'Decrypting Enclave...';
+      errorBox.style.display = 'none';
+
+      try {
+        const res = await fetch('/api/mail/secure/unlock', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token, passcode })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.message || 'Failed to unlock message');
+        }
+
+        // Show Decrypted View
+        document.getElementById('unlock-form-view').style.display = 'none';
+        document.getElementById('decrypted-view').style.display = 'block';
+
+        document.getElementById('msg-subject').textContent = data.subject || '(No Subject)';
+        document.getElementById('msg-sender').textContent = data.senderEmail;
+        document.getElementById('msg-date').textContent = new Date(data.openedAt || Date.now()).toLocaleString();
+        
+        // Render rich HTML properly inside content container
+        const contentContainer = document.getElementById('msg-content');
+        if (data.content && (data.content.includes('<') && data.content.includes('>'))) {
+          contentContainer.innerHTML = data.content;
+        } else {
+          contentContainer.textContent = data.content;
+        }
+
+        if (data.destroyed || data.burned) {
+          document.getElementById('burn-notice').style.display = 'flex';
+        }
+
+        // Populate dynamic watermark overlay
+        if (data.watermarkEnabled) {
+          const wmText = `CONFIDENTIAL • ${data.recipientEmail} • ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+          const overlay = document.getElementById('watermark-overlay');
+          overlay.innerHTML = Array(28).fill(`<div class="watermark-text">${wmText}</div>`).join('');
+        }
+      } catch (err) {
+        errorBox.textContent = err.message;
+        errorBox.style.display = 'block';
+        pinInputs.forEach(i => i.value = '');
+        pinInputs[0].focus();
+      } finally {
+        unlockBtn.disabled = false;
+        unlockBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle; margin-right:6px;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg><span>Unlock Secure Message</span>';
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+<%- include('layouts/base', { title: 'Server Error', body: `
+<div class="error-page">
+  <div class="error-content">
+    <span class="error-code">500</span>
+    <h1>Something went wrong</h1>
+    <p class="text-secondary">Our server encountered an error. Please try again later.</p>
+    <div class="error-actions">
+      <a href="/" class="btn btn-primary">Go Home</a>
+      <a href="javascript:location.reload()" class="btn btn-secondary">Try Again</a>
+    </div>
+  </div>
+</div>
+` }) %>
+
+<style>
+  .error-page { min-height: 80vh; display: flex; align-items: center; justify-content: center; text-align: center; padding: 2rem; }
+  .error-code { font-size: 6rem; font-weight: 800; color: var(--color-error); line-height: 1; display: block; margin-bottom: 1rem; }
+  .error-content h1 { margin-bottom: 0.75rem; }
+  .error-content p { margin-bottom: 2rem; }
+  .error-actions { display: flex; gap: 1rem; justify-content: center; }
+</style>

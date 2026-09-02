@@ -1,0 +1,80 @@
+{
+  "id": "/dashboard?source=pwa",
+  "name": "WoxMail — Sovereign Private Email Suite",
+  "short_name": "WoxMail",
+  "description": "Your Private Sovereign Email Suite — Disposable Temp Mail, WoxAuth MFA, WoxCalendar, WoxSMS, and Encrypted Messaging.",
+  "start_url": "/dashboard?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": [
+    "window-controls-overlay",
+    "standalone",
+    "minimal-ui"
+  ],
+  "background_color": "#0a0a14",
+  "theme_color": "#7c3aed",
+  "orientation": "any",
+  "categories": [
+    "productivity",
+    "utilities",
+    "business"
+  ],
+  "lang": "en",
+  "dir": "ltr",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/assets/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/assets/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Disposable Temp Mail",
+      "short_name": "TempMail",
+      "description": "Generate anonymous disposable inbox",
+      "url": "/tempmail?source=pwa",
+      "icons": [{ "src": "/assets/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Personal Mailbox",
+      "short_name": "Inbox",
+      "description": "Open sovereign personal mailbox",
+      "url": "/dashboard?source=pwa",
+      "icons": [{ "src": "/assets/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "FutureMe Time Capsule",
+      "short_name": "FutureMe",
+      "description": "Send scheduled letters to the future",
+      "url": "/futureme?source=pwa",
+      "icons": [{ "src": "/assets/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

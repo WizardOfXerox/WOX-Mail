@@ -1,0 +1,51 @@
+/* Print-friendly styles for WoxMail */
+@media print {
+  /* Hide UI elements that shouldn't be printed */
+  nav, 
+  aside, 
+  .sidebar, 
+  .btn, 
+  button, 
+  footer, 
+  .toast-container,
+  .no-print {
+    display: none !important;
+  }
+
+  /* Reset colors for printing */
+  body, 
+  .card, 
+  .container, 
+  main {
+    background: white !important;
+    color: black !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  /* Show URLs after links */
+  a[href^="http"]:after {
+    content: " (" attr(href) ")";
+    font-size: 0.85em;
+    color: #555;
+  }
+
+  /* Formatting text and spacing */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Break page before major sections */
+  h1, h2, .page-break-before {
+    page-break-before: always;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    page-break-after: avoid;
+  }
+
+  p, img, table {
+    page-break-inside: avoid;
+  }
+}

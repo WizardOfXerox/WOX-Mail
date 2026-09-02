@@ -1,0 +1,1234 @@
+<% const title = 'Home'; const description = 'WoxMail — Sovereign Encrypted Webmail, Disposable Temp Mail & Privacy Suite'; %>
+<%- include('layouts/base', { body: `
+
+<!-- Hero Section with Ambient Glow -->
+<section class="landing-hero" style="position: relative; padding: 4.5rem 0 3.5rem; overflow: hidden;">
+  <div class="landing-glow-orb"></div>
+  <div class="container" style="position: relative; z-index: 1;">
+    <div class="landing-pill-badge" style="margin-bottom: 1.25rem;">
+      <span class="status-dot-pulse"></span>
+      <span>Sovereign Privacy Enclave • Live on <strong style="color:var(--color-text-primary);">wox.world</strong></span>
+    </div>
+
+    <h1 class="landing-title" style="font-family: 'Outfit', var(--font-body); font-size: clamp(2.2rem, 5vw, 3.75rem); font-weight: 800; line-height: 1.15; letter-spacing: -0.03em; margin-bottom: 1.25rem;">
+      Private Email Crafted for <br/>
+      <span class="gradient-text">Absolute Freedom & Speed.</span>
+    </h1>
+
+    <p class="landing-subtitle" style="font-size: clamp(1rem, 2vw, 1.2rem); color: var(--color-text-secondary); max-width: 680px; margin: 0 auto 2rem; line-height: 1.6;">
+      Zero trackers, zero advertising telemetry, and zero data mining. Shield your real identity with disposable temp inboxes or own a permanent encrypted enclave mailbox.
+    </p>
+
+    <!-- Instant Live Generator Card -->
+    <div class="landing-instant-card" style="background: rgba(18, 18, 36, 0.75); backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%); border: 1px solid var(--color-border); border-radius: var(--radius-xl); padding: 1.75rem; max-width: 720px; margin: 0 auto 2.5rem; box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45); text-align: left;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span style="font-size: 0.9375rem; font-weight: 700; color: #c084fc; display: flex; align-items: center; gap: 0.4rem;">
+            <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            <span>Instant Disposable Mailbox</span>
+          </span>
+          <span id="hero-source-badge" class="badge badge-green" style="font-size: 0.72rem; font-weight: 700; display: inline-flex; align-items: center; gap: 0.25rem;">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            <span>Standby Pool (&lt;5ms)</span>
+          </span>
+        </div>
+
+        <!-- Mode Toggle (Pool vs Custom) -->
+        <div class="hero-mode-pills" style="display: inline-flex; background: rgba(10, 10, 22, 0.6); border: 1px solid var(--color-border); border-radius: var(--radius-pill); padding: 3px; gap: 3px;">
+          <button type="button" id="mode-btn-pool" class="btn btn-sm" onclick="setHeroMode('pool')" style="border-radius: var(--radius-pill); padding: 0.35rem 0.85rem; font-size: 0.78rem; background: var(--color-primary); color: #fff; border: none; font-weight: 600; cursor: pointer; transition: all 0.15s ease;">
+            <span style="display: inline-flex; align-items: center; gap: 0.35rem;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><span>Instant Pool</span></span>
+          </button>
+          <button type="button" id="mode-btn-custom" class="btn btn-sm" onclick="setHeroMode('custom')" style="border-radius: var(--radius-pill); padding: 0.35rem 0.85rem; font-size: 0.78rem; background: transparent; color: var(--color-text-secondary); border: none; font-weight: 500; cursor: pointer; transition: all 0.15s ease;">
+            <span style="display: inline-flex; align-items: center; gap: 0.35rem;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg><span>Custom Handle</span></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Address Display & Action Bar -->
+      <div id="hero-pool-container" style="display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem;">
+        <div style="flex: 1; min-width: 220px; position: relative;">
+          <input
+            type="text"
+            id="hero-address-preview"
+            class="input mono"
+            style="padding-left: 2.2rem; font-weight: 600; font-size: 0.9375rem; background: var(--color-bg-input); border-color: rgba(124, 58, 237, 0.4); color: var(--color-text-primary); height: 48px; border-radius: var(--radius-md);"
+            value="Generating secure address..."
+            readonly
+          />
+          <span style="position: absolute; left: 0.8rem; top: 50%; transform: translateY(-50%); display: inline-flex; color: var(--color-primary-light); pointer-events: none;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+          </span>
+        </div>
+
+        <button
+          type="button"
+          class="btn btn-secondary btn-sm"
+          id="hero-copy-btn"
+          onclick="copyHeroAddress()"
+          title="Copy address to clipboard"
+          style="gap: 0.4rem; padding: 0 1.15rem; min-height: 48px; font-weight: 600; border-radius: var(--radius-md);"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          <span>Copy</span>
+        </button>
+
+        <button
+          type="button"
+          class="btn btn-secondary btn-sm"
+          id="hero-refresh-btn"
+          onclick="generateHeroTempAddress(true)"
+          title="Claim a fresh address from pool"
+          style="gap: 0.4rem; padding: 0 1rem; min-height: 48px; font-weight: 600; border-radius: var(--radius-md);"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
+          <span>New</span>
+        </button>
+
+        <a
+          href="/tempmail"
+          class="btn btn-primary btn-sm"
+          id="hero-inbox-link"
+          style="gap: 0.4rem; padding: 0 1.25rem; font-weight: 700; min-height: 48px; display: inline-flex; align-items: center; border-radius: var(--radius-md);"
+        >
+          <span>Open Inbox</span>
+          <span>→</span>
+        </a>
+      </div>
+
+      <!-- Custom Handle Input Row -->
+      <div id="hero-custom-container" style="display: none; gap: 0.6rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem;">
+        <div style="flex: 1; min-width: 220px; display: flex; align-items: center; position: relative;">
+          <input
+            type="text"
+            id="hero-custom-input"
+            class="input mono"
+            placeholder="e.g. satoshi"
+            style="padding-left: 2.2rem; padding-right: 120px; font-weight: 600; font-size: 0.9375rem; background: var(--color-bg-input); border-color: rgba(124, 58, 237, 0.4); color: var(--color-text-primary); height: 48px; border-radius: var(--radius-md);"
+            onkeydown="if(event.key==='Enter') generateCustomHeroAddress()"
+          />
+          <span style="position: absolute; left: 0.8rem; top: 50%; transform: translateY(-50%); display: inline-flex; color: var(--color-primary-light); pointer-events: none;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          </span>
+          <span style="position: absolute; right: 0.85rem; top: 50%; transform: translateY(-50%); font-size: 0.8125rem; color: var(--color-text-tertiary); font-family: var(--font-mono); pointer-events: none;">@mail.wox.world</span>
+        </div>
+
+        <button
+          type="button"
+          class="btn btn-primary btn-sm"
+          onclick="generateCustomHeroAddress()"
+          style="gap: 0.35rem; padding: 0 1.25rem; font-weight: 700; min-height: 48px; border-radius: var(--radius-md);"
+        >
+          <span>Create Handle</span>
+        </button>
+      </div>
+
+      <!-- Expiry Duration Selector (Visible in Custom Handle Mode) -->
+      <div id="hero-lifespan-selector-row" style="display: none; align-items: center; justify-content: space-between; padding: 0.85rem 1rem; margin-bottom: 0.85rem; background: rgba(10, 10, 22, 0.5); border: 1px dashed var(--color-border-focus); border-radius: var(--radius-md); flex-wrap: wrap; gap: 0.75rem;">
+        <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
+          <span style="font-size: 0.8125rem; font-weight: 600; color: var(--color-text-primary); display: flex; align-items: center; gap: 0.3rem;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <span>Lifespan:</span>
+          </span>
+          <div class="duration-pills" style="display: inline-flex; gap: 0.35rem; flex-wrap: wrap;">
+            <button type="button" class="duration-btn expiry-btn" data-hours="1" onclick="selectHeroDuration(1)" style="padding: 0.3rem 0.7rem; font-size: 0.75rem; border-radius: var(--radius-pill); border: 1px solid var(--color-border); background: var(--color-bg-hover); color: var(--color-text-secondary); cursor: pointer;">1h</button>
+            <button type="button" class="duration-btn expiry-btn" data-hours="6" onclick="selectHeroDuration(6)" style="padding: 0.3rem 0.7rem; font-size: 0.75rem; border-radius: var(--radius-pill); border: 1px solid var(--color-border); background: var(--color-bg-hover); color: var(--color-text-secondary); cursor: pointer;">6h</button>
+            <button type="button" class="duration-btn expiry-btn active" data-hours="24" onclick="selectHeroDuration(24)" style="padding: 0.3rem 0.7rem; font-size: 0.75rem; border-radius: var(--radius-pill); border: 1px solid var(--color-primary); background: var(--color-primary); color: #fff; font-weight: 600; cursor: pointer;">24h</button>
+            <button type="button" class="duration-btn expiry-btn" data-hours="48" onclick="selectHeroDuration(48)" style="padding: 0.3rem 0.7rem; font-size: 0.75rem; border-radius: var(--radius-pill); border: 1px solid var(--color-border); background: var(--color-bg-hover); color: var(--color-text-secondary); cursor: pointer;">48h</button>
+            <button type="button" class="duration-btn expiry-btn" data-hours="72" onclick="selectHeroDuration(72)" style="padding: 0.3rem 0.7rem; font-size: 0.75rem; border-radius: var(--radius-pill); border: 1px solid var(--color-border); background: var(--color-bg-hover); color: var(--color-text-secondary); cursor: pointer;">72h</button>
+          </div>
+        </div>
+        <span class="text-secondary" style="font-size: 0.75rem;">Selected: <strong style="color: var(--color-primary-light);" id="hero-hours-label">24 Hours</strong></span>
+      </div>
+
+      <!-- Expiry Details & Status Bar -->
+      <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 0.85rem; border-top: 1px solid var(--color-border); font-size: 0.75rem; color: var(--color-text-tertiary); flex-wrap: wrap; gap: 0.5rem;">
+        <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+          <span class="badge badge-purple" id="hero-countdown-pill" style="padding: 0.25rem 0.6rem; font-size: 0.75rem; font-family: var(--font-mono);">
+            Calculating remaining time...
+          </span>
+          <span id="hero-exact-time" style="font-weight: 500;"></span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+          <span style="display: inline-flex; align-items: center; gap: 0.35rem;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span>Zero-Log Encrypted</span></span>
+          <span style="display: inline-flex; align-items: center; gap: 0.35rem;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><span>Purelymail Ingest</span></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Interactive Shader & Palette Customizer Strip -->
+    <div style="background: rgba(14, 14, 28, 0.65); border: 1px solid var(--color-border); border-radius: var(--radius-pill); padding: 0.5rem 1rem; max-width: 720px; margin: 0 auto 2.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; backdrop-filter: blur(12px);">
+      <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+        <span style="font-size: 0.78rem; font-weight: 700; color: var(--color-text-secondary); display: flex; align-items: center; gap: 0.3rem;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 0 20z"/></svg>
+          <span>Live Shaders:</span>
+        </span>
+        <button type="button" class="btn btn-ghost btn-xs" onclick="setLiveShader('aurora')" title="Aurora Atmospheric Waves" style="font-size: 0.72rem; padding: 0.2rem 0.55rem; border: 1px solid var(--color-border); border-radius: var(--radius-pill);">Aurora</button>
+        <button type="button" class="btn btn-ghost btn-xs" onclick="setLiveShader('cyber_mesh')" title="3D Perspective Wireframe Grid" style="font-size: 0.72rem; padding: 0.2rem 0.55rem; border: 1px solid var(--color-border); border-radius: var(--radius-pill);">Cyber Mesh</button>
+        <button type="button" class="btn btn-ghost btn-xs" onclick="setLiveShader('deep_space')" title="Parallax Deep Space Starfield" style="font-size: 0.72rem; padding: 0.2rem 0.55rem; border: 1px solid var(--color-border); border-radius: var(--radius-pill);">Starfield</button>
+        <button type="button" class="btn btn-ghost btn-xs" onclick="setLiveShader('matrix')" title="Matrix Terminal Rain" style="font-size: 0.72rem; padding: 0.2rem 0.55rem; border: 1px solid var(--color-border); border-radius: var(--radius-pill);">Matrix</button>
+        <button type="button" class="btn btn-ghost btn-xs" onclick="setLiveShader('zen_drift')" title="Zen Radial Bloom" style="font-size: 0.72rem; padding: 0.2rem 0.55rem; border: 1px solid var(--color-border); border-radius: var(--radius-pill);">Zen</button>
+        <button type="button" class="btn btn-ghost btn-xs" onclick="setLiveShader('oled_monochrome')" title="Pure OLED Black" style="font-size: 0.72rem; padding: 0.2rem 0.55rem; border: 1px solid var(--color-border); border-radius: var(--radius-pill);">OLED</button>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 0.35rem;">
+        <span style="font-size: 0.72rem; color: var(--color-text-tertiary);">Accent:</span>
+        <button type="button" onclick="setLiveAccent('purple')" title="Sovereign Purple" style="width: 16px; height: 16px; border-radius: 50%; background: #7c3aed; border: none; cursor: pointer;"></button>
+        <button type="button" onclick="setLiveAccent('emerald')" title="Cyber Emerald" style="width: 16px; height: 16px; border-radius: 50%; background: #10b981; border: none; cursor: pointer;"></button>
+        <button type="button" onclick="setLiveAccent('cobalt')" title="Midnight Cobalt" style="width: 16px; height: 16px; border-radius: 50%; background: #3b82f6; border: none; cursor: pointer;"></button>
+        <button type="button" onclick="setLiveAccent('amber')" title="Sunset Amber" style="width: 16px; height: 16px; border-radius: 50%; background: #f59e0b; border: none; cursor: pointer;"></button>
+        <button type="button" onclick="setLiveAccent('cyan')" title="Matrix Cyan" style="width: 16px; height: 16px; border-radius: 50%; background: #06b6d4; border: none; cursor: pointer;"></button>
+        <button type="button" onclick="setLiveAccent('crimson')" title="Crimson Red" style="width: 16px; height: 16px; border-radius: 50%; background: #ef4444; border: none; cursor: pointer;"></button>
+      </div>
+    </div>
+
+    <!-- Quick CTA Navigation Buttons -->
+    <div style="display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap;">
+      ${typeof user !== 'undefined' && user ? `
+        <a href="/dashboard" class="btn btn-primary btn-lg" style="gap: 0.5rem; box-shadow: 0 0 30px var(--color-primary-glow); min-height: 48px; border-radius: var(--radius-pill);">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+          <span>Open My Webmail (${user.username}) →</span>
+        </a>
+        <a href="/tempmail" class="btn btn-secondary btn-lg" style="gap: 0.5rem; min-height: 48px; border-radius: var(--radius-pill);">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          <span>Disposable Temp Mail</span>
+        </a>
+        <a href="/futureme" class="btn btn-ghost btn-lg" style="gap: 0.5rem; min-height: 48px; border-radius: var(--radius-pill);">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 14 14"/></svg>
+          <span>Future Letters Vault</span>
+        </a>
+      ` : `
+        <a href="/tempmail" class="btn btn-primary btn-lg" style="gap: 0.5rem; box-shadow: 0 0 30px var(--color-primary-glow); min-height: 48px; border-radius: var(--radius-pill);">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          <span>Disposable Temp Mail</span>
+        </a>
+        <a href="/login" class="btn btn-secondary btn-lg" style="gap: 0.5rem; min-height: 48px; border-radius: var(--radius-pill);">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <span>Webmail Login</span>
+        </a>
+        <a href="/register" class="btn btn-ghost btn-lg" style="gap: 0.5rem; min-height: 48px; border-radius: var(--radius-pill);">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg>
+          <span>Join with Invite Code</span>
+        </a>
+      `}
+    </div>
+  </div>
+</section>
+
+<!-- Trust & Telemetry Bar -->
+<section style="padding: 2.25rem 0; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); background: var(--color-bg-elevated); backdrop-filter: blur(12px);">
+  <div class="container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1.5rem; text-align: center;">
+    <div>
+      <div style="font-family: 'Outfit', var(--font-body); font-size: 1.6rem; font-weight: 800; color: var(--color-text-primary);">0 Trackers</div>
+      <div class="text-secondary" style="font-size: 0.8125rem;">Zero Ad Pixels or Telemetry Logs</div>
+    </div>
+    <div>
+      <div style="font-family: 'Outfit', var(--font-body); font-size: 1.6rem; font-weight: 800; color: #4ade80;">100% TLS</div>
+      <div class="text-secondary" style="font-size: 0.8125rem;">Encrypted IMAP 993 / SMTP 465</div>
+    </div>
+    <div>
+      <div style="font-family: 'Outfit', var(--font-body); font-size: 1.6rem; font-weight: 800; color: #c084fc;">1-View Burn</div>
+      <div class="text-secondary" style="font-size: 0.8125rem;">Zero-Click Ephemeral Incineration</div>
+    </div>
+    <div>
+      <div style="font-family: 'Outfit', var(--font-body); font-size: 1.6rem; font-weight: 800; color: #60a5fa;">Multi-Account</div>
+      <div class="text-secondary" style="font-size: 0.8125rem;">Gmail, Outlook, Yahoo & Custom IMAP</div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Three Types of Email Available (Account Tiers) ───────── -->
+<section style="padding: 5rem 0;">
+  <div class="container">
+    <div style="text-align: center; max-width: 680px; margin: 0 auto 3rem;">
+      <span class="badge badge-purple" style="margin-bottom: 0.75rem; padding: 0.3rem 0.85rem; font-size: 0.75rem;">Platform Versatility</span>
+      <h2 style="font-family: 'Outfit', var(--font-body); font-size: clamp(1.8rem, 3.5vw, 2.5rem); font-weight: 800; color: var(--color-text-primary); margin-bottom: 0.5rem; letter-spacing: -0.02em;">
+        Three Types of Email. One Sovereign Suite.
+      </h2>
+      <p class="text-secondary" style="font-size: 0.9375rem;">
+        Whether you need a 10-second spam shield, a 60-day project mailbox, or a permanent encrypted enclave identity, WoxMail provides the exact tier you need.
+      </p>
+    </div>
+
+    <div class="tiers-grid">
+      <!-- Tier 1: Public Temp Mail -->
+      <div class="tier-card">
+        <div class="tier-header">
+          <div class="tier-icon" style="background: rgba(124, 58, 237, 0.15); color: #c084fc; display: flex; align-items: center; justify-content: center;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+          <h3 class="tier-title">Public Temp Mail</h3>
+          <p class="tier-desc">
+            Zero-friction disposable email for instant website signups, OTP verifications, and shielding your real inbox from spam.
+          </p>
+        </div>
+
+        <ul class="tier-feature-list">
+          <li class="tier-feature-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            <span><strong>Instant address</strong> generated in under 5ms</span>
+          </li>
+          <li class="tier-feature-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            <span><strong>No registration</strong> or personal info required</span>
+          </li>
+          <li class="tier-feature-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            <span><strong>Real-time push</strong> delivery via Server-Sent Events</span>
+          </li>
+          <li class="tier-feature-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            <span>Auto-expires after 24 to 72 hours with full shred</span>
+          </li>
+        </ul>
+
+        <a href="/tempmail" class="btn btn-secondary btn-sm" style="width: 100%; justify-content: center; min-height: 44px; border-radius: var(--radius-pill);">
+          <span>Generate Disposable Address</span>
+        </a>
+      </div>
+
+      <!-- Tier 2: Personal Protected Temp Mail (Featured) -->
+      <div class="tier-card featured">
+        <span class="tier-badge-floating">PIN Protected</span>
+        <div class="tier-header">
+          <div class="tier-icon" style="background: rgba(34, 197, 94, 0.15); color: #4ade80; display: flex; align-items: center; justify-content: center;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+          <h3 class="tier-title">Personal Temp Mail</h3>
+          <p class="tier-desc">
+            Custom-named disposable inboxes protected by a secret recovery PIN. Lasts up to 60 days for multi-stage projects and beta tests.
+          </p>
+        </div>
+
+        <ul class="tier-feature-list">
+          <li class="tier-feature-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            <span><strong>Custom username</strong> selection (e.g. <code>project-alpha</code>)</span>
+          </li>
+          <li class="tier-feature-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            <span><strong>Secret PIN recovery</strong> to re-access across any device</span>
+          </li>
+          <li class="tier-feature-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            <span><strong>60-day longevity</strong> with manual auto-extend</span>
+          </li>
+          <li class="tier-feature-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            <span>Export messages to EML or upgrade to Permanent</span>
+          </li>
+        </ul>
+
+        <a href="/tempmail/personal" class="btn btn-primary btn-sm" style="width: 100%; justify-content: center; min-height: 44px; border-radius: var(--radius-pill);">
+          <span>Create Personal Temp Inbox</span>
+        </a>
+      </div>
+
+      <!-- Tier 3: Permanent Sovereign Enclave -->
+      <div class="tier-card">
+        <div class="tier-header">
+          <div class="tier-icon" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; display: flex; align-items: center; justify-content: center;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div>
+          <h3 class="tier-title">Permanent Enclave</h3>
+          <p class="tier-desc">
+            Your full sovereign webmail identity on <strong>@wox.world</strong>. Complete with Superhuman split-pane, OpenPGP, and The Screener.
+          </p>
+        </div>
+
+        <ul class="tier-feature-list">
+          <li class="tier-feature-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            <span><strong>Superhuman Webmail</strong> with <code>Ctrl+K</code> and Snooze</span>
+          </li>
+          <li class="tier-feature-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            <span><strong>The Screener</strong> first-contact spam quarantine</span>
+          </li>
+          <li class="tier-feature-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            <span><strong>1-Click Apple iOS & Outlook</strong> profile autodiscover</span>
+          </li>
+          <li class="tier-feature-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            <span>OpenPGP Curve25519 & AES-256 Thread Notes</span>
+          </li>
+        </ul>
+
+        <a href="/login" class="btn btn-secondary btn-sm" style="width: 100%; justify-content: center; min-height: 44px; border-radius: var(--radius-pill);">
+          <span>Sign In to Webmail</span>
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Interactive Live Product Showcase Bento Grid -->
+<section style="padding: 4.5rem 0; background: var(--color-bg-page); border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border);">
+  <div class="container">
+    <div style="text-align: center; max-width: 680px; margin: 0 auto 3rem;">
+      <span class="badge badge-purple" style="margin-bottom: 0.75rem; padding: 0.3rem 0.85rem; font-size: 0.75rem;">Next-Gen Sovereign Architecture</span>
+      <h2 style="font-family: 'Outfit', var(--font-body); font-size: clamp(1.8rem, 3.5vw, 2.5rem); font-weight: 800; color: var(--color-text-primary); margin-bottom: 0.5rem; letter-spacing: -0.02em;">
+        Engineered for Privacy Purists & Power Users
+      </h2>
+      <p class="text-secondary" style="font-size: 0.9375rem;">
+        A complete suite of privacy tools, advanced mail clients, time vaults, and anti-leak protections in one platform.
+      </p>
+    </div>
+
+    <div class="landing-bento-grid">
+      <!-- Bento 1: Multi-Account & Unified Inbox Suite (Col Span 2) -->
+      <div class="landing-bento-card col-span-2">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap;">
+          <div style="flex: 1; min-width: 260px;">
+            <span class="badge badge-purple" style="font-size: 0.75rem;">Unified Multi-Account Engine</span>
+            <h3 style="font-size: 1.35rem; font-weight: 700; color: var(--color-text-primary); margin: 0.6rem 0 0.3rem;">
+              Connect Gmail, Outlook, Yahoo & Custom IMAP
+            </h3>
+            <p class="text-secondary" style="font-size: 0.875rem; margin: 0; line-height: 1.5;">
+              Bring all your external inboxes into WoxMail's zero-knowledge encrypted client. Fast 1-click switcher, AES-256 encrypted credential vault, and unified triage.
+            </p>
+          </div>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary-light)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </div>
+
+        <div style="margin-top: 1.25rem; background: rgba(10, 10, 22, 0.6); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 1rem; display: flex; gap: 1rem; flex-wrap: wrap;">
+          <div style="flex: 1; min-width: 140px;">
+            <div style="font-size: 0.72rem; color: var(--color-text-tertiary); text-transform: uppercase;">Preset Integrations</div>
+            <strong style="color: var(--color-primary-light); font-size: 0.875rem;">Gmail · Outlook · Yahoo · Fastmail</strong>
+          </div>
+          <div style="flex: 1; min-width: 140px;">
+            <div style="font-size: 0.72rem; color: var(--color-text-tertiary); text-transform: uppercase;">Security Vault</div>
+            <strong style="color: var(--color-success); font-size: 0.875rem;">AES-256-GCM Encrypted</strong>
+          </div>
+          <div style="flex: 1; min-width: 140px;">
+            <div style="font-size: 0.72rem; color: var(--color-text-tertiary); text-transform: uppercase;">Mailboxes</div>
+            <strong style="color: var(--color-warning); font-size: 0.875rem;">Unlimited Linked Accounts</strong>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bento 2: Local & Free AI Copilot -->
+      <div class="landing-bento-card">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div>
+            <span class="badge badge-green" style="font-size: 0.75rem;">$0 Free / 100% Private</span>
+            <h3 style="font-size: 1.25rem; font-weight: 700; color: var(--color-text-primary); margin: 0.6rem 0 0.3rem;">
+              AI Copilot & Smart Replies
+            </h3>
+            <p class="text-secondary" style="font-size: 0.8125rem; margin: 0; line-height: 1.5;">
+              Multi-model AI assistant powered by Google Gemini or local private Ollama ($0). 1-click tone adjuster, reply suggestions, and thread summaries.
+            </p>
+          </div>
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+        </div>
+      </div>
+
+      <!-- Bento 3: Read Receipts & Email Analytics -->
+      <div class="landing-bento-card">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div>
+            <span class="badge badge-blue" style="font-size: 0.75rem;">Real-Time Telemetry</span>
+            <h3 style="font-size: 1.25rem; font-weight: 700; color: var(--color-text-primary); margin: 0.6rem 0 0.3rem;">
+              Read Receipts & Analytics
+            </h3>
+            <p class="text-secondary" style="font-size: 0.8125rem; margin: 0; line-height: 1.5;">
+              Track when recipients open your emails with privacy-compliant 1x1 pixels. Visual double-check indicators, open rates, and 14-day send trends.
+            </p>
+          </div>
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--color-info)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        </div>
+      </div>
+
+      <!-- Bento 4: Visual Kanban Workflow -->
+      <div class="landing-bento-card">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div>
+            <span class="badge badge-purple" style="font-size: 0.75rem;">Task Management</span>
+            <h3 style="font-size: 1.25rem; font-weight: 700; color: var(--color-text-primary); margin: 0.6rem 0 0.3rem;">
+              Email Kanban Task Board
+            </h3>
+            <p class="text-secondary" style="font-size: 0.8125rem; margin: 0; line-height: 1.5;">
+              Transform emails into actionable task cards. Drag and drop between <em>To Do</em>, <em>In Progress</em>, <em>Waiting Reply</em>, and <em>Done</em> columns.
+            </p>
+          </div>
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary-light)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="M15 3v18"/></svg>
+        </div>
+      </div>
+
+      <!-- Bento 5: Chat Platform Forwarding (Telegram / Discord / Slack) -->
+      <div class="landing-bento-card">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div>
+            <span class="badge badge-amber" style="font-size: 0.75rem;">Omnichannel Push</span>
+            <h3 style="font-size: 1.25rem; font-weight: 700; color: var(--color-text-primary); margin: 0.6rem 0 0.3rem;">
+              Telegram, Discord & Slack Alerts
+            </h3>
+            <p class="text-secondary" style="font-size: 0.8125rem; margin: 0; line-height: 1.5;">
+              Never miss an urgent message. Forward incoming emails instantly to your private Telegram bot, Discord webhooks, or Slack channels with custom criteria.
+            </p>
+          </div>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--color-warning)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 21 1.9-5.7a8.5 8.5 0 1 1 3.8 3.8z"/></svg>
+        </div>
+      </div>
+
+      <!-- Bento 6: FutureMe Time-Locked Encrypted Letters (Col Span 2) -->
+      <div class="landing-bento-card col-span-2">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap;">
+          <div style="flex: 1; min-width: 260px;">
+            <span class="badge badge-blue" style="font-size: 0.75rem;">Temporal Privacy Vault</span>
+            <h3 style="font-size: 1.35rem; font-weight: 700; color: var(--color-text-primary); margin: 0.6rem 0 0.3rem;">
+              FutureMe: Write Letters to Your Future Self
+            </h3>
+            <p class="text-secondary" style="font-size: 0.875rem; margin: 0; line-height: 1.5;">
+              Pen encrypted letters scheduled for delivery 1, 3, 5, or 10 years into the future. Secured with zero-knowledge client-side cryptography, optional public gallery, and reminder checkpoints.
+            </p>
+          </div>
+          <a href="/futureme" class="btn btn-secondary btn-sm" style="border-radius: var(--radius-pill); padding: 0.4rem 1rem;">
+            <span>Open Vault →</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Deep Provider Comparison Matrix ─────────────────────── -->
+<section style="padding: 5rem 0;">
+  <div class="container">
+    <div style="text-align: center; max-width: 680px; margin: 0 auto 2.5rem;">
+      <span class="badge badge-purple" style="margin-bottom: 0.75rem; padding: 0.3rem 0.85rem; font-size: 0.75rem;">Direct Competitor Comparison</span>
+      <h2 style="font-family: 'Outfit', var(--font-body); font-size: clamp(1.8rem, 3.5vw, 2.5rem); font-weight: 800; color: var(--color-text-primary); margin-bottom: 0.5rem; letter-spacing: -0.02em;">
+        Why WoxMail Stands Apart
+      </h2>
+      <p class="text-secondary" style="font-size: 0.9375rem;">
+        See how WoxMail combines the speed of disposable temp mail with the power of modern encrypted webmail clients.
+      </p>
+    </div>
+
+    <div class="comparison-wrapper" style="overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: rgba(18, 18, 36, 0.65); backdrop-filter: blur(16px);">
+      <table class="comparison-table" style="width: 100%; min-width: 640px; border-collapse: collapse; text-align: left;">
+        <thead>
+          <tr style="border-bottom: 1px solid var(--color-border); background: rgba(10, 10, 22, 0.6);">
+            <th style="padding: 1rem 1.25rem; font-size: 0.875rem; font-weight: 700; color: var(--color-text-primary);">Feature / Capability</th>
+            <th class="highlight" style="padding: 1rem 1.25rem; font-size: 0.875rem; font-weight: 800; color: #c084fc; background: rgba(124, 58, 237, 0.15);">WoxMail</th>
+            <th style="padding: 1rem 1.25rem; font-size: 0.875rem; font-weight: 600; color: var(--color-text-secondary);">Gmail</th>
+            <th style="padding: 1rem 1.25rem; font-size: 0.875rem; font-weight: 600; color: var(--color-text-secondary);">Proton Mail</th>
+            <th style="padding: 1rem 1.25rem; font-size: 0.875rem; font-weight: 600; color: var(--color-text-secondary);">Temp-Mail.org</th>
+            <th style="padding: 1rem 1.25rem; font-size: 0.875rem; font-weight: 600; color: var(--color-text-secondary);">Hey.com</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-bottom: 1px solid var(--color-border-subtle);">
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><strong>Instant Disposable Temp Mail (0 Signup)</strong></td>
+            <td class="highlight" style="padding: 0.85rem 1.25rem; background: rgba(124, 58, 237, 0.1);"><span class="comp-check" style="color: #4ade80; font-weight: 700;">✓ Included (24-72h)</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">✗ No</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">✗ No</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><span class="comp-check" style="color: #4ade80;">✓ Yes (Ad Heavy)</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">✗ No</span></td>
+          </tr>
+          <tr style="border-bottom: 1px solid var(--color-border-subtle);">
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><strong>Personal Protected Temp Mail (PIN 60d)</strong></td>
+            <td class="highlight" style="padding: 0.85rem 1.25rem; background: rgba(124, 58, 237, 0.1);"><span class="comp-check" style="color: #4ade80; font-weight: 700;">✓ Included</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">✗ No</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">✗ No</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">Paid ($10/mo)</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">✗ No</span></td>
+          </tr>
+          <tr style="border-bottom: 1px solid var(--color-border-subtle);">
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><strong>Permanent Sovereign Enclave Webmail</strong></td>
+            <td class="highlight" style="padding: 0.85rem 1.25rem; background: rgba(124, 58, 237, 0.1);"><span class="comp-check" style="color: #4ade80; font-weight: 700;">✓ Included</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><span class="comp-check" style="color: #4ade80;">Ad-Funded</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><span class="comp-check" style="color: #4ade80;">Freemium/Paid</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">✗ No</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><span class="comp-check" style="color: #4ade80;">$99 / year</span></td>
+          </tr>
+          <tr style="border-bottom: 1px solid var(--color-border-subtle);">
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><strong>Unified Multi-Account IMAP Vault</strong></td>
+            <td class="highlight" style="padding: 0.85rem 1.25rem; background: rgba(124, 58, 237, 0.1);"><span class="comp-check" style="color: #4ade80; font-weight: 700;">✓ AES-256 Vault</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);">Google Only</td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);">Proton Only</td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">✗ No</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);">Hey Only</td>
+          </tr>
+          <tr style="border-bottom: 1px solid var(--color-border-subtle);">
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><strong>1-View Ephemeral Zero-Click Streams</strong></td>
+            <td class="highlight" style="padding: 0.85rem 1.25rem; background: rgba(124, 58, 237, 0.1);"><span class="comp-check" style="color: #4ade80; font-weight: 700;">✓ Native Zero-Click</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);">Basic Expire</td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);">Password Link</td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">✗ No</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">✗ No</span></td>
+          </tr>
+          <tr style="border-bottom: 1px solid var(--color-border-subtle);">
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><strong>AI Copilot & Smart Reply Tone Adjuster</strong></td>
+            <td class="highlight" style="padding: 0.85rem 1.25rem; background: rgba(124, 58, 237, 0.1);"><span class="comp-check" style="color: #4ade80; font-weight: 700;">✓ $0 Gemini/Ollama</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;">Paid Gemini</td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);">Proton Scribe ($)</td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">✗ No</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">✗ No</span></td>
+          </tr>
+          <tr style="border-bottom: 1px solid var(--color-border-subtle);">
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><strong>Apple iOS & Outlook 1-Click Profile</strong></td>
+            <td class="highlight" style="padding: 0.85rem 1.25rem; background: rgba(124, 58, 237, 0.1);"><span class="comp-check" style="color: #4ade80; font-weight: 700;">✓ RFC 6186 + Apple</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;">OAuth Only</td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);">Bridge Required</td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">✗ No IMAP</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">✗ No IMAP</span></td>
+          </tr>
+          <tr>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><strong>Tracking Pixel & Spy-Script Deflection</strong></td>
+            <td class="highlight" style="padding: 0.85rem 1.25rem; background: rgba(124, 58, 237, 0.1);"><span class="comp-check" style="color: #4ade80; font-weight: 700;">✓ 100% Deflected</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);">Loaded / Tracked</td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><span class="comp-check" style="color: #4ade80;">Blocked</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">Trackers Added</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><span class="comp-check" style="color: #4ade80;">Blocked</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Mobile & Desktop Mail App Auto-Setup Section ───────────── -->
+<section id="device-setup-section" class="device-setup-section" style="padding: 5rem 0; position: relative; z-index: 1;">
+  <div class="container">
+    <div style="text-align: center; max-width: 720px; margin: 0 auto 3rem;">
+      <span class="badge badge-purple" style="margin-bottom: 0.75rem; padding: 0.35rem 0.95rem; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;">
+        RFC 6186 & Autodiscover Ready
+      </span>
+      <h2 style="font-family: 'Outfit', var(--font-body); font-size: clamp(1.8rem, 3.5vw, 2.6rem); font-weight: 800; color: var(--color-text-primary); margin-bottom: 0.75rem; letter-spacing: -0.02em; display:flex; align-items:center; justify-content:center; gap:0.6rem;">
+        <span style="display:inline-flex; color:var(--color-primary-light);">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></svg>
+        </span>
+        <span>Mobile & Desktop Mail App Auto-Setup</span>
+      </h2>
+      <p class="text-secondary" style="font-size: clamp(0.95rem, 1.5vw, 1.05rem); line-height: 1.6; margin: 0;">
+        Connect your WoxMail inbox to Apple Mail (iPhone / iPad / Mac), Microsoft Outlook, Mozilla Thunderbird, Android Gmail, or any standard IMAP/SMTP mail client in seconds.
+      </p>
+    </div>
+
+    <div class="device-setup-grid" style="display: flex; flex-direction: column; gap: 1.5rem; max-width: 960px; margin: 0 auto;">
+      
+      <!-- Card 1: Apple iOS & macOS 1-Click Profile (Featured Glassmorphism Card) -->
+      <div class="device-card featured-device-card" style="background: rgba(18, 18, 36, 0.85); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(124, 58, 237, 0.4); border-radius: var(--radius-xl); padding: 2rem; box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45); transition: transform 0.2s ease, border-color 0.2s ease;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1.5rem;">
+          <div style="flex: 1; min-width: 260px;">
+            <div style="display: flex; align-items: center; gap: 0.65rem; margin-bottom: 0.5rem;">
+              <span style="display:inline-flex; color:var(--color-text-primary);">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 7h10"/><path d="M7 12h10"/><path d="M7 17h10"/></svg>
+              </span>
+              <h3 style="font-size: 1.25rem; font-weight: 800; color: var(--color-text-primary); margin: 0;">
+                Apple iOS & macOS 1-Click Profile
+              </h3>
+              <span class="badge badge-purple" style="font-size: 0.7rem; font-weight: 700;">Native .mobileconfig</span>
+            </div>
+            <p class="text-secondary" style="font-size: 0.9rem; line-height: 1.6; margin-bottom: 1rem;">
+              Instantly configures iPhone, iPad, and Mac Mail apps with encrypted IMAP:993 and SMTP:465 with zero manual typing.
+            </p>
+            <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.45rem; font-size: 0.84rem; color: var(--color-text-secondary);">
+              <li style="display: flex; align-items: center; gap: 0.45rem;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Direct 1-tap download & install in iOS Settings</span>
+              </li>
+              <li style="display: flex; align-items: center; gap: 0.45rem;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Automated TLS/SSL security certificate verification</span>
+              </li>
+              <li style="display: flex; align-items: center; gap: 0.45rem;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Supports both Permanent and Personal Temp accounts</span>
+              </li>
+            </ul>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 0.75rem; min-width: 220px; align-self: center;">
+            <a
+              href="/login?redirect=/settings#autoconfig"
+              class="btn btn-primary btn-lg"
+              style="gap: 0.5rem; justify-content: center; min-height: 48px; border-radius: var(--radius-pill); font-weight: 700; box-shadow: 0 0 24px var(--color-primary-glow);"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              <span>Get Apple Profile</span>
+            </a>
+            <button
+              type="button"
+              class="btn btn-secondary btn-sm"
+              onclick="showAppleInstructionModal()"
+              style="gap: 0.4rem; justify-content: center; min-height: 40px; border-radius: var(--radius-pill); font-size: 0.8rem;"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              <span>View 3-Step Setup Guide</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 2: Standard Autodiscovery Endpoints Active -->
+      <div class="device-card" style="background: rgba(18, 18, 36, 0.75); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 1.75rem; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);">
+        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary-light)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          <h3 style="font-size: 1.05rem; font-weight: 700; color: var(--color-text-primary); margin: 0;">
+            Standard Autodiscovery Endpoints (Zero Config)
+          </h3>
+        </div>
+        <p class="text-secondary" style="font-size: 0.875rem; line-height: 1.6; margin-bottom: 1rem;">
+          Modern email clients (Thunderbird, Outlook, K-9 Mail, FairEmail) automatically query these endpoints when you enter your address:
+        </p>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.75rem;">
+          <div style="background: var(--color-bg-input); border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 0.75rem 1rem; display: flex; align-items: center; justify-content: space-between;">
+            <div>
+              <span style="font-size: 0.72rem; color: var(--color-text-tertiary); display: block; font-weight: 600;">MOZILLA AUTOCONFIG</span>
+              <code style="font-size: 0.8rem; color: var(--color-primary-light); font-family: var(--font-mono);">/mail/config-v1.1.xml</code>
+            </div>
+            <span class="badge badge-green" style="font-size: 0.68rem;">ACTIVE</span>
+          </div>
+
+          <div style="background: var(--color-bg-input); border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 0.75rem 1rem; display: flex; align-items: center; justify-content: space-between;">
+            <div>
+              <span style="font-size: 0.72rem; color: var(--color-text-tertiary); display: block; font-weight: 600;">MICROSOFT OUTLOOK POX</span>
+              <code style="font-size: 0.8rem; color: #60a5fa; font-family: var(--font-mono);">/autodiscover/autodiscover.xml</code>
+            </div>
+            <span class="badge badge-green" style="font-size: 0.68rem;">ACTIVE</span>
+          </div>
+
+          <div style="background: var(--color-bg-input); border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 0.75rem 1rem; display: flex; align-items: center; justify-content: space-between;">
+            <div>
+              <span style="font-size: 0.72rem; color: var(--color-text-tertiary); display: block; font-weight: 600;">MICROSOFT 365 JSON</span>
+              <code style="font-size: 0.8rem; color: #a78bfa; font-family: var(--font-mono);">/autodiscover/autodiscover.json</code>
+            </div>
+            <span class="badge badge-green" style="font-size: 0.68rem;">ACTIVE</span>
+          </div>
+
+          <div style="background: var(--color-bg-input); border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 0.75rem 1rem; display: flex; align-items: center; justify-content: space-between;">
+            <div>
+              <span style="font-size: 0.72rem; color: var(--color-text-tertiary); display: block; font-weight: 600;">RFC 6186 DNS SRV</span>
+              <code style="font-size: 0.8rem; color: #f59e0b; font-family: var(--font-mono);">_imaps._tcp & _submission._tcp</code>
+            </div>
+            <span class="badge badge-green" style="font-size: 0.68rem;">ACTIVE</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 3: Manual Server Configuration Reference -->
+      <div class="device-card" style="background: rgba(18, 18, 36, 0.75); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 1.75rem; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);">
+        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary-light)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+          <h3 style="font-size: 1.05rem; font-weight: 700; color: var(--color-text-primary); margin: 0;">
+            Manual Encrypted Server Configuration (IMAP & SMTP)
+          </h3>
+        </div>
+        <p class="text-secondary" style="font-size: 0.875rem; line-height: 1.6; margin-bottom: 1.25rem;">
+          For custom mail clients, relays, or command-line scripts, use these pure TLS parameters:
+        </p>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+          <!-- IMAP -->
+          <div style="background: var(--color-bg-card); padding: 1.25rem; border-radius: var(--radius-md); border: 1px solid rgba(124, 58, 237, 0.25);">
+            <div style="font-size: 0.75rem; font-weight: 800; color: var(--color-primary-light); margin-bottom: 0.75rem; display: flex; align-items: center; justify-content: space-between;">
+              <span>INCOMING (IMAP)</span>
+              <span class="badge badge-purple" style="font-size: 0.68rem;">ENCRYPTED</span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 0.45rem; font-size: 0.84rem;">
+              <div style="display: flex; justify-content: space-between;">
+                <span class="text-secondary">Host:</span>
+                <code class="mono" style="color: var(--color-text-primary); font-weight: 600;">imap.purelymail.com</code>
+              </div>
+              <div style="display: flex; justify-content: space-between;">
+                <span class="text-secondary">Port:</span>
+                <code class="mono" style="color: var(--color-text-primary); font-weight: 600;">993 (SSL/TLS)</code>
+              </div>
+              <div style="display: flex; justify-content: space-between;">
+                <span class="text-secondary">Security:</span>
+                <span>TLS 1.3 / SSL</span>
+              </div>
+              <div style="display: flex; justify-content: space-between;">
+                <span class="text-secondary">Username:</span>
+                <span class="mono" style="color: var(--color-text-tertiary);">your-email@wox.world</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- SMTP -->
+          <div style="background: var(--color-bg-card); padding: 1.25rem; border-radius: var(--radius-md); border: 1px solid rgba(16, 185, 129, 0.25);">
+            <div style="font-size: 0.75rem; font-weight: 800; color: var(--color-success); margin-bottom: 0.75rem; display: flex; align-items: center; justify-content: space-between;">
+              <span>OUTGOING (SMTP)</span>
+              <span class="badge badge-green" style="font-size: 0.68rem;">AUTHENTICATED</span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 0.45rem; font-size: 0.84rem;">
+              <div style="display: flex; justify-content: space-between;">
+                <span class="text-secondary">Host:</span>
+                <code class="mono" style="color: var(--color-text-primary); font-weight: 600;">smtp.purelymail.com</code>
+              </div>
+              <div style="display: flex; justify-content: space-between;">
+                <span class="text-secondary">Port:</span>
+                <code class="mono" style="color: var(--color-text-primary); font-weight: 600;">465 (SSL) / 587 (STARTTLS)</code>
+              </div>
+              <div style="display: flex; justify-content: space-between;">
+                <span class="text-secondary">Security:</span>
+                <span>TLS / STARTTLS</span>
+              </div>
+              <div style="display: flex; justify-content: space-between;">
+                <span class="text-secondary">Username:</span>
+                <span class="mono" style="color: var(--color-text-tertiary);">your-email@wox.world</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Expanded High-Converting Interactive FAQs ───────────── -->
+<section style="padding: 5rem 0;">
+  <div class="container">
+    <div style="text-align: center; max-width: 680px; margin: 0 auto 3rem;">
+      <span class="badge badge-purple" style="margin-bottom: 0.75rem; padding: 0.3rem 0.85rem; font-size: 0.75rem;">Clear Answers</span>
+      <h2 style="font-family: 'Outfit', var(--font-body); font-size: clamp(1.8rem, 3.5vw, 2.5rem); font-weight: 800; color: var(--color-text-primary); margin-bottom: 0.5rem; letter-spacing: -0.02em;">
+        Frequently Asked Questions
+      </h2>
+      <p class="text-secondary" style="font-size: 0.9375rem;">
+        Everything you need to know about our privacy infrastructure, disposable addresses, and webmail client.
+      </p>
+    </div>
+
+    <div class="faq-grid">
+      <!-- FAQ 1 -->
+      <div class="faq-card open">
+        <button type="button" class="faq-question-btn" onclick="toggleFaq(this)">
+          <span>How does Public Temp Mail work without signup?</span>
+          <svg class="faq-icon-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="faq-answer-body">
+          Public Temp Mail provisions a live mailbox address instantly from our pre-warmed pool in under 5ms. Messages sent to this address arrive in real-time via Server-Sent Events (SSE) directly in your browser. No cookies, no registration, and no personal telemetry are stored. After 24 to 72 hours, the mailbox and all its messages are permanently shredded.
+        </div>
+      </div>
+
+      <!-- FAQ 2 -->
+      <div class="faq-card open">
+        <button type="button" class="faq-question-btn" onclick="toggleFaq(this)">
+          <span>What is Personal Temp Mail and how does the PIN work?</span>
+          <svg class="faq-icon-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="faq-answer-body">
+          Personal Temp Mail lets you pick a custom prefix (e.g. <code>myproject@mail.wox.world</code>) and lock it with a secret 4-to-8 digit PIN. Unlike public temp addresses, Personal Temp Mail lasts up to 60 days, allowing you to return and check for follow-up emails, reset passwords, or beta test services without creating a permanent account.
+        </div>
+      </div>
+
+      <!-- FAQ 3 -->
+      <div class="faq-card">
+        <button type="button" class="faq-question-btn" onclick="toggleFaq(this)">
+          <span>How does the Unified Multi-Account Vault work?</span>
+          <svg class="faq-icon-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="faq-answer-body">
+          You can connect external Gmail, Outlook, Yahoo, Fastmail, or custom IMAP/SMTP accounts in Settings. All server credentials are encrypted with authenticated AES-256-GCM before database storage. You can seamlessly switch between inboxes with a single click.
+        </div>
+      </div>
+
+      <!-- FAQ 4 -->
+      <div class="faq-card">
+        <button type="button" class="faq-question-btn" onclick="toggleFaq(this)">
+          <span>Can I use WoxMail on my iPhone or Outlook?</span>
+          <svg class="faq-icon-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="faq-answer-body">
+          Yes! WoxMail implements RFC 6186 Autoconfig and Microsoft POX/JSON Autodiscover. On iPhone or Mac, you can download a 1-click <code>.mobileconfig</code> profile from Settings to automatically configure Apple Mail with TLS 993/465 without typing server hostnames or port numbers.
+        </div>
+      </div>
+
+      <!-- FAQ 5 -->
+      <div class="faq-card">
+        <button type="button" class="faq-question-btn" onclick="toggleFaq(this)">
+          <span>How does The Screener protect against spam?</span>
+          <svg class="faq-icon-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="faq-answer-body">
+          Inspired by HEY, The Screener puts all first-time senders into a visual quarantine buffer. Senders cannot reach your primary inbox until you explicitly triage them: <strong>Let In</strong> (primary inbox), <strong>The Feed</strong> (newsletters), <strong>Paper Trail</strong> (receipts), or <strong>Block</strong> (silently discarded).
+        </div>
+      </div>
+
+      <!-- FAQ 6 -->
+      <div class="faq-card">
+        <button type="button" class="faq-question-btn" onclick="toggleFaq(this)">
+          <span>Does WoxMail scan my emails or show ads?</span>
+          <svg class="faq-icon-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="faq-answer-body">
+          Never. WoxMail is built with strict zero-logging policies. We do not scan message contents for advertising, we strip third-party tracking pixels before rendering HTML, and we have zero advertising trackers anywhere in our codebase.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Final Conversion CTA Banner -->
+<section style="padding: 4rem 0 6rem; text-align: center;">
+  <div class="container">
+    <div class="cta-banner-box" style="background: rgba(18, 18, 36, 0.75); border: 1px solid var(--color-border); border-radius: var(--radius-xl); padding: 3.5rem 2rem; backdrop-filter: blur(20px);">
+      <h2 class="cta-banner-title" style="font-family: 'Outfit', var(--font-body); font-size: clamp(1.8rem, 3.5vw, 2.5rem); font-weight: 800; color: var(--color-text-primary); margin-bottom: 0.75rem;">
+        Take Sovereign Control of Your Inbox Today.
+      </h2>
+      <p class="cta-banner-desc" style="font-size: 1rem; color: var(--color-text-secondary); max-width: 600px; margin: 0 auto 2rem;">
+        Start with instant disposable temp mail in 1 click, or claim your permanent encrypted @wox.world mailbox.
+      </p>
+      <div style="display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap;">
+        <a href="/tempmail" class="btn btn-primary btn-lg" style="box-shadow: 0 0 25px var(--color-primary-glow); min-height: 48px; border-radius: var(--radius-pill);">
+          <span>Generate Temp Mail Now</span>
+        </a>
+        <a href="/login" class="btn btn-secondary btn-lg" style="min-height: 48px; border-radius: var(--radius-pill);">
+          <span>Enter Webmail Portal</span>
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Live Generator & FAQ Toggle Script -->
+<script>
+  let currentHeroExpiryHours = 24;
+  let currentHeroMode = 'pool';
+  let heroExpiresAt = null;
+  let savedPoolExpiresAt = null;
+  let heroCountdownInterval = null;
+
+  function getCsrfToken() {
+    const match = document.cookie.match(/woxmail_csrf=([^;]+)/);
+    return match ? match[1] : '';
+  }
+
+  function formatDurationLabel(hours) {
+    if (hours >= 24) {
+      const days = hours / 24;
+      return days + ' Day' + (days > 1 ? 's' : '');
+    }
+    return hours + ' Hour' + (hours > 1 ? 's' : '');
+  }
+
+  function setLiveShader(mode) {
+    localStorage.setItem('woxmail_bg_mode', mode);
+    if (window.WoxBackground?.setMode) {
+      window.WoxBackground.setMode(mode);
+    }
+    if (window.WoxToast) {
+      window.WoxToast.info('Switched shader to ' + mode.replace('_', ' '));
+    }
+  }
+
+  function setLiveAccent(accent) {
+    if (window.WoxTheme?.setAccent) {
+      window.WoxTheme.setAccent(accent);
+    } else {
+      localStorage.setItem('woxmail_accent', accent);
+      document.documentElement.setAttribute('data-accent', accent);
+    }
+    if (window.WoxToast) {
+      window.WoxToast.success('Accent color set to ' + accent);
+    }
+  }
+
+  function setHeroMode(mode) {
+    currentHeroMode = mode;
+    const poolBtn = document.getElementById('mode-btn-pool');
+    const customBtn = document.getElementById('mode-btn-custom');
+    const poolContainer = document.getElementById('hero-pool-container');
+    const customContainer = document.getElementById('hero-custom-container');
+    const lifespanRow = document.getElementById('hero-lifespan-selector-row');
+    const sourceBadge = document.getElementById('hero-source-badge');
+    const pill = document.getElementById('hero-countdown-pill');
+    const exactTime = document.getElementById('hero-exact-time');
+
+    if (mode === 'pool') {
+      if (poolBtn) {
+        poolBtn.style.background = 'var(--color-primary)';
+        poolBtn.style.color = '#fff';
+        poolBtn.style.fontWeight = '600';
+      }
+      if (customBtn) {
+        customBtn.style.background = 'transparent';
+        customBtn.style.color = 'var(--color-text-secondary)';
+        customBtn.style.fontWeight = '500';
+      }
+      if (poolContainer) poolContainer.style.display = 'flex';
+      if (customContainer) customContainer.style.display = 'none';
+      if (lifespanRow) lifespanRow.style.display = 'none';
+      if (sourceBadge) {
+        sourceBadge.textContent = 'Standby Pool (<5ms)';
+        sourceBadge.className = 'badge badge-green';
+      }
+      if (savedPoolExpiresAt && new Date(savedPoolExpiresAt).getTime() > Date.now()) {
+        startHeroCountdown(savedPoolExpiresAt);
+      } else {
+        generateHeroTempAddress(false);
+      }
+    } else {
+      if (customBtn) {
+        customBtn.style.background = 'var(--color-primary)';
+        customBtn.style.color = '#fff';
+        customBtn.style.fontWeight = '600';
+      }
+      if (poolBtn) {
+        poolBtn.style.background = 'transparent';
+        poolBtn.style.color = 'var(--color-text-secondary)';
+        poolBtn.style.fontWeight = '500';
+      }
+      if (poolContainer) poolContainer.style.display = 'none';
+      if (customContainer) customContainer.style.display = 'flex';
+      if (lifespanRow) lifespanRow.style.display = 'flex';
+      if (sourceBadge) {
+        sourceBadge.textContent = 'User-Generated Handle';
+        sourceBadge.className = 'badge badge-purple';
+      }
+      if (heroCountdownInterval) clearInterval(heroCountdownInterval);
+      if (pill) {
+        pill.textContent = 'Lifespan: ' + formatDurationLabel(currentHeroExpiryHours);
+        pill.className = 'badge badge-purple';
+      }
+      if (exactTime) {
+        exactTime.textContent = '• Valid for ' + formatDurationLabel(currentHeroExpiryHours) + ' upon creation';
+      }
+      const customInput = document.getElementById('hero-custom-input');
+      if (customInput) customInput.focus();
+    }
+  }
+
+  function selectHeroDuration(hours) {
+    currentHeroExpiryHours = hours;
+    document.querySelectorAll('.duration-pills .duration-btn').forEach(btn => {
+      const btnHours = parseInt(btn.getAttribute('data-hours'), 10);
+      if (btnHours === hours) {
+        btn.classList.add('active');
+        btn.style.background = 'var(--color-primary)';
+        btn.style.color = '#fff';
+        btn.style.borderColor = 'var(--color-primary)';
+        btn.style.fontWeight = '600';
+      } else {
+        btn.classList.remove('active');
+        btn.style.background = 'var(--color-bg-hover)';
+        btn.style.color = 'var(--color-text-secondary)';
+        btn.style.borderColor = 'var(--color-border)';
+        btn.style.fontWeight = '500';
+      }
+    });
+
+    const hoursLabel = document.getElementById('hero-hours-label');
+    if (hoursLabel) {
+      hoursLabel.textContent = formatDurationLabel(hours);
+    }
+
+    if (currentHeroMode === 'custom') {
+      const pill = document.getElementById('hero-countdown-pill');
+      const exactTime = document.getElementById('hero-exact-time');
+      if (pill) {
+        pill.textContent = 'Lifespan: ' + formatDurationLabel(hours);
+        pill.className = 'badge badge-purple';
+      }
+      if (exactTime) {
+        exactTime.textContent = '• Valid for ' + formatDurationLabel(hours) + ' upon creation';
+      }
+    } else {
+      generateHeroTempAddress(true);
+    }
+  }
+
+  function startHeroCountdown(expiresAtIso) {
+    if (heroCountdownInterval) clearInterval(heroCountdownInterval);
+    heroExpiresAt = new Date(expiresAtIso).getTime();
+    if (currentHeroMode === 'pool') {
+      savedPoolExpiresAt = expiresAtIso;
+    }
+
+    function update() {
+      const pill = document.getElementById('hero-countdown-pill');
+      const exactTime = document.getElementById('hero-exact-time');
+      if (!pill) return;
+
+      const now = Date.now();
+      const diffMs = heroExpiresAt - now;
+
+      if (diffMs <= 0) {
+        pill.textContent = 'Expired';
+        pill.className = 'badge badge-red';
+        if (heroCountdownInterval) clearInterval(heroCountdownInterval);
+        return;
+      }
+
+      const totalSec = Math.floor(diffMs / 1000);
+      const hours = Math.floor(totalSec / 3600);
+      const minutes = Math.floor((totalSec % 3600) / 60);
+      const seconds = totalSec % 60;
+
+      pill.textContent = (hours > 0 ? hours + 'h ' : '') + minutes + 'm ' + seconds + 's left';
+      pill.className = 'badge badge-purple';
+
+      if (exactTime) {
+        const expDate = new Date(heroExpiresAt);
+        exactTime.textContent = '• Until: ' + expDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' (' + expDate.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ')';
+      }
+    }
+
+    update();
+    heroCountdownInterval = setInterval(update, 1000);
+  }
+
+  async function generateHeroTempAddress(forceNew = false) {
+    const input = document.getElementById('hero-address-preview');
+    const inboxLink = document.getElementById('hero-inbox-link');
+    const sourceBadge = document.getElementById('hero-source-badge');
+    
+    if (!forceNew) {
+      try {
+        const sessionRes = await fetch('/api/tempmail/session', { credentials: 'include' });
+        const sessionData = await sessionRes.json();
+        if (sessionData && sessionData.active && sessionData.address) {
+          input.value = sessionData.address;
+          if (inboxLink) inboxLink.href = '/tempmail?address=' + encodeURIComponent(sessionData.address);
+          localStorage.setItem('woxmail_temp_addr', sessionData.address);
+          if (sourceBadge) {
+            sourceBadge.textContent = sessionData.isCustom ? 'User-Generated' : 'Standby Pool (<5ms)';
+            sourceBadge.className = sessionData.isCustom ? 'badge badge-purple' : 'badge badge-green';
+          }
+          if (sessionData.expiresAt) startHeroCountdown(sessionData.expiresAt);
+          return;
+        }
+      } catch {}
+    }
+
+    input.value = 'Claiming from standby pool...';
+
+    try {
+      const res = await fetch('/api/tempmail/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': getCsrfToken(),
+        },
+        credentials: 'include',
+        body: JSON.stringify({ expiryHours: currentHeroExpiryHours, captchaToken: 'dev-bypass', forceNew })
+      });
+      const data = await res.json();
+      if (data && data.address) {
+        input.value = data.address;
+        if (inboxLink) inboxLink.href = '/tempmail?address=' + encodeURIComponent(data.address);
+        localStorage.setItem('woxmail_temp_addr', data.address);
+        if (sourceBadge) {
+          sourceBadge.textContent = data.isCustom ? 'User-Generated' : 'Standby Pool (<5ms)';
+          sourceBadge.className = data.isCustom ? 'badge badge-purple' : 'badge badge-green';
+        }
+        if (data.expiresAt) startHeroCountdown(data.expiresAt);
+        return;
+      }
+    } catch (err) {
+      console.warn('Backend pool error:', err);
+    }
+
+    const fallbackAddr = 'guest_' + Math.floor(Math.random() * 899999 + 100000) + '@mail.wox.world';
+    input.value = fallbackAddr;
+    if (inboxLink) inboxLink.href = '/tempmail?address=' + encodeURIComponent(fallbackAddr);
+    startHeroCountdown(new Date(Date.now() + currentHeroExpiryHours * 3600000).toISOString());
+  }
+
+  async function generateCustomHeroAddress() {
+    const customInput = document.getElementById('hero-custom-input');
+    const customVal = (customInput?.value || '').trim().toLowerCase().replace(/[^a-z0-9._-]/g, '');
+
+    if (!customVal || customVal.length < 3) {
+      if (window.WoxToast) window.WoxToast.warning('Username must be at least 3 alphanumeric characters');
+      else alert('Username must be at least 3 alphanumeric characters');
+      return;
+    }
+
+    const input = document.getElementById('hero-address-preview');
+    const inboxLink = document.getElementById('hero-inbox-link');
+    const sourceBadge = document.getElementById('hero-source-badge');
+
+    input.value = 'Creating ' + customVal + '@mail.wox.world...';
+    setHeroMode('pool');
+
+    try {
+      const res = await fetch('/api/tempmail/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': getCsrfToken(),
+        },
+        credentials: 'include',
+        body: JSON.stringify({ username: customVal, expiryHours: currentHeroExpiryHours, captchaToken: 'dev-bypass', forceNew: true })
+      });
+      const data = await res.json();
+      if (data && data.address) {
+        input.value = data.address;
+        if (inboxLink) inboxLink.href = '/tempmail?address=' + encodeURIComponent(data.address);
+        localStorage.setItem('woxmail_temp_addr', data.address);
+        if (sourceBadge) {
+          sourceBadge.textContent = 'User-Generated Handle';
+          sourceBadge.className = 'badge badge-purple';
+        }
+        if (data.expiresAt) startHeroCountdown(data.expiresAt);
+        if (window.WoxToast) window.WoxToast.success('Created custom address: ' + data.address);
+        return;
+      }
+    } catch (err) {
+      console.warn('Custom generation error:', err);
+    }
+  }
+
+  function copyHeroAddress() {
+    const input = document.getElementById('hero-address-preview');
+    if (input && input.value && !input.value.startsWith('Generating') && !input.value.startsWith('Claiming')) {
+      navigator.clipboard.writeText(input.value);
+      if (window.WoxToast) window.WoxToast.success('Copied ' + input.value + ' to clipboard!');
+      else alert('Copied ' + input.value + ' to clipboard!');
+    }
+  }
+
+  function toggleFaq(btn) {
+    const card = btn.closest('.faq-card');
+    if (card) {
+      card.classList.toggle('open');
+    }
+  }
+
+  function showAppleInstructionModal() {
+    const modal = document.createElement('div');
+    modal.className = 'modal-backdrop active';
+    modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.75); backdrop-filter:blur(8px); display:flex; align-items:center; justify-content:center; z-index:99999; padding:1rem;';
+    modal.innerHTML = \`
+      <div class="modal" style="max-width:540px; width:100%; background:var(--color-bg-card); border:1px solid var(--color-border); border-radius:var(--radius-xl); padding:2rem; box-shadow:var(--shadow-lg); animation:scaleIn 0.2s ease;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.25rem;">
+          <div style="display:flex; align-items:center; gap:0.6rem;">
+            <span style="display:inline-flex; color:var(--color-text-primary);">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 7h10"/><path d="M7 12h10"/><path d="M7 17h10"/></svg>
+            </span>
+            <h3 style="font-size:1.15rem; font-weight:800; margin:0;">Apple iOS & macOS Setup Guide</h3>
+          </div>
+          <button type="button" class="btn btn-ghost btn-xs" onclick="this.closest('.modal-backdrop').remove()" style="display:inline-flex; align-items:center; justify-content:center; padding:0.2rem 0.4rem;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        
+        <div style="display:flex; flex-direction:column; gap:1rem; font-size:0.875rem; line-height:1.6; color:var(--color-text-secondary);">
+          <div style="display:flex; gap:0.75rem; align-items:flex-start;">
+            <span class="badge badge-purple" style="font-weight:700; width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; border-radius:50%; flex-shrink:0;">1</span>
+            <div><strong style="color:var(--color-text-primary);">Log into your Sovereign Account:</strong> Sign in to your WoxMail inbox or open your Personal Temp Mailbox.</div>
+          </div>
+          <div style="display:flex; gap:0.75rem; align-items:flex-start;">
+            <span class="badge badge-purple" style="font-weight:700; width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; border-radius:50%; flex-shrink:0;">2</span>
+            <div><strong style="color:var(--color-text-primary);">Download .mobileconfig Profile:</strong> Go to Settings → Mobile Setup and click "Download Apple Profile" on your iPhone, iPad, or Mac.</div>
+          </div>
+          <div style="display:flex; gap:0.75rem; align-items:flex-start;">
+            <span class="badge badge-purple" style="font-weight:700; width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; border-radius:50%; flex-shrink:0;">3</span>
+            <div><strong style="color:var(--color-text-primary);">Install in Settings:</strong> Open <em>Settings → Profile Downloaded</em> (iOS) or <em>System Settings → Profiles</em> (macOS) and click Install. All IMAP & SMTP ports and TLS settings are configured automatically!</div>
+          </div>
+        </div>
+
+        <div style="margin-top:1.5rem; display:flex; justify-content:flex-end; gap:0.75rem;">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="this.closest('.modal-backdrop').remove()">Close</button>
+          <a href="/login?redirect=/settings#autoconfig" class="btn btn-primary btn-sm" style="font-weight:700;">Open Settings Autoconfig →</a>
+        </div>
+      </div>
+    \`;
+    modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+    document.body.appendChild(modal);
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    generateHeroTempAddress(false);
+  });
+</script>
+
+` }) %>

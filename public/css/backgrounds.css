@@ -1,0 +1,60 @@
+/**
+ * @fileoverview WoxMail Interactive Background & Canvas Styles
+ */
+
+#woxmail-interactive-canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: -1 !important;
+  opacity: 1;
+  transition: opacity 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #woxmail-interactive-canvas {
+    display: none !important;
+  }
+}
+
+/* Background selector cards in settings */
+.bg-preset-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  border-radius: var(--radius-md);
+  border: 2px solid var(--color-border);
+  background: var(--color-bg-elevated);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-align: center;
+  gap: 0.5rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.bg-preset-card:hover {
+  border-color: var(--color-primary-light);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px var(--color-primary-glow);
+}
+
+.bg-preset-card.active {
+  border-color: var(--color-primary);
+  background: rgba(124, 58, 237, 0.12);
+  box-shadow: 0 0 0 2px var(--color-primary-glow);
+}
+
+.bg-preset-preview {
+  width: 100%;
+  height: 64px;
+  border-radius: var(--radius-sm);
+  background-size: cover;
+  background-position: center;
+  border: 1px solid var(--color-border);
+}

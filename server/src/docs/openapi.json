@@ -1,0 +1,2241 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "WoxMail Master Suite REST & Streaming API",
+    "version": "1.0.0",
+    "description": "Complete, production-grade REST API reference for WoxMail: permanent mailboxes, temporary throwaway disposable mail, Enclave Vault confidential messages, Ephemeral Vector Streams, Time Capsule Future Letters, The Gatekeeper Cold Email Screener, WoxSMS, Developer CLI Gateway, Application Passwords, and Admin Management.",
+    "contact": {
+      "name": "WoxMail Engineering",
+      "url": "https://mail.wox.world",
+      "email": "support@wox.world"
+    },
+    "license": {
+      "name": "Proprietary",
+      "url": "https://mail.wox.world/terms"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://mail.wox.world",
+      "description": "Production Live Server"
+    },
+    {
+      "url": "http://localhost:3001",
+      "description": "Local Development Server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Standard JWT Bearer token obtained from `/api/auth/login`."
+      },
+      "appPasswordAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Developer SMTP / Application Password token formatted as `wox_app_xxxx-xxxx-xxxx-xxxx`."
+      },
+      "apiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key",
+        "description": "Developer CLI / API Key header for headless scripts and daemons."
+      },
+      "tempSessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "woxmail_temp",
+        "description": "Encrypted session cookie for temporary disposable mailboxes."
+      },
+      "csrfToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-csrf-token",
+        "description": "CSRF token required for state-mutating requests (POST, PUT, DELETE, PATCH)."
+      }
+    },
+    "schemas": {
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Error message description"
+          },
+          "code": {
+            "type": "string",
+            "description": "Optional machine-readable error code"
+          },
+          "details": {
+            "type": "object",
+            "description": "Optional error context or field validation errors"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "VerifyRecipientResult": {
+        "type": "object",
+        "properties": {
+          "valid": {
+            "type": "boolean",
+            "description": "True if syntax is valid and domain has active MX servers"
+          },
+          "email": {
+            "type": "string",
+            "description": "Sanitized recipient email address"
+          },
+          "localPart": {
+            "type": "string",
+            "description": "Local user identifier before @"
+          },
+          "domain": {
+            "type": "string",
+            "description": "Domain name after @"
+          },
+          "suggestion": {
+            "type": "string",
+            "nullable": true,
+            "description": "Auto-correct suggestion for domain typos (e.g. user@gmail.com)"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true,
+            "description": "Failure rationale if invalid"
+          },
+          "mxRecords": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "exchange": {
+                  "type": "string"
+                },
+                "priority": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "valid",
+          "email"
+        ]
+      },
+      "AppPasswordResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string",
+            "description": "Raw application password (returned only on creation)"
+          },
+          "prefix": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastUsedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "MailMessageSummary": {
+        "type": "object",
+        "properties": {
+          "uid": {
+            "type": "integer"
+          },
+          "seq": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "from": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "address": {
+                "type": "string"
+              }
+            }
+          },
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "address": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "subject": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "preview": {
+            "type": "string"
+          },
+          "flags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "unread": {
+            "type": "boolean"
+          },
+          "starred": {
+            "type": "boolean"
+          },
+          "hasAttachments": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/api/auth/register": {
+      "post": {
+        "summary": "Register New Permanent User Account",
+        "description": "Create a permanent @wox.world email account using an invite code.",
+        "tags": [
+          "Authentication"
+        ],
+        "responses": {
+          "201": {
+            "description": "User account created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "message": "Account created",
+                    "token": "jwt_token_here"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid username, password, or invite code"
+          },
+          "409": {
+            "description": "Username already taken"
+          }
+        },
+        "security": [
+          {
+            "csrfToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": {
+                    "type": "string",
+                    "required": true,
+                    "example": "alice"
+                  },
+                  "password": {
+                    "type": "string",
+                    "required": true,
+                    "example": "SecurePassword123!"
+                  },
+                  "inviteCode": {
+                    "type": "string",
+                    "required": true,
+                    "example": "INVITE-ABCD-1234"
+                  },
+                  "displayName": {
+                    "type": "string",
+                    "example": "Alice Smith"
+                  },
+                  "recoveryEmail": {
+                    "type": "string",
+                    "example": "alice.recovery@example.com"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "summary": "Permanent User Login",
+        "description": "Authenticate with username/email and password. Returns JWT token and sets secure session cookie.",
+        "tags": [
+          "Authentication"
+        ],
+        "responses": {
+          "200": {
+            "description": "Authentication successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "token": "jwt_token_here",
+                    "user": {
+                      "id": 1,
+                      "email": "alice@wox.world"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials or missing 2FA code"
+          },
+          "429": {
+            "description": "Rate limit exceeded (too many login attempts)"
+          }
+        },
+        "security": [
+          {
+            "csrfToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": {
+                    "type": "string",
+                    "required": true,
+                    "example": "alice@wox.world"
+                  },
+                  "password": {
+                    "type": "string",
+                    "required": true,
+                    "example": "SecurePassword123!"
+                  },
+                  "otp": {
+                    "type": "string",
+                    "description": "6-digit 2FA code if TOTP enabled",
+                    "example": "123456"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "summary": "Logout and Revoke Session",
+        "description": "Clears the authentication cookie and revokes the active session token.",
+        "tags": [
+          "Authentication"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully logged out",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "message": "Logged out successfully"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "summary": "Get Current Authenticated User",
+        "description": "Returns profile details, settings, and quotas for the currently authenticated user.",
+        "tags": [
+          "Authentication"
+        ],
+        "responses": {
+          "200": {
+            "description": "Current user profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "user": {
+                      "id": 1,
+                      "email": "admin@wox.world",
+                      "displayName": "Admin"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "appPasswordAuth": []
+          }
+        ]
+      }
+    },
+    "/api/auth/2fa/setup": {
+      "post": {
+        "summary": "Initiate 2FA TOTP Setup",
+        "description": "Generates a new TOTP secret and QR code data URI for Google Authenticator / Authy.",
+        "tags": [
+          "Authentication"
+        ],
+        "responses": {
+          "200": {
+            "description": "TOTP secret and QR code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "secret": "JBSWY3DPEHPK3PXP",
+                    "qrCode": "data:image/png;base64,..."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/auth/2fa/verify": {
+      "post": {
+        "summary": "Verify and Activate 2FA",
+        "description": "Confirms a TOTP token code to activate 2FA and generates 10 single-use emergency backup recovery codes.",
+        "tags": [
+          "Authentication"
+        ],
+        "responses": {
+          "200": {
+            "description": "2FA enabled and recovery codes generated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "message": "2FA activated",
+                    "recoveryCodes": [
+                      "abcd-1234",
+                      "efgh-5678"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "required": true,
+                    "example": "582910"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/2fa/disable": {
+      "post": {
+        "summary": "Disable 2FA TOTP",
+        "description": "Disables two-factor authentication after verifying user password.",
+        "tags": [
+          "Authentication"
+        ],
+        "responses": {
+          "200": {
+            "description": "2FA successfully disabled"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "password": {
+                    "type": "string",
+                    "required": true,
+                    "example": "CurrentPassword123!"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/refresh": {
+      "post": {
+        "summary": "Refresh JWT Access Token",
+        "description": "Generates a fresh access token using a valid refresh token.",
+        "tags": [
+          "Authentication"
+        ],
+        "responses": {
+          "200": {
+            "description": "Token refreshed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "token": "new_jwt_access_token"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mail/folders": {
+      "get": {
+        "summary": "List Mailbox Folders",
+        "description": "Fetches all IMAP folders (INBOX, Sent, Drafts, Trash, Spam, Archive, The Feed, Paper Trail) with total and unread counts.",
+        "tags": [
+          "Mailbox"
+        ],
+        "responses": {
+          "200": {
+            "description": "Folder list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "folders": [
+                      {
+                        "name": "INBOX",
+                        "path": "INBOX",
+                        "messages": 42,
+                        "unseen": 3
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "appPasswordAuth": []
+          }
+        ]
+      }
+    },
+    "/api/mail/messages": {
+      "get": {
+        "summary": "List Messages in Folder",
+        "description": "Retrieves paginated message summaries for a folder with filtering and search support.",
+        "tags": [
+          "Mailbox"
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated message summaries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "messages": [],
+                    "total": 42,
+                    "page": 1,
+                    "limit": 25
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "appPasswordAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "folder",
+            "in": "query",
+            "required": false,
+            "description": "Folder name or path",
+            "schema": {
+              "type": "string",
+              "default": "INBOX"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Page number",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Messages per page (max 100)",
+            "schema": {
+              "type": "integer",
+              "default": 25
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "description": "Filter search query by subject, sender, or content",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "starred",
+            "in": "query",
+            "required": false,
+            "description": "Filter only starred messages",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "unread",
+            "in": "query",
+            "required": false,
+            "description": "Filter only unread messages",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ]
+      }
+    },
+    "/api/mail/message/:uid": {
+      "get": {
+        "summary": "Get Message Details by UID",
+        "description": "Fetches complete email message details including sanitized HTML, plain text, headers, attachments, link previews, and security audit badges.",
+        "tags": [
+          "Mailbox"
+        ],
+        "responses": {
+          "200": {
+            "description": "Complete message payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "uid": 105,
+                    "subject": "Welcome to WoxMail",
+                    "html": "<p>Hello...</p>",
+                    "from": {
+                      "address": "support@wox.world"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "appPasswordAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "folder",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "INBOX"
+            }
+          }
+        ]
+      }
+    },
+    "/api/mail/verify-recipient": {
+      "get": {
+        "summary": "Pre-Flight Recipient Email Verification",
+        "description": "Validates email syntax, detects common domain typos (e.g. gamil.com -> gmail.com), and resolves DNS MX records to conserve SMTP bandwidth and prevent delivery failure.",
+        "tags": [
+          "Pre-Flight Verification"
+        ],
+        "responses": {
+          "200": {
+            "description": "Verification result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "valid": true,
+                    "email": "founder@gamil.com",
+                    "suggestion": "founder@gmail.com",
+                    "mxRecords": [
+                      {
+                        "exchange": "gmail-smtp-in.l.google.com",
+                        "priority": 5
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "appPasswordAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "email",
+            "in": "query",
+            "required": true,
+            "description": "Recipient email to verify",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/mail/verify-recipients": {
+      "post": {
+        "summary": "Batch Recipient Email Verification",
+        "description": "Validates an array of recipient emails (To, CC, BCC) before batch sending.",
+        "tags": [
+          "Pre-Flight Verification"
+        ],
+        "responses": {
+          "200": {
+            "description": "Batch verification result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "valid": false,
+                    "verifiedCount": 1,
+                    "invalidEmails": [
+                      {
+                        "email": "dead@nonexistent-domain.xyz",
+                        "reason": "No MX servers"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "appPasswordAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "emails": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "required": true,
+                    "example": [
+                      "alice@gmail.com",
+                      "bob@gamil.com",
+                      "dead@nonexistent-domain.xyz"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mail/send": {
+      "post": {
+        "summary": "Compose and Send Email",
+        "description": "Pre-validates recipients, sanitizes headers, dispatches outbound email via SMTP, and automatically appends an RFC822 copy to the user Sent folder.",
+        "tags": [
+          "Mailbox"
+        ],
+        "responses": {
+          "200": {
+            "description": "Email sent and archived to Sent folder",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "message": "Email sent successfully",
+                    "messageId": "<uuid@wox.world>"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Delivery blocked (invalid recipient MX or dead domain)"
+          },
+          "429": {
+            "description": "Daily send quota reached"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "appPasswordAuth": []
+          },
+          {
+            "csrfToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string",
+                    "required": true,
+                    "example": "client@example.com"
+                  },
+                  "subject": {
+                    "type": "string",
+                    "required": true,
+                    "example": "Project Update"
+                  },
+                  "html": {
+                    "type": "string",
+                    "example": "<p>Attached is the weekly report.</p>"
+                  },
+                  "text": {
+                    "type": "string",
+                    "example": "Attached is the weekly report."
+                  },
+                  "cc": {
+                    "type": "string",
+                    "example": "manager@example.com"
+                  },
+                  "bcc": {
+                    "type": "string",
+                    "example": "archive@example.com"
+                  },
+                  "attachments": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "type": "string"
+                        },
+                        "content": {
+                          "type": "string",
+                          "description": "Base64 encoded file data"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mail/reply": {
+      "post": {
+        "summary": "Reply to Message",
+        "description": "Sends a reply or Reply-All with proper In-Reply-To and References headers and appends to Sent.",
+        "tags": [
+          "Mailbox"
+        ],
+        "responses": {
+          "200": {
+            "description": "Reply dispatched and saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "message": "Reply sent",
+                    "messageId": "<uuid@wox.world>"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "appPasswordAuth": []
+          },
+          {
+            "csrfToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "uid": {
+                    "type": "integer",
+                    "required": true,
+                    "example": 105
+                  },
+                  "folder": {
+                    "type": "string",
+                    "default": "INBOX"
+                  },
+                  "html": {
+                    "type": "string",
+                    "required": true,
+                    "example": "<p>Sounds good!</p>"
+                  },
+                  "replyAll": {
+                    "type": "boolean",
+                    "default": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mail/forward": {
+      "post": {
+        "summary": "Forward Message",
+        "description": "Forwards a message along with original attachments and new recipient attachments.",
+        "tags": [
+          "Mailbox"
+        ],
+        "responses": {
+          "200": {
+            "description": "Message forwarded successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "message": "Message forwarded"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "appPasswordAuth": []
+          },
+          {
+            "csrfToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "uid": {
+                    "type": "integer",
+                    "required": true,
+                    "example": 105
+                  },
+                  "folder": {
+                    "type": "string",
+                    "default": "INBOX"
+                  },
+                  "to": {
+                    "type": "string",
+                    "required": true,
+                    "example": "colleague@example.com"
+                  },
+                  "html": {
+                    "type": "string",
+                    "example": "<p>FYI see below</p>"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mail/batch": {
+      "post": {
+        "summary": "Batch Actions on Multiple Messages",
+        "description": "Performs bulk operations (archive, delete, markRead, markUnread, star, unstar, move, spam) across multiple message UIDs simultaneously.",
+        "tags": [
+          "Mailbox"
+        ],
+        "responses": {
+          "200": {
+            "description": "Batch operation completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "message": "Batch action \"archive\" executed on 3 messages"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "appPasswordAuth": []
+          },
+          {
+            "csrfToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "archive",
+                      "delete",
+                      "markRead",
+                      "markUnread",
+                      "star",
+                      "unstar",
+                      "move",
+                      "spam"
+                    ],
+                    "required": true
+                  },
+                  "uids": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    },
+                    "required": true,
+                    "example": [
+                      101,
+                      102,
+                      103
+                    ]
+                  },
+                  "folder": {
+                    "type": "string",
+                    "default": "INBOX"
+                  },
+                  "targetFolder": {
+                    "type": "string",
+                    "description": "Destination folder for \"move\" action"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mail/message/:uid/eml": {
+      "get": {
+        "summary": "Export Raw RFC822 (.EML) File",
+        "description": "Streams the original unaltered raw RFC822 .eml message for cryptographic verification or backup.",
+        "tags": [
+          "Mailbox"
+        ],
+        "responses": {
+          "200": {
+            "description": "Raw message/rfc822 file stream with Content-Disposition: attachment"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "appPasswordAuth": []
+          }
+        ]
+      }
+    },
+    "/api/mail/message/:uid/attachment/:index": {
+      "get": {
+        "summary": "Download Message Attachment",
+        "description": "Streams a specific attachment by index with safe Content-Security headers.",
+        "tags": [
+          "Mailbox"
+        ],
+        "responses": {
+          "200": {
+            "description": "Binary attachment stream"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "appPasswordAuth": []
+          }
+        ]
+      }
+    },
+    "/api/tempmail/generate": {
+      "post": {
+        "summary": "Generate Anonymous Disposable Email Address",
+        "description": "Instantly leases an ephemeral inbox from the pre-warmed pool on @mail.wox.world with configurable expiry.",
+        "tags": [
+          "Temporary Mail"
+        ],
+        "responses": {
+          "201": {
+            "description": "New temporary inbox generated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "address": "quick-fox-4829@mail.wox.world",
+                    "expiresAt": "2026-08-24T22:00:00Z",
+                    "sessionToken": "enc_token"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "customAlias": {
+                    "type": "string",
+                    "description": "Optional custom prefix",
+                    "example": "my-disposable-alias"
+                  },
+                  "expiryHours": {
+                    "type": "integer",
+                    "default": 24,
+                    "description": "Lease lifetime in hours (1-72)"
+                  },
+                  "password": {
+                    "type": "string",
+                    "description": "Optional password to secure mailbox across devices"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tempmail/inbox/:address": {
+      "get": {
+        "summary": "Fetch Disposable Mailbox Inbox",
+        "description": "Fetches all incoming messages in a temporary mailbox with sender, preview, and receipt timestamps.",
+        "tags": [
+          "Temporary Mail"
+        ],
+        "responses": {
+          "200": {
+            "description": "Inbox messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "address": "quick-fox-4829@mail.wox.world",
+                    "messages": []
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tempmail/sse/:address": {
+      "get": {
+        "summary": "Real-Time Server-Sent Events (SSE) Live Feed",
+        "description": "Long-lived HTTP event stream for zero-latency instant push notifications when new emails arrive in a disposable inbox.",
+        "tags": [
+          "Temporary Mail"
+        ],
+        "responses": {
+          "200": {
+            "description": "text/event-stream stream"
+          }
+        }
+      }
+    },
+    "/api/tempmail/message/:address/:uid": {
+      "get": {
+        "summary": "Read Disposable Email Message",
+        "description": "Fetches complete sanitized HTML body, text, attachments, and headers for a temporary email.",
+        "tags": [
+          "Temporary Mail"
+        ],
+        "responses": {
+          "200": {
+            "description": "Full email content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "uid": 1,
+                    "subject": "Your Verification Code",
+                    "html": "<p>123456</p>"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tempmail/extend": {
+      "post": {
+        "summary": "Extend Disposable Mailbox Expiry",
+        "description": "Adds extra hours/days to an active temporary inbox lease.",
+        "tags": [
+          "Temporary Mail"
+        ],
+        "responses": {
+          "200": {
+            "description": "Expiry extended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "message": "Inbox lifetime extended",
+                    "expiresAt": "2026-08-25T22:00:00Z"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "address": {
+                    "type": "string",
+                    "required": true
+                  },
+                  "additionalHours": {
+                    "type": "integer",
+                    "default": 24
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tempmail/delete/:address": {
+      "delete": {
+        "summary": "Purge and Self-Destruct Disposable Mailbox",
+        "description": "Immediately burns and expunges a temporary mailbox and all associated messages from the server.",
+        "tags": [
+          "Temporary Mail"
+        ],
+        "responses": {
+          "200": {
+            "description": "Mailbox purged successfully"
+          }
+        }
+      }
+    },
+    "/api/tempmail/qr/:address": {
+      "get": {
+        "summary": "Generate QR Code for Temp Address",
+        "description": "Returns a PNG QR Code representing the disposable address for seamless mobile sharing.",
+        "tags": [
+          "Temporary Mail"
+        ],
+        "responses": {
+          "200": {
+            "description": "image/png image stream"
+          }
+        }
+      }
+    },
+    "/api/settings/app-passwords": {
+      "get": {
+        "summary": "List Active Application Passwords",
+        "description": "Returns all active application passwords / SMTP app codes for third-party clients (Thunderbird, iOS Mail, mutt, scripts).",
+        "tags": [
+          "Application Passwords"
+        ],
+        "responses": {
+          "200": {
+            "description": "List of app passwords",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "appPasswords": [
+                      {
+                        "id": 1,
+                        "name": "Thunderbird Laptop",
+                        "prefix": "wox_app_8f93-4a1",
+                        "lastUsedAt": "2026-08-23T20:00:00Z"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "Generate New Application Password / SMTP App Code",
+        "description": "Creates a 16-character revocable app token formatted as `wox_app_xxxx-xxxx-xxxx-xxxx` for legacy SMTP/IMAP or REST API access.",
+        "tags": [
+          "Application Passwords"
+        ],
+        "responses": {
+          "201": {
+            "description": "App password created. Token is shown ONCE.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "message": "Application password created successfully. Save this code now.",
+                    "appPassword": {
+                      "id": 2,
+                      "name": "Thunderbird Desktop",
+                      "token": "wox_app_abcd-efgh-ijkl-mnop",
+                      "prefix": "wox_app_abcd-efg"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "csrfToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "required": true,
+                    "example": "Thunderbird Desktop"
+                  },
+                  "scopes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "default": [
+                      "smtp:send",
+                      "imap:read",
+                      "api:access"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/app-passwords/:id": {
+      "delete": {
+        "summary": "Revoke Application Password",
+        "description": "Immediately invalidates an application password and terminates third-party access.",
+        "tags": [
+          "Application Passwords"
+        ],
+        "responses": {
+          "200": {
+            "description": "App password revoked successfully"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "csrfToken": []
+          }
+        ]
+      }
+    },
+    "/api/mail/secure-messages": {
+      "get": {
+        "summary": "List Sent Enclave Vault Messages",
+        "description": "Fetches active confidential messages sent by the user with view limits, unlock counts, and expiry state.",
+        "tags": [
+          "Enclave Vault"
+        ],
+        "responses": {
+          "200": {
+            "description": "Secure messages list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "messages": []
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/mail/secure-send": {
+      "post": {
+        "summary": "Send Enclave Vault Confidential Message",
+        "description": "Encrypts message payload with zero-knowledge AES-256-GCM, stores locked ciphertext, and delivers a vault notification to recipient with PIN authorization.",
+        "tags": [
+          "Enclave Vault"
+        ],
+        "responses": {
+          "200": {
+            "description": "Secure message dispatched",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "message": "Confidential message created",
+                    "vaultId": "sec_8f93a10"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "csrfToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string",
+                    "required": true,
+                    "example": "partner@example.com"
+                  },
+                  "subject": {
+                    "type": "string",
+                    "required": true
+                  },
+                  "body": {
+                    "type": "string",
+                    "required": true
+                  },
+                  "passcode": {
+                    "type": "string",
+                    "description": "6-digit PIN code (or auto-generated)",
+                    "example": "748291"
+                  },
+                  "expirationHours": {
+                    "type": "integer",
+                    "default": 24
+                  },
+                  "maxViews": {
+                    "type": "integer",
+                    "default": 1
+                  },
+                  "destroyAfterRead": {
+                    "type": "boolean",
+                    "default": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/secure/unlock": {
+      "post": {
+        "summary": "Unlock Enclave Vault Message (Public / Guest Endpoint)",
+        "description": "Verifies the 6-digit PIN code, decrypts the message payload, and increments view count / burns if 1-view limit is reached.",
+        "tags": [
+          "Enclave Vault"
+        ],
+        "responses": {
+          "200": {
+            "description": "Message decrypted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "html": "<p>Secret confidential text</p>",
+                    "viewsLeft": 0,
+                    "destroyed": true
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Incorrect PIN passcode"
+          },
+          "410": {
+            "description": "Message has expired or self-destructed"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "required": true,
+                    "example": "sec_8f93a10"
+                  },
+                  "passcode": {
+                    "type": "string",
+                    "required": true,
+                    "example": "748291"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ephemeral/send": {
+      "post": {
+        "summary": "Send In-Inbox Ephemeral Vector Stream",
+        "description": "Transforms text into a dynamic SVG vector stream with anti-screenshot watermarks and 1-view self-destruct mechanism.",
+        "tags": [
+          "Ephemeral Streams"
+        ],
+        "responses": {
+          "200": {
+            "description": "Ephemeral stream created and delivered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "streamId": "stream_9f821",
+                    "messageId": "<uuid@wox.world>"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "csrfToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string",
+                    "required": true
+                  },
+                  "subject": {
+                    "type": "string",
+                    "required": true
+                  },
+                  "content": {
+                    "type": "string",
+                    "required": true
+                  },
+                  "expiryMinutes": {
+                    "type": "integer",
+                    "default": 60
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ephemeral/render/:streamId": {
+      "get": {
+        "summary": "Render In-Inbox Dynamic SVG Vector Stream",
+        "description": "Serves dynamic image/svg+xml vector representation with burning timer and view destruction.",
+        "tags": [
+          "Ephemeral Streams"
+        ],
+        "responses": {
+          "200": {
+            "description": "image/svg+xml stream"
+          }
+        }
+      }
+    },
+    "/api/futureme/create": {
+      "post": {
+        "summary": "Schedule Future Letter / Time Capsule",
+        "description": "Schedules an email to be sent into the future (up to 50 years) with optional passcode lock and delivery confirmation.",
+        "tags": [
+          "Time Capsule Future Letters"
+        ],
+        "responses": {
+          "201": {
+            "description": "Future letter scheduled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "letterId": 12,
+                    "deliverAt": "2030-01-01T00:00:00Z"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "recipientEmail": {
+                    "type": "string",
+                    "required": true
+                  },
+                  "deliverAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "required": true
+                  },
+                  "subject": {
+                    "type": "string",
+                    "required": true
+                  },
+                  "body": {
+                    "type": "string",
+                    "required": true
+                  },
+                  "isPublic": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "passcode": {
+                    "type": "string",
+                    "description": "Optional passcode required to view letter upon arrival"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/futureme/my-letters": {
+      "get": {
+        "summary": "List User Scheduled Future Letters",
+        "description": "Lists all pending and delivered time capsules written by the user.",
+        "tags": [
+          "Time Capsule Future Letters"
+        ],
+        "responses": {
+          "200": {
+            "description": "Scheduled letters list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "letters": []
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/screener/pending": {
+      "get": {
+        "summary": "Get Pending Senders in Screener Quarantine",
+        "description": "Lists first-time senders held in the quarantine screener waiting for user decision.",
+        "tags": [
+          "The Gatekeeper Screener"
+        ],
+        "responses": {
+          "200": {
+            "description": "Quarantined senders",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "senders": []
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/screener/decide": {
+      "post": {
+        "summary": "Approve or Block Quarantined Sender",
+        "description": "Decides action for a screened sender (Inbox, The Feed, Paper Trail, or Block forever).",
+        "tags": [
+          "The Gatekeeper Screener"
+        ],
+        "responses": {
+          "200": {
+            "description": "Decision recorded and messages moved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "csrfToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "senderEmail": {
+                    "type": "string",
+                    "required": true
+                  },
+                  "decision": {
+                    "type": "string",
+                    "enum": [
+                      "inbox",
+                      "feed",
+                      "papertrail",
+                      "block"
+                    ],
+                    "required": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/campaigns": {
+      "get": {
+        "summary": "List Broadcast Campaigns",
+        "description": "Retrieves all newsletter and marketing email campaigns with delivery telemetry.",
+        "tags": [
+          "Broadcast Campaigns"
+        ],
+        "responses": {
+          "200": {
+            "description": "Campaigns list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "campaigns": []
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "Create and Schedule Campaign",
+        "description": "Creates a mass broadcast campaign with template variable interpolation and unsubscribe handling.",
+        "tags": [
+          "Broadcast Campaigns"
+        ],
+        "responses": {
+          "201": {
+            "description": "Campaign created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "id": 1,
+                    "status": "scheduled"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "csrfToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "required": true
+                  },
+                  "subject": {
+                    "type": "string",
+                    "required": true
+                  },
+                  "htmlContent": {
+                    "type": "string",
+                    "required": true
+                  },
+                  "recipientListId": {
+                    "type": "integer",
+                    "required": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mail/webhooks": {
+      "get": {
+        "summary": "List Webhook Subscriptions",
+        "description": "Lists all registered webhook endpoints for inbound email events.",
+        "tags": [
+          "Webhooks"
+        ],
+        "responses": {
+          "200": {
+            "description": "Webhooks list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "webhooks": []
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "Register Webhook Endpoint",
+        "description": "Registers a new HTTPS URL to receive instant JSON payloads for email events with HMAC-SHA256 signatures.",
+        "tags": [
+          "Webhooks"
+        ],
+        "responses": {
+          "201": {
+            "description": "Webhook registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "id": 1,
+                    "secret": "whsec_8f93a10..."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "csrfToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "format": "uri",
+                    "required": true
+                  },
+                  "events": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "default": [
+                      "email.received",
+                      "email.sent"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cli/auth": {
+      "post": {
+        "summary": "CLI Device Authentication Handshake",
+        "description": "Initiates terminal authorization flow for the `wox` command-line interface.",
+        "tags": [
+          "Developer CLI"
+        ],
+        "responses": {
+          "200": {
+            "description": "CLI auth challenge",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "userCode": "WOX-4921",
+                    "verificationUrl": "https://mail.wox.world/cli/auth"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "deviceName": {
+                    "type": "string",
+                    "required": true,
+                    "example": "MacBook Pro Terminal"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cli/send": {
+      "post": {
+        "summary": "Fast Headless Send via CLI",
+        "description": "Lightweight endpoint for terminal scripts, CI/CD pipelines, and cron daemons to send emails.",
+        "tags": [
+          "Developer CLI"
+        ],
+        "responses": {
+          "200": {
+            "description": "Dispatched",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "status": "sent",
+                    "id": "<uuid@wox.world>"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "bearerAuth": []
+          },
+          {
+            "appPasswordAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string",
+                    "required": true
+                  },
+                  "subject": {
+                    "type": "string",
+                    "required": true
+                  },
+                  "body": {
+                    "type": "string",
+                    "required": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "summary": "System Health & Liveness Check",
+        "description": "Returns server uptime, database pool health, redis status, and timestamp.",
+        "tags": [
+          "System Health"
+        ],
+        "responses": {
+          "200": {
+            "description": "System is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "status": "ok",
+                    "uptime": 12450,
+                    "timestamp": "2026-08-23T22:15:00.000Z",
+                    "services": {
+                      "database": "ok",
+                      "redis": "in-memory-store"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

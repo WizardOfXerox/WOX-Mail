@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title || 'Temp Mail (Zero-JS Mode) — WoxMail' %></title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .nojs-container { max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+    .nojs-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
+    .nojs-badge { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0.75rem; background: rgba(34, 197, 94, 0.15); border: 1px solid var(--color-success); border-radius: var(--radius-pill); font-size: 0.75rem; color: var(--color-success); font-weight: 600; }
+    .nojs-address-box { display: flex; align-items: center; justify-content: space-between; background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; gap: 1rem; flex-wrap: wrap; }
+    .nojs-table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.875rem; }
+    .nojs-table th, .nojs-table td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid var(--color-border); }
+    .nojs-table th { background: var(--color-bg-hover); color: var(--color-text-secondary); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .nojs-table tr:hover { background: var(--color-bg-hover); }
+    .nojs-msg-view { background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 1.5rem; margin-top: 1rem; }
+    .nojs-otp-badge { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; background: rgba(124, 58, 237, 0.15); border: 1px solid var(--color-primary); border-radius: var(--radius-md); color: var(--color-primary-light); font-weight: 700; font-size: 1.25rem; font-family: var(--font-mono); margin: 1rem 0; }
+  </style>
+</head>
+<body>
+  <div class="nojs-container">
+    <div class="nojs-header">
+      <div style="display: flex; align-items: center; gap: 0.75rem;">
+        <a href="/" style="font-size: 1.25rem; font-weight: 700; color: var(--color-text-primary); text-decoration: none;">WoxMail</a>
+        <span class="nojs-badge">Zero-JavaScript Fallback Mode</span>
+      </div>
+      <div style="display: flex; gap: 0.5rem;">
+        <a href="/tempmail" class="btn btn-ghost btn-sm">Switch to Rich SPA</a>
+        <a href="/tempmail/nojs" class="btn btn-secondary btn-sm">Refresh Inbox</a>
+      </div>
+    </div>
+
+    <% if (active && address) { %>
+      <div class="nojs-address-box">
+        <div>
+          <span class="text-secondary" style="font-size: 0.8125rem; display: block; margin-bottom: 0.25rem;">YOUR DISPOSABLE EMAIL ADDRESS:</span>
+          <span class="mono" style="font-size: 1.25rem; font-weight: 700; color: var(--color-primary-light);"><%= address %></span>
+          <div style="margin-top: 0.25rem; font-size: 0.75rem;" class="text-secondary">
+            Expires in <%= Math.max(0, Math.round((new Date(expiresAt) - Date.now()) / (1000 * 60))) %> minutes
+          </div>
+        </div>
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+          <form method="POST" action="/tempmail/nojs/generate" style="display: inline;">
+            <button type="submit" class="btn btn-primary btn-sm">New Address</button>
+          </form>
+          <form method="POST" action="/tempmail/nojs/delete" style="display: inline;">
+            <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Custom Prefix Form -->
+      <form method="POST" action="/tempmail/nojs/custom" style="display: flex; gap: 0.5rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
+        <input name="username" class="input" placeholder="Claim custom username (e.g. testuser42)" required style="flex: 1; min-width: 220px;">
+        <button type="submit" class="btn btn-secondary btn-sm">Set Custom Prefix</button>
+      </form>
+
+      <% if (selectedMessage) { %>
+        <!-- Message Viewer -->
+        <div class="nojs-msg-view">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem; border-bottom: 1px solid var(--color-border); padding-bottom: 1rem;">
+            <div>
+              <a href="/tempmail/nojs" class="btn btn-ghost btn-sm" style="margin-bottom: 0.5rem; padding-left: 0;">← Back to Inbox</a>
+              <h2 style="margin: 0.25rem 0;"><%= selectedMessage.subject || '(No Subject)' %></h2>
+              <div class="text-secondary" style="font-size: 0.8125rem;">
+                From: <strong class="mono" style="color: var(--color-text-primary);"><%= selectedMessage.from?.text || selectedMessage.from?.address || 'Unknown' %></strong>
+                &bull; Date: <%= new Date(selectedMessage.date).toLocaleString() %>
+              </div>
+            </div>
+          </div>
+
+          <% if (selectedMessage.otpCode) { %>
+            <div class="nojs-otp-badge">
+              <span>OTP CODE:</span>
+              <span><%= selectedMessage.otpCode %></span>
+            </div>
+          <% } %>
+
+          <div style="padding: 1rem; background: var(--color-bg-page); border-radius: var(--radius-md); line-height: 1.6; margin-top: 1rem; overflow-x: auto;">
+            <% if (selectedMessage.html) { %>
+              <%- selectedMessage.sanitizedHtml || selectedMessage.html %>
+            <% } else { %>
+              <pre style="font-family: var(--font-body); white-space: pre-wrap; margin: 0;"><%= selectedMessage.text %></pre>
+            <% } %>
+          </div>
+        </div>
+      <% } else { %>
+        <!-- Inbox Message List -->
+        <div class="card" style="padding: 0; overflow: hidden;">
+          <div style="padding: 1rem 1.25rem; border-bottom: 1px solid var(--color-border); display: flex; justify-content: space-between; align-items: center;">
+            <h3 style="margin: 0;">Incoming Messages (<%= messages.length %>)</h3>
+            <span class="text-secondary" style="font-size: 0.8125rem;">Clean SSR rendering</span>
+          </div>
+
+          <% if (messages.length === 0) { %>
+            <div style="padding: 3rem 1.5rem; text-align: center;" class="text-secondary">
+              <p style="font-size: 1.125rem; margin-bottom: 0.5rem;">Your inbox is empty</p>
+              <p style="font-size: 0.8125rem;">Send an email to <strong class="mono text-purple"><%= address %></strong> and click Refresh Inbox.</p>
+            </div>
+          <% } else { %>
+            <div style="overflow-x: auto;">
+              <table class="nojs-table">
+                <thead>
+                  <tr>
+                    <th>From</th>
+                    <th>Subject</th>
+                    <th>Date</th>
+                    <th style="text-align: right;">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% messages.forEach(function(m) { %>
+                    <tr>
+                      <td class="mono" style="font-weight: 600;"><%= m.from?.name || m.from?.address || 'Unknown' %></td>
+                      <td>
+                        <a href="/tempmail/nojs/view/<%= m.uid %>" style="font-weight: 500; color: var(--color-text-primary);">
+                          <%= m.subject || '(no subject)' %>
+                        </a>
+                      </td>
+                      <td class="text-secondary" style="font-size: 0.75rem;"><%= new Date(m.date).toLocaleTimeString() %></td>
+                      <td style="text-align: right;">
+                        <a href="/tempmail/nojs/view/<%= m.uid %>" class="btn btn-ghost btn-xs">View Email →</a>
+                      </td>
+                    </tr>
+                  <% }); %>
+                </tbody>
+              </table>
+            </div>
+          <% } %>
+        </div>
+      <% } %>
+
+    <% } else { %>
+      <!-- No active session: generate form -->
+      <div class="card" style="padding: 3rem; text-align: center; max-width: 540px; margin: 3rem auto;">
+        <h2>Ready for Instant Disposable Email?</h2>
+        <p class="text-secondary" style="margin-bottom: 2rem; font-size: 0.875rem;">
+          Generate a privacy-safe temporary inbox with zero client-side JavaScript execution.
+        </p>
+        <form method="POST" action="/tempmail/nojs/generate">
+          <button type="submit" class="btn btn-primary btn-lg" style="width: 100%;">Create Zero-JS Inbox</button>
+        </form>
+      </div>
+    <% } %>
+
+    <footer style="margin-top: 3rem; text-align: center; font-size: 0.75rem;" class="text-secondary">
+      WoxMail Privacy Suite &bull; Clean Server-Side Rendered (SSR) Progressive Fallback
+    </footer>
+  </div>
+</body>
+</html>

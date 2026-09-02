@@ -1,0 +1,52 @@
+<%- include('layouts/base', { title: 'Terms of Service', body: `
+<div class="container legal-page">
+  <h1>Terms of Service</h1>
+  <p class="text-secondary">Last updated: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+
+  <section>
+    <h2>1. Acceptance</h2>
+    <p>By using WoxMail, you agree to these terms. If you don't agree, don't use the service.</p>
+  </section>
+
+  <section>
+    <h2>2. Service Description</h2>
+    <p>WoxMail provides temporary and permanent email services. Temp mail addresses expire automatically. Permanent accounts require an invitation.</p>
+  </section>
+
+  <section>
+    <h2>3. Acceptable Use</h2>
+    <p>You may not use WoxMail to:</p>
+    <ul>
+      <li>Send spam or unsolicited bulk email</li>
+      <li>Distribute malware or phishing content</li>
+      <li>Harass, threaten, or harm others</li>
+      <li>Violate any applicable laws</li>
+      <li>Circumvent rate limits or abuse prevention measures</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>4. Account Termination</h2>
+    <p>We reserve the right to suspend or delete accounts that violate these terms without prior notice.</p>
+  </section>
+
+  <section>
+    <h2>5. Limitation of Liability</h2>
+    <p>WoxMail is provided "as is" without warranties. We are not liable for data loss, service interruptions, or any damages arising from use of the service.</p>
+  </section>
+
+  <section>
+    <h2>6. Contact</h2>
+    <p>For questions, email <span class="mono">${process.env.SUPPORT_EMAIL || process.env.ADMIN_EMAIL || 'support@' + (process.env.DOMAIN_PERMANENT || 'wox.world')}</span>.</p>
+  </section>
+</div>
+` }) %>
+
+<style>
+  .legal-page { max-width: 800px; padding: 3rem 1.5rem; }
+  .legal-page h1 { margin-bottom: 0.5rem; }
+  .legal-page h2 { margin-top: 2rem; margin-bottom: 0.75rem; font-size: 1.25rem; }
+  .legal-page p, .legal-page li { color: var(--color-text-secondary); line-height: 1.8; }
+  .legal-page ul { padding-left: 1.5rem; }
+  .legal-page section { margin-bottom: 1rem; }
+</style>

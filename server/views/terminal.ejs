@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WoxMail Developer Terminal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    body {
+      background: #090910;
+      color: #38ef7d;
+      font-family: 'JetBrains Mono', monospace;
+      margin: 0;
+      padding: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .term-window {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #0c0c16;
+      border: 1px solid #1f1f38;
+      margin: 1rem;
+      border-radius: 12px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+      overflow: hidden;
+    }
+    .term-header {
+      background: #141424;
+      padding: 0.75rem 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #1f1f38;
+      user-select: none;
+    }
+    .term-dots { display: flex; gap: 8px; }
+    .term-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+    .term-dot-red { background: #ff5f56; }
+    .term-dot-yellow { background: #ffbd2e; }
+    .term-dot-green { background: #27c93f; }
+    .term-title { font-size: 0.8125rem; font-weight: 600; color: #8b5cf6; }
+    .term-body {
+      flex: 1;
+      padding: 1.25rem;
+      overflow-y: auto;
+      font-size: 0.875rem;
+      line-height: 1.6;
+      color: #e0e0f0;
+      white-space: pre-wrap;
+    }
+    .term-prompt-line {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+    }
+    .term-prompt { color: #8b5cf6; font-weight: 700; flex-shrink: 0; }
+    .term-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: #38ef7d;
+      font-family: inherit;
+      font-size: inherit;
+      outline: none;
+      padding: 0;
+    }
+    .term-quick-chips {
+      display: flex;
+      gap: 0.4rem;
+      padding: 0.5rem 1rem;
+      background: #10101e;
+      border-top: 1px solid #1f1f38;
+      overflow-x: auto;
+      white-space: nowrap;
+      -webkit-overflow-scrolling: touch;
+    }
+    .term-chip {
+      background: #1a1a2e;
+      border: 1px solid #2a2a4a;
+      color: #8b5cf6;
+      border-radius: 6px;
+      padding: 0.25rem 0.6rem;
+      font-size: 0.75rem;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      flex-shrink: 0;
+    }
+    .term-chip:hover, .term-chip:active {
+      background: #7c3aed;
+      color: #ffffff;
+      border-color: #7c3aed;
+    }
+    @media (max-width: 600px) {
+      .term-window { margin: 0.5rem; }
+      .term-body { padding: 0.75rem; font-size: 0.8125rem; }
+      .term-prompt-line { font-size: 0.8125rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="term-window">
+    <div class="term-header">
+      <div class="term-dots">
+        <span class="term-dot term-dot-red" onclick="window.location.href='/dashboard'"></span>
+        <span class="term-dot term-dot-yellow" onclick="document.getElementById('term-log').innerHTML=''"></span>
+        <span class="term-dot term-dot-green" onclick="document.documentElement.requestFullscreen()"></span>
+      </div>
+      <div class="term-title">woxmail@gateway:~ (developer-cli / v1.0)</div>
+      <div style="display: flex; gap: 0.5rem;">
+        <a href="/dashboard" class="btn btn-ghost btn-xs" style="color: #9898b0;">← Webmail</a>
+        <button class="btn btn-ghost btn-xs" onclick="document.getElementById('term-log').innerHTML=''" style="color: #9898b0;">Clear</button>
+      </div>
+    </div>
+
+    <div class="term-body" id="term-container" onclick="document.getElementById('term-input').focus()">
+      <div id="term-log">
+<span class="term-highlight">
+ __          __          __  __       _ _ 
+ \ \        / /         |  \/  |     (_) |
+  \ \  /\  / /____  __  | \  / | __ _ _| |
+   \ \/  \/ / _ \ \/ /  | |\/| |/ _\` | | |
+    \  /\  / (_) >  <   | |  | | (_| | | |
+     \/  \/ \___/_/\_\  |_|  |_|\__,_|_|_|  [CLI v1.0]
+</span>
+<span class="term-dim">WoxMail Privacy Gateway & Time Capsule Interactive Terminal.</span>
+Type <span class="term-highlight">help</span> for available commands or <span class="term-highlight">temp new</span> to generate a disposable inbox.
+──────────────────────────────────────────────────────────────────────────</div>
+
+      <div class="term-prompt-line">
+        <span id="prompt-label" class="term-prompt">guest@woxmail:~$ </span>
+        <input type="text" id="term-input" class="term-input" autofocus autocomplete="off" spellcheck="false" />
+      </div>
+    </div>
+
+    <!-- Mobile / Quick Touch Command Bar -->
+    <div class="term-quick-chips">
+      <button type="button" class="term-chip" onclick="quickCommand('help')">help</button>
+      <button type="button" class="term-chip" onclick="quickCommand('temp')">temp new</button>
+      <button type="button" class="term-chip" onclick="quickCommand('stats')">stats</button>
+      <button type="button" class="term-chip" onclick="quickCommand('futureme help')">futureme</button>
+      <button type="button" class="term-chip" onclick="quickCommand('mail')">mail list</button>
+      <button type="button" class="term-chip" onclick="document.getElementById('term-log').innerHTML=''">clear</button>
+    </div>
+  </div>
+
+  <script>
+    const logEl = document.getElementById('term-log');
+    const inputEl = document.getElementById('term-input');
+    const promptEl = document.getElementById('prompt-label');
+    const containerEl = document.getElementById('term-container');
+
+    const history = [];
+    let historyIdx = -1;
+
+    async function init() {
+      try {
+        const res = await fetch('/api/cli/exec', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ command: '' }),
+        });
+        const data = await res.json();
+        if (data.prompt) promptEl.textContent = data.prompt;
+      } catch {}
+    }
+
+    async function execute(cmd) {
+      if (!cmd.trim()) return;
+
+      const currentPrompt = promptEl.textContent;
+      logEl.innerHTML += `\n<span class="term-prompt">${currentPrompt}</span><span style="color: #ffffff;">${escapeHtml(cmd)}</span>\n`;
+
+      if (cmd.trim().toLowerCase() === 'clear') {
+        logEl.innerHTML = '';
+        containerEl.scrollTop = containerEl.scrollHeight;
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/cli/exec', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ command: cmd }),
+        });
+        const data = await res.json();
+        if (data.prompt) promptEl.textContent = data.prompt;
+
+        const color = data.error ? 'var(--color-error)' : '#c8c8e0';
+        logEl.innerHTML += `<div style="color: ${color};">${escapeHtml(data.output)}</div>`;
+      } catch (err) {
+        logEl.innerHTML += `<div style="color: var(--color-error);">Network error: ${escapeHtml(err.message)}</div>`;
+      }
+
+      containerEl.scrollTop = containerEl.scrollHeight;
+    }
+
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        const val = inputEl.value;
+        inputEl.value = '';
+        if (val.trim()) {
+          history.push(val);
+          historyIdx = history.length;
+          execute(val);
+        }
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (historyIdx > 0) {
+          historyIdx--;
+          inputEl.value = history[historyIdx];
+        }
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (historyIdx < history.length - 1) {
+          historyIdx++;
+          inputEl.value = history[historyIdx];
+        } else {
+          historyIdx = history.length;
+          inputEl.value = '';
+        }
+      } else if (e.key === 'Tab') {
+        e.preventDefault();
+        const autocompletes = ['help', 'whoami', 'mail list', 'mail read', 'mail send', 'mail secure', 'temp new', 'temp inbox', 'alias list', 'future send', 'pgp gen', 'stats', 'clear'];
+        const current = inputEl.value.toLowerCase();
+        const match = autocompletes.find(a => a.startsWith(current));
+        if (match) inputEl.value = match;
+      }
+    });
+
+    function escapeHtml(str) {
+      return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    window.quickCommand = function(cmd) {
+      if (inputEl) inputEl.value = '';
+      history.push(cmd);
+      historyIdx = history.length;
+      execute(cmd);
+    };
+
+    document.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>

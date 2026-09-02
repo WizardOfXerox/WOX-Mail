@@ -1,0 +1,124 @@
+<%- include('layouts/base', { title: '2FA Setup', showNav: false, body: `
+<div class="auth-page">
+  <div class="auth-card card" style="max-width:500px;">
+    <div class="auth-header">
+      <div class="stat-icon-wrap" style="margin: 0 auto 1rem; width: 56px; height: 56px; border-radius: 16px;">
+        <svg class="stat-icon text-purple" style="width: 28px; height: 28px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      </div>
+      <h1 class="auth-title">Two-Factor Authentication</h1>
+      <p class="text-secondary">Protect your permanent mailbox with TOTP 2FA</p>
+    </div>
+
+    <!-- Step 1: Generate QR -->
+    <div id="otp-step1">
+      <p class="text-secondary" style="text-align:center;margin-bottom:1.75rem;line-height:1.6;">
+        Generate your 2FA secret and scan the QR code with any authenticator app (Google Authenticator, Bitwarden, or WoxAuth).
+      </p>
+      <button class="btn btn-primary btn-lg btn-full" onclick="generateOTP()">
+        <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <span>Generate 2FA Secret</span>
+      </button>
+      <div class="auth-links" style="margin-top:1.25rem;">
+        <a href="/dashboard" class="text-secondary">Skip for now →</a>
+      </div>
+    </div>
+
+    <!-- Step 2: Scan QR + Enter Code -->
+    <div id="otp-step2" style="display:none;">
+      <div class="qr-container" style="background:#fff;padding:1rem;border-radius:16px;margin:0 auto 1.25rem;display:flex;justify-content:center;width:fit-content;">
+        <img id="qr-image" alt="QR Code" class="qr-image" style="width:200px;height:200px;border-radius:8px;">
+      </div>
+      <div class="secret-display" style="text-align:center;margin-bottom:1.5rem;">
+        <p class="text-tertiary" style="font-size:0.75rem;margin-bottom:0.25rem;">Manual secret key:</p>
+        <code id="secret-text" class="mono text-purple" style="font-size:0.875rem;word-break:break-all;"></code>
+      </div>
+      <form id="confirm-otp-form" class="auth-form">
+        <div class="form-group">
+          <label class="form-label" style="text-align:center;">Enter the 6-digit code from your app</label>
+          <input type="text" id="confirm-code" class="input input-otp mono" placeholder="000000" maxlength="6" pattern="[0-9]{6}" inputmode="numeric" required autofocus>
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg btn-full">
+          <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          <span>Verify &amp; Enable 2FA</span>
+        </button>
+      </form>
+    </div>
+
+    <!-- Step 3: Recovery Codes -->
+    <div id="otp-step3" style="display:none;">
+      <div class="status-pill" style="margin:0 auto 1rem;display:table;">
+        <span class="pulse-dot"></span>
+        <span>2FA Successfully Activated</span>
+      </div>
+      <p class="text-secondary" style="text-align:center;margin:1rem 0 1.5rem;font-size:0.875rem;">
+        <strong>Save these emergency recovery codes.</strong> Each can be used once if you lose access to your authenticator.
+      </p>
+      <div id="recovery-codes" class="recovery-grid mono"></div>
+      <button class="btn btn-secondary btn-full" style="margin-top:1.25rem;" onclick="copyRecoveryCodes()">
+        <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+        <span>Copy All Codes</span>
+      </button>
+      <a href="/dashboard" class="btn btn-primary btn-lg btn-full" style="margin-top:0.75rem;">Go to Inbox →</a>
+    </div>
+  </div>
+</div>
+`, scripts: `
+<script>
+  async function generateOTP() {
+    try {
+      const res = await fetch('/api/auth/setup-otp', { method: 'POST', credentials: 'include' });
+      const data = await res.json();
+      if (!res.ok) return WoxToast.error(data.error);
+      document.getElementById('qr-image').src = data.qrCode;
+      document.getElementById('secret-text').textContent = data.secret;
+      document.getElementById('otp-step1').style.display = 'none';
+      document.getElementById('otp-step2').style.display = 'block';
+      document.getElementById('confirm-code').focus();
+    } catch { WoxToast.error('Network error'); }
+  }
+
+  document.getElementById('confirm-otp-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const code = document.getElementById('confirm-code').value.trim();
+    if (code.length !== 6) return WoxToast.error('Enter a 6-digit code');
+    try {
+      const res = await fetch('/api/auth/confirm-otp', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      });
+      const data = await res.json();
+      if (!res.ok) return WoxToast.error(data.error);
+      document.getElementById('otp-step2').style.display = 'none';
+      document.getElementById('otp-step3').style.display = 'block';
+      const grid = document.getElementById('recovery-codes');
+      grid.innerHTML = data.recoveryCodes.map(c => '<div class="recovery-code">' + c + '</div>').join('');
+      WoxToast.success('2FA enabled!');
+    } catch { WoxToast.error('Network error'); }
+  });
+
+  document.getElementById('confirm-code')?.addEventListener('input', (e) => {
+    e.target.value = e.target.value.replace(/\\D/g, '').slice(0, 6);
+  });
+
+  function copyRecoveryCodes() {
+    const codes = [...document.querySelectorAll('.recovery-code')].map(el => el.textContent).join('\\n');
+    navigator.clipboard.writeText(codes).then(() => WoxToast.success('Copied!')).catch(() => WoxToast.error('Copy failed'));
+  }
+</script>
+`, showFooter: false }) %>
+
+<style>
+  .auth-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem; }
+  .auth-card { width: 100%; padding: 2.5rem; border-radius: var(--radius-xl); }
+  .auth-header { text-align: center; margin-bottom: 2rem; }
+  .auth-title { font-size: 1.65rem; font-weight: 700; margin-bottom: 0.5rem; letter-spacing: -0.01em; }
+  .auth-form { display: flex; flex-direction: column; gap: 1.25rem; }
+  .form-group { display: flex; flex-direction: column; gap: 0.5rem; text-align: left; }
+  .form-label { font-size: 0.875rem; font-weight: 600; color: var(--color-text-secondary); }
+  .btn-full { width: 100%; justify-content: center; }
+  .auth-links { text-align: center; }
+  .input-otp { text-align: center; font-size: 1.75rem; letter-spacing: 0.5rem; padding: 0.75rem; }
+  .recovery-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; background: var(--color-bg-input); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 1rem; }
+  .recovery-code { text-align: center; font-size: 0.875rem; padding: 0.35rem; color: var(--color-primary-light); }
+</style>

@@ -1,0 +1,99 @@
+<%- include('layouts/base', {
+  title: 'Letter Verified & Sealed — FutureMe',
+  headExtra: `
+    <style>
+      .verify-card { max-width: 600px; margin: 3rem auto; text-align: center; padding: 3rem 2rem; background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: var(--radius-xl); box-shadow: var(--shadow-lg); }
+      .countdown-grid { display: flex; justify-content: center; gap: 1rem; margin: 2rem 0; flex-wrap: wrap; }
+      .countdown-unit { background: var(--color-bg-page); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 1rem 1.25rem; min-width: 80px; }
+      .countdown-num { font-size: 2rem; font-weight: 800; color: var(--color-primary-light); font-family: var(--font-mono); }
+      .countdown-label { font-size: 0.75rem; text-transform: uppercase; color: var(--color-text-tertiary); font-weight: 600; }
+    </style>
+  `,
+  body: `
+<div class="container">
+  <div class="verify-card card">
+    <span style="font-size: 3.5rem; display: block; margin-bottom: 1rem;"></span>
+    <h1 style="font-size: 2rem; font-weight: 800; font-family: Outfit, sans-serif; margin-bottom: 0.5rem;">
+      Time Capsule Sealed!
+    </h1>
+    <p class="text-secondary" style="font-size: 1.05rem;" id="status-text">
+      Verifying your email and locking your letter into the time capsule vault...
+    </p>
+
+    <div id="countdown-wrap" style="display: none;">
+      <div class="countdown-grid">
+        <div class="countdown-unit">
+          <div id="days" class="countdown-num">00</div>
+          <div class="countdown-label">Days</div>
+        </div>
+        <div class="countdown-unit">
+          <div id="hours" class="countdown-num">00</div>
+          <div class="countdown-label">Hours</div>
+        </div>
+        <div class="countdown-unit">
+          <div id="mins" class="countdown-num">00</div>
+          <div class="countdown-label">Mins</div>
+        </div>
+        <div class="countdown-unit">
+          <div id="secs" class="countdown-num">00</div>
+          <div class="countdown-label">Secs</div>
+        </div>
+      </div>
+
+      <div style="background: var(--color-bg-page); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 2rem; text-align: left;">
+        <div style="font-size: 0.8125rem; color: var(--color-text-secondary); margin-bottom: 4px;">RECIPIENT: <strong id="recip-text" style="color: var(--color-text-primary);"></strong></div>
+        <div style="font-size: 0.8125rem; color: var(--color-text-secondary);">SCHEDULED DELIVERY: <strong id="date-text" style="color: var(--color-primary-light);"></strong></div>
+      </div>
+    </div>
+
+    <div style="display: flex; gap: 1rem; justify-content: center; margin-top: 1.5rem;">
+      <a href="/futureme" class="btn btn-secondary btn-sm">Write Another Letter</a>
+      <a href="/futureme/public" class="btn btn-primary btn-sm">Read Public Letters</a>
+    </div>
+  </div>
+</div>
+
+<script>
+  const token = window.location.pathname.split('/').pop();
+
+  async function verify() {
+    try {
+      const res = await fetch('/api/futureme/verify/' + encodeURIComponent(token));
+      const data = await res.json();
+
+      if (!res.ok) {
+        document.getElementById('status-text').textContent = data.message || 'Verification token expired or invalid.';
+        document.getElementById('status-text').style.color = 'var(--color-error)';
+        return;
+      }
+
+      document.getElementById('status-text').textContent = 'Your letter is officially verified and locked in the vault until delivery day.';
+      document.getElementById('recip-text').textContent = data.letter.recipient_email;
+      const targetDate = new Date(data.letter.delivery_date);
+      document.getElementById('date-text').textContent = targetDate.toLocaleString();
+      document.getElementById('countdown-wrap').style.display = 'block';
+
+      // Start countdown
+      function updateTimer() {
+        const now = new Date();
+        const diff = Math.max(0, targetDate - now);
+        const d = Math.floor(diff / (1000 * 60 * 60 * 24));
+        const h = Math.floor((diff / (1000 * 60 * 60)) % 24);
+        const m = Math.floor((diff / (1000 * 60)) % 60);
+        const s = Math.floor((diff / 1000) % 60);
+
+        document.getElementById('days').textContent = String(d).padStart(2, '0');
+        document.getElementById('hours').textContent = String(h).padStart(2, '0');
+        document.getElementById('mins').textContent = String(m).padStart(2, '0');
+        document.getElementById('secs').textContent = String(s).padStart(2, '0');
+      }
+      updateTimer();
+      setInterval(updateTimer, 1000);
+    } catch (err) {
+      document.getElementById('status-text').textContent = 'Verification error: ' + err.message;
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', verify);
+</script>
+` }) %>

@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg version="1.2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>WoxMail Sovereign Logo (Transparent Background)</title>
+  <defs>
+    <!-- Shield Border Gradient -->
+    <linearGradient id="shieldBorder" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#c084fc"/>
+      <stop offset="50%" stop-color="#7c3aed"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+
+    <!-- Shield Fill Gradient -->
+    <linearGradient id="shieldFill" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1e1338"/>
+      <stop offset="50%" stop-color="#130b29"/>
+      <stop offset="100%" stop-color="#0a0618"/>
+    </linearGradient>
+
+    <!-- Mail & 'W' Wings Gradient -->
+    <linearGradient id="wingGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#c084fc"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+
+    <!-- Glow Gradient -->
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#818cf8"/>
+    </linearGradient>
+
+    <!-- Subtle Outer Glow Filter -->
+    <filter id="glowFilter" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="12" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Outer Ring Accent -->
+  <circle cx="256" cy="256" r="232" fill="none" stroke="url(#shieldBorder)" stroke-width="4" opacity="0.35"/>
+
+  <!-- Sovereign Shield Crest with Soft Glow -->
+  <path d="M 256 58 
+           C 368 58, 424 84, 424 160 
+           C 424 294, 344 402, 256 460 
+           C 168 402, 88 294, 88 160 
+           C 88 84, 144 58, 256 58 Z" 
+        fill="url(#shieldFill)" 
+        stroke="url(#shieldBorder)" 
+        stroke-width="14" 
+        stroke-linejoin="round"
+        filter="url(#glowFilter)"/>
+
+  <!-- Stylized Geometric "W" Wings -->
+  <!-- Left Wing -->
+  <path d="M 148 168 
+           L 204 340 
+           L 256 246 
+           L 206 168 Z" 
+        fill="url(#wingGrad)"/>
+
+  <!-- Right Wing -->
+  <path d="M 364 168 
+           L 308 340 
+           L 256 246 
+           L 306 168 Z" 
+        fill="url(#wingGrad)"/>
+
+  <!-- Central Dynamic Apex / Shield Core -->
+  <polygon points="256,130 286,188 256,246 226,188" fill="url(#accentGrad)"/>
+
+  <!-- Envelope Flap Cyber Chevron -->
+  <polyline points="164,176 256,254 348,176" 
+            fill="none" 
+            stroke="#ffffff" 
+            stroke-width="11" 
+            stroke-linecap="round" 
+            stroke-linejoin="round"/>
+
+  <!-- Lower V Support Anchor -->
+  <polyline points="204,340 256,406 308,340" 
+            fill="none" 
+            stroke="url(#accentGrad)" 
+            stroke-width="11" 
+            stroke-linecap="round" 
+            stroke-linejoin="round"/>
+</svg>

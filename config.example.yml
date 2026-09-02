@@ -1,0 +1,10 @@
+# Cloudflare Tunnel Example Configuration
+tunnel: <YOUR-TUNNEL-UUID>
+credentials-file: /path/to/<YOUR-TUNNEL-UUID>.json
+
+ingress:
+  - hostname: mail.yourdomain.com
+    service: http://127.0.0.1:3001
+  - hostname: yourdomain.com
+    service: http://127.0.0.1:3001
+  - service: http_status:404

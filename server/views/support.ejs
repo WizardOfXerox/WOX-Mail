@@ -1,0 +1,175 @@
+<%- include('layouts/base', { title: 'Support Desk — WoxMail', body: `
+
+<div class="container" style="max-width: 860px; margin: 2rem auto 5rem; padding: 0 1rem;">
+  <!-- Header -->
+  <div style="text-align: center; margin-bottom: 2.5rem;">
+    <span class="badge badge-purple" style="display: inline-flex; margin-bottom: 0.75rem; font-size: 0.75rem; padding: 0.3rem 0.8rem;">Direct Assistance &amp; Ticketing</span>
+    <h1 class="support-title" style="font-family: 'Outfit', var(--font-body); font-size: clamp(2rem, 5vw, 2.75rem); font-weight: 800; margin-bottom: 0.75rem; letter-spacing: -0.02em;">
+      WoxMail Support Desk
+    </h1>
+    <p class="text-secondary" style="font-size: 1rem; max-width: 580px; margin: 0 auto; line-height: 1.6;">
+      Have a question or encountering an issue? Submit a ticket below or email <a href="mailto:support@wox.world" style="color: var(--color-primary-light); font-weight: 600;">support@wox.world</a> directly.
+    </p>
+  </div>
+
+  <!-- Main Card -->
+  <div class="card" style="padding: clamp(1.25rem, 3vw, 2.25rem); border-radius: var(--radius-xl); margin-bottom: 2rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-bottom: 1px solid var(--color-border); padding-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+      <h2 style="font-size: 1.25rem; font-weight: 700; color: var(--color-text-primary); margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <span>Submit a Support Request</span>
+      </h2>
+      <span class="badge badge-purple" style="font-size: 0.75rem;">Avg Reply: &lt; 2 Hours</span>
+    </div>
+
+    <form id="support-ticket-form" onsubmit="handleSupportSubmit(event)">
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.25rem; margin-bottom: 1.25rem;">
+        <div>
+          <label style="display: block; font-size: 0.8125rem; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 0.4rem;">
+            Your Email Address <span style="color: var(--color-error);">*</span>
+          </label>
+          <input
+            type="email"
+            id="ticket-email"
+            class="input"
+            placeholder="you@domain.com or temp address"
+            required
+            style="min-height: 46px; font-size: 0.9375rem;"
+          />
+        </div>
+
+        <div>
+          <label style="display: block; font-size: 0.8125rem; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 0.4rem;">
+            Your Name or Alias
+          </label>
+          <input
+            type="text"
+            id="ticket-name"
+            class="input"
+            placeholder="Optional name"
+            style="min-height: 46px; font-size: 0.9375rem;"
+          />
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.25rem; margin-bottom: 1.25rem;">
+        <div>
+          <label style="display: block; font-size: 0.8125rem; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 0.4rem;">
+            Category
+          </label>
+          <select id="ticket-category" class="input" style="min-height: 46px; font-size: 0.9375rem; background: var(--color-bg-input);">
+            <option value="general">General Inquiry</option>
+            <option value="tempmail">Temp Mail / Ingestion Issue</option>
+            <option value="account">Account &amp; Security</option>
+            <option value="billing">Invite Codes &amp; Upgrades</option>
+            <option value="bug">Bug Report</option>
+          </select>
+        </div>
+
+        <div>
+          <label style="display: block; font-size: 0.8125rem; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 0.4rem;">
+            Subject <span style="color: var(--color-error);">*</span>
+          </label>
+          <input
+            type="text"
+            id="ticket-subject"
+            class="input"
+            placeholder="Brief summary of your request"
+            required
+            style="min-height: 46px; font-size: 0.9375rem;"
+          />
+        </div>
+      </div>
+
+      <div style="margin-bottom: 1.5rem;">
+        <label style="display: block; font-size: 0.8125rem; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 0.4rem;">
+          Message Details <span style="color: var(--color-error);">*</span>
+        </label>
+        <textarea
+          id="ticket-message"
+          class="input"
+          rows="5"
+          placeholder="Please describe your issue or inquiry in detail..."
+          required
+          style="padding: 0.875rem; font-size: 0.9375rem; resize: vertical;"
+        ></textarea>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+        <div style="font-size: 0.8125rem; color: var(--color-text-tertiary);">
+          Guaranteed zero telemetry • Instant IMAP confirmation
+        </div>
+        <button
+          type="submit"
+          id="ticket-submit-btn"
+          class="btn btn-primary btn-lg"
+          style="min-height: 48px; padding: 0.75rem 2rem; font-weight: 600;"
+        >
+          <span>Send Ticket</span>
+          <span>→</span>
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Direct Email Contact Box -->
+  <div style="background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+    <div>
+      <div style="font-weight: 700; color: var(--color-text-primary); font-size: 1rem; margin-bottom: 0.25rem;">Prefer emailing directly?</div>
+      <div class="text-secondary" style="font-size: 0.875rem;">Send an email from any client to <strong style="color: var(--color-primary-light);">support@wox.world</strong>.</div>
+    </div>
+    <a href="mailto:support@wox.world" class="btn btn-secondary btn-sm" style="min-height: 42px;">
+      <span>Open Email App</span>
+    </a>
+  </div>
+</div>
+
+<script>
+  function getCsrfToken() {
+    const match = document.cookie.match(/woxmail_csrf=([^;]+)/);
+    return match ? match[1] : '';
+  }
+
+  async function handleSupportSubmit(e) {
+    e.preventDefault();
+    const btn = document.getElementById('ticket-submit-btn');
+    const email = document.getElementById('ticket-email').value.trim();
+    const name = document.getElementById('ticket-name').value.trim();
+    const category = document.getElementById('ticket-category').value;
+    const subject = document.getElementById('ticket-subject').value.trim();
+    const message = document.getElementById('ticket-message').value.trim();
+
+    if (!email || !subject || !message) return;
+
+    btn.disabled = true;
+    btn.textContent = 'Submitting Ticket...';
+
+    try {
+      const res = await fetch('/api/support/tickets', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': getCsrfToken(),
+        },
+        body: JSON.stringify({ creatorEmail: email, creatorName: name, category, subject, messageText: message }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.ticket) {
+        if (window.WoxToast) window.WoxToast.success('Ticket ' + data.ticket.ticket_number + ' created! Confirmation emailed.');
+        else alert('Ticket ' + data.ticket.ticket_number + ' created! Confirmation emailed.');
+        document.getElementById('support-ticket-form').reset();
+      } else {
+        throw new Error(data.error || 'Submission failed');
+      }
+    } catch (err) {
+      if (window.WoxToast) window.WoxToast.error(err.message);
+      else alert(err.message);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<span>Send Ticket</span> <span>→</span>';
+    }
+  }
+</script>
+
+` }) %>

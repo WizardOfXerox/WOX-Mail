@@ -1,0 +1,21 @@
+<%- include('layouts/base', { title: 'Admin Panel', showNav: false, showFooter: false, body: `
+<div id="admin-root">
+  <div class="admin-loading">
+    <div class="skeleton skeleton-text" style="width:200px;height:2rem;margin:2rem auto 1.5rem;"></div>
+    <div class="admin-skeleton-cards">
+      <div class="skeleton" style="height:100px;border-radius:var(--radius-lg);"></div>
+      <div class="skeleton" style="height:100px;border-radius:var(--radius-lg);"></div>
+      <div class="skeleton" style="height:100px;border-radius:var(--radius-lg);"></div>
+      <div class="skeleton" style="height:100px;border-radius:var(--radius-lg);"></div>
+    </div>
+    <div class="skeleton" style="height:300px;border-radius:var(--radius-lg);margin-top:1.5rem;"></div>
+  </div>
+</div>
+`, scripts: '<script type="module" src="/dist/admin.js"></script>' }) %>
+
+<style>
+  body { margin: 0; padding: 0; overflow: hidden; height: 100vh; background: #0a0a14; }
+  #admin-root { width: 100vw; height: 100vh; display: flex; }
+  .admin-loading { width: 100%; max-width: 1200px; margin: 0 auto; padding: 2rem; display: flex; flex-direction: column; gap: 1.5rem; }
+  .admin-skeleton-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.25rem; }
+</style>

@@ -1,0 +1,573 @@
+<%- include('layouts/base', {
+  title: 'Write a Letter to the Future — FutureMe',
+  headExtra: `
+    <style>
+      .futureme-hero { text-align: center; max-width: 760px; margin: 1.5rem auto 2rem; }
+      .futureme-title { font-size: 2.25rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 0.75rem; font-family: 'Outfit', sans-serif; text-wrap: balance; }
+      .futureme-card { background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: var(--radius-xl); padding: 2rem; max-width: 780px; margin: 0 auto 3rem; box-shadow: var(--shadow-lg); }
+      .preset-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(105px, 1fr)); gap: 0.5rem; margin-top: 0.5rem; }
+      .preset-btn { min-height: 44px; display: flex; align-items: center; justify-content: center; padding: 0.65rem 0.5rem; background: var(--color-bg-page); border: 1px solid var(--color-border); border-radius: var(--radius-md); color: var(--color-text-primary); font-weight: 600; font-size: 0.875rem; cursor: pointer; text-align: center; transition: all var(--transition-fast); }
+      .preset-btn:hover { border-color: var(--color-primary-light); background: var(--color-bg-hover); }
+      .preset-btn.active { background: var(--color-primary); color: #ffffff; border-color: var(--color-primary); box-shadow: 0 0 15px var(--color-primary-glow); }
+      .prompts-container { display: flex; gap: 0.5rem; overflow-x: auto; white-space: nowrap; padding-bottom: 0.4rem; -webkit-overflow-scrolling: touch; }
+      .prompt-chip { font-size: 0.78rem; background: var(--color-bg-elevated); border: 1px solid var(--color-border); color: var(--color-primary-light); padding: 0.45rem 0.85rem; border-radius: var(--radius-pill); cursor: pointer; transition: all var(--transition-fast); flex-shrink: 0; min-height: 36px; }
+      .prompt-chip:hover, .prompt-chip:active { background: rgba(124, 58, 237, 0.2); border-color: var(--color-primary); }
+      .radio-tile-group { display: flex; gap: 0.75rem; flex-direction: column; margin-top: 0.5rem; }
+      .radio-tile { display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.875rem 1rem; background: var(--color-bg-page); border: 1px solid var(--color-border); border-radius: var(--radius-md); cursor: pointer; transition: all var(--transition-fast); min-height: 44px; }
+      .radio-tile.active { border-color: var(--color-primary); background: rgba(124, 58, 237, 0.08); }
+      .vault-letter-card { background: var(--color-bg-page); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 1.25rem; margin-bottom: 1rem; transition: all var(--transition-fast); }
+      .vault-letter-card:hover { border-color: var(--color-primary-light); }
+      @media (max-width: 600px) {
+        .futureme-hero { margin: 0.75rem auto 1.25rem; }
+        .futureme-title { font-size: 1.65rem; }
+        .futureme-card { padding: 1.15rem 0.85rem; border-radius: var(--radius-lg); margin-bottom: 2rem; }
+        .preset-grid { grid-template-columns: repeat(3, 1fr); gap: 0.35rem; }
+        .preset-btn { font-size: 0.78rem; min-height: 40px; padding: 0.4rem 0.25rem; }
+      }
+    </style>
+  `,
+  body: `
+<div class="container">
+  <div class="futureme-hero" style="text-align: center; max-width: 760px; margin: 1rem auto 1.5rem;">
+    <div class="badge badge-purple" style="margin-bottom: 0.5rem; font-size: 0.75rem; padding: 0.25rem 0.65rem;">
+       Time Capsule Engine
+    </div>
+    <h1 class="futureme-title" style="margin-bottom: 0.35rem; font-size: clamp(1.65rem, 5vw, 2.25rem);">Write a Letter to the Future</h1>
+    <p class="text-secondary" style="font-size: clamp(0.875rem, 2.5vw, 1.05rem); margin: 0 auto 0.75rem; max-width: 580px;">
+      Send your future self or loved ones a message delivered in months, years, or on a special date.
+    </p>
+    <div style="display: flex; justify-content: center; gap: 0.5rem; flex-wrap: wrap;">
+      <a href="/futureme/public" class="btn btn-ghost btn-sm" style="font-size: 0.8125rem; padding: 0.35rem 0.75rem;">
+        Read Public Epistles &rarr;
+      </a>
+      <a href="#my-vault" class="btn btn-secondary btn-sm" style="font-size: 0.8125rem; padding: 0.35rem 0.75rem;">
+        View My Vault
+      </a>
+    </div>
+  </div>
+
+  <div class="futureme-card card">
+    <form id="future-letter-form">
+      <!-- Inspiration prompts -->
+      <div style="margin-bottom: 1rem;">
+        <label class="text-secondary" style="font-size: 0.8125rem; display: block; margin-bottom: 0.4rem;">Need inspiration? Click a prompt:</label>
+        <div class="prompts-container">
+          <button type="button" class="prompt-chip" onclick="insertPrompt('Dear Future Me, where are you in your career and life right now? Did you achieve...')">Career & Goals</button>
+          <button type="button" class="prompt-chip" onclick="insertPrompt('Dear Future Me, what are the three things you are most grateful for today? Remember how...')">Gratitude & Mindfulness</button>
+          <button type="button" class="prompt-chip" onclick="insertPrompt('Dear Future Me, what advice do you have for the challenges I am facing right now regarding...')">Advice to Future Self</button>
+          <button type="button" class="prompt-chip" onclick="insertPrompt('Dear Future Me, here are my bold predictions for technology, AI, and the world in 5 years...')">Future Predictions</button>
+        </div>
+      </div>
+
+      <!-- Subject & Body -->
+      <div style="margin-bottom: 1.25rem;">
+        <label for="subject" style="font-weight: 600; font-size: 0.875rem; display: block; margin-bottom: 0.4rem;">Letter Title / Subject</label>
+        <input type="text" id="subject" class="input" placeholder="Dear Future Me..." required maxlength="255" />
+      </div>
+
+      <div style="margin-bottom: 1.5rem;">
+        <label for="body-input" style="font-weight: 600; font-size: 0.875rem; display: block; margin-bottom: 0.4rem;">Your Message</label>
+        <textarea id="body-input" class="input" rows="12" placeholder="Write whatever you want to remember or say to your future self..." required style="font-family: var(--font-body); font-size: 0.9375rem; line-height: 1.7;"></textarea>
+      </div>
+
+      <!-- Delivery Horizon Presets -->
+      <div style="margin-bottom: 1.5rem;">
+        <label style="font-weight: 600; font-size: 0.875rem; display: block; margin-bottom: 0.4rem;">Deliver in:</label>
+        <div class="preset-grid">
+          <div class="preset-btn" data-preset="6m" onclick="selectPreset('6m')">6 Months</div>
+          <div class="preset-btn active" data-preset="1y" onclick="selectPreset('1y')">1 Year</div>
+          <div class="preset-btn" data-preset="3y" onclick="selectPreset('3y')">3 Years</div>
+          <div class="preset-btn" data-preset="5y" onclick="selectPreset('5y')">5 Years</div>
+          <div class="preset-btn" data-preset="10y" onclick="selectPreset('10y')">10 Years</div>
+          <div class="preset-btn" data-preset="custom" onclick="selectPreset('custom')">Custom Date</div>
+        </div>
+
+        <div id="custom-date-container" style="display: none; margin-top: 1rem;">
+          <label for="custom-date" class="text-secondary" style="font-size: 0.8125rem; display: block; margin-bottom: 0.25rem;">Select exact delivery date:</label>
+          <input type="date" id="custom-date" class="input" style="max-width: 250px;" onchange="updateDeliveryPreview()" />
+        </div>
+
+        <div id="delivery-date-preview" style="margin-top: 0.75rem; font-size: 0.8125rem; color: var(--color-primary-light); background: rgba(124, 58, 237, 0.08); border: 1px solid rgba(124, 58, 237, 0.25); border-radius: var(--radius-sm); padding: 0.55rem 0.85rem; display: flex; align-items: center; gap: 0.45rem;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <span id="delivery-preview-text" style="font-weight: 600;">Scheduled Delivery: Calculating...</span>
+        </div>
+      </div>
+
+      <!-- Category & Recipient -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+        <div>
+          <label for="category" style="font-weight: 600; font-size: 0.875rem; display: block; margin-bottom: 0.4rem;">Category / Theme</label>
+          <select id="category" class="input">
+            <option value="Goals">Goals & Ambitions</option>
+            <option value="Life Advice">Life Advice</option>
+            <option value="Reflections">Personal Reflections</option>
+            <option value="Predictions">Tech & World Predictions</option>
+            <option value="Love & Relationships">Love & Relationships</option>
+            <option value="Career">Career & Business</option>
+            <option value="General" selected>General Time Capsule</option>
+          </select>
+        </div>
+
+        <div>
+          <label for="sender-email" style="font-weight: 600; font-size: 0.875rem; display: block; margin-bottom: 0.4rem;">Your Email Address</label>
+          <input
+            type="email"
+            id="sender-email"
+            class="input"
+            placeholder="you@example.com"
+            value="${typeof user !== 'undefined' && user ? user.email : ''}"
+            required
+          />
+        </div>
+      </div>
+
+      <!-- Send to self vs someone else -->
+      <div style="margin-bottom: 1.5rem;">
+        <label style="font-weight: 600; font-size: 0.875rem; display: block; margin-bottom: 0.4rem;">Recipient</label>
+        <div style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
+          <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+            <input type="radio" name="recipient-choice" value="self" checked onchange="toggleRecipientField()" />
+            <span>Send to myself</span>
+          </label>
+          <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+            <input type="radio" name="recipient-choice" value="other" onchange="toggleRecipientField()" />
+            <span>Send to a friend or loved one</span>
+          </label>
+        </div>
+
+        <div id="other-recipient-wrap" style="display: none; margin-top: 0.75rem;">
+          <input type="email" id="recipient-email" class="input" placeholder="friend@example.com" />
+        </div>
+      </div>
+
+      <!-- Passcode Protection (Time Capsule Lock) -->
+      <div style="background: rgba(124, 58, 237, 0.06); border: 1px solid rgba(124, 58, 237, 0.25); border-radius: var(--radius-md); padding: 1.25rem; margin-bottom: 1.5rem;">
+        <label style="display: flex; align-items: center; gap: 0.6rem; cursor: pointer; font-weight: 600; font-size: 0.9rem;">
+          <input type="checkbox" id="lock-toggle" onchange="toggleLockField()" style="width: 18px; height: 18px; accent-color: var(--color-primary);" />
+          <span style="display: flex; align-items: center; gap: 0.4rem;">
+            <span>Lock with Passcode (Vault Encryption)</span>
+          </span>
+        </label>
+        <p class="text-secondary" style="font-size: 0.8125rem; margin: 0.35rem 0 0 1.7rem;">
+          Your message will be sealed with AES-256 encryption. In your vault, it stays locked until you enter your passcode or until the delivery day arrives.
+        </p>
+
+        <div id="passcode-input-wrap" style="display: none; margin-top: 0.85rem; margin-left: 1.7rem;">
+          <label for="passcode-input" style="font-size: 0.8125rem; font-weight: 600; display: block; margin-bottom: 0.3rem;">Set Time-Capsule Passcode / PIN:</label>
+          <input
+            type="password"
+            id="passcode-input"
+            class="input"
+            placeholder="Enter a secret PIN or password to seal this capsule"
+            style="max-width: 340px;"
+          />
+        </div>
+      </div>
+
+      <!-- Privacy Level -->
+      <div style="margin-bottom: 2rem;">
+        <label style="font-weight: 600; font-size: 0.875rem; display: block; margin-bottom: 0.4rem;">Privacy Setting</label>
+        <div class="radio-tile-group">
+          <label class="radio-tile active" id="tile-private">
+            <input type="radio" name="visibility" value="private" checked onchange="toggleVisibilityTile()" style="margin-top: 4px;" />
+            <div>
+              <strong style="display: block;">Private</strong>
+              <span class="text-secondary" style="font-size: 0.75rem;">Delivered exclusively to recipient. Never shared publicly.</span>
+            </div>
+          </label>
+          <label class="radio-tile" id="tile-public">
+            <input type="radio" name="visibility" value="public_anonymous" onchange="toggleVisibilityTile()" style="margin-top: 4px;" />
+            <div>
+              <strong style="display: block;">Public, but Anonymous</strong>
+              <span class="text-secondary" style="font-size: 0.75rem;">Delivered to recipient, and also shared on the community wall upon delivery with names & emails removed.</span>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <div style="text-align: center;">
+        <button type="submit" id="submit-btn" class="btn btn-primary btn-lg" style="width: 100%; max-width: 320px; min-height: 48px;">
+          Seal Letter in Time Capsule
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Authenticated User Time-Capsule Vault -->
+  <div id="my-vault" class="futureme-card card" style="display: none; margin-top: 2rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); padding-bottom: 1rem; margin-bottom: 1.25rem;">
+      <div>
+        <h2 style="font-size: 1.35rem; font-weight: 700; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22h16"/><path d="M2 11h20"/><path d="M12 2l10 9H2l10-9z"/><path d="M6 11v11"/><path d="M10 11v11"/><path d="M14 11v11"/><path d="M18 11v11"/></svg>
+          <span>My Time-Capsule Vault</span>
+        </h2>
+        <p class="text-secondary" style="font-size: 0.85rem; margin-top: 0.2rem;">
+          All your personal scheduled letters and delivered capsules.
+        </p>
+      </div>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="loadMyLetters()">
+        Refresh
+      </button>
+    </div>
+
+    <div id="vault-letters-container">
+      <div class="skeleton-card skeleton-shimmer" style="margin-bottom: 1rem; padding: 1.25rem; background: var(--color-bg-page); border: 1px solid var(--color-border); border-radius: var(--radius-md);">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+          <div class="skeleton skeleton-line skeleton-shimmer" style="width: 40%; height: 1.1rem;"></div>
+          <div class="skeleton skeleton-line skeleton-shimmer" style="width: 20%; height: 0.8rem;"></div>
+        </div>
+        <div class="skeleton skeleton-line skeleton-shimmer" style="width: 80%; height: 0.85rem;"></div>
+      </div>
+      <div class="skeleton-card skeleton-shimmer" style="padding: 1.25rem; background: var(--color-bg-page); border: 1px solid var(--color-border); border-radius: var(--radius-md);">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+          <div class="skeleton skeleton-line skeleton-shimmer" style="width: 35%; height: 1.1rem;"></div>
+          <div class="skeleton skeleton-line skeleton-shimmer" style="width: 15%; height: 0.8rem;"></div>
+        </div>
+        <div class="skeleton skeleton-line skeleton-shimmer" style="width: 70%; height: 0.85rem;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PIN Unlock Modal -->
+<div id="unlock-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(4px); z-index: 9999; align-items: center; justify-content: center;">
+  <div style="background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 1.75rem; max-width: 460px; width: 90%; box-shadow: var(--shadow-lg);">
+    <h3 style="margin-top: 0; display: flex; align-items: center; gap: 0.5rem;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg>
+      <span>Unlock Sealed Time Capsule</span>
+    </h3>
+    <p class="text-secondary" style="font-size: 0.85rem;">
+      Enter the passcode you set when writing this letter to temporarily peek at its encrypted contents.
+    </p>
+
+    <div style="margin: 1.25rem 0;">
+      <label style="font-size: 0.8125rem; font-weight: 600; display: block; margin-bottom: 0.35rem;">Passcode / PIN:</label>
+      <input type="password" id="modal-passcode" class="input" placeholder="Enter your secret passcode" autofocus />
+    </div>
+
+    <div id="modal-error" style="color: var(--color-error); font-size: 0.8125rem; margin-bottom: 1rem; display: none;"></div>
+
+    <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+      <button type="button" class="btn btn-secondary btn-sm" onclick="closeUnlockModal()">Cancel</button>
+      <button type="button" class="btn btn-primary btn-sm" id="modal-unlock-btn" onclick="submitUnlockLetter()">Unlock & Peek</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  let selectedPreset = '1y';
+  let activeUnlockId = null;
+
+  function insertPrompt(text) {
+    const body = document.getElementById('body-input');
+    if (!body.value || confirm('Replace message with this prompt?')) {
+      body.value = text + '\n\n';
+      body.focus();
+    }
+  }
+
+  function calculateDeliveryDate() {
+    if (selectedPreset === 'custom') {
+      const customVal = document.getElementById('custom-date').value;
+      if (!customVal) throw new Error('Please select a custom delivery date.');
+      const parsed = new Date(customVal + 'T09:00:00');
+      if (isNaN(parsed.getTime()) || parsed <= new Date()) {
+        throw new Error('Custom delivery date must be in the future.');
+      }
+      return parsed;
+    }
+    const d = new Date();
+    if (selectedPreset === '6m') d.setMonth(d.getMonth() + 6);
+    else if (selectedPreset === '1y') d.setFullYear(d.getFullYear() + 1);
+    else if (selectedPreset === '3y') d.setFullYear(d.getFullYear() + 3);
+    else if (selectedPreset === '5y') d.setFullYear(d.getFullYear() + 5);
+    else if (selectedPreset === '10y') d.setFullYear(d.getFullYear() + 10);
+    return d;
+  }
+
+  function updateDeliveryPreview() {
+    try {
+      const target = calculateDeliveryDate();
+      const previewText = document.getElementById('delivery-preview-text');
+      if (previewText && target) {
+        const formatted = target.toLocaleDateString('en-US', {
+          weekday: 'short',
+          month: 'long',
+          day: 'numeric',
+          year: 'numeric'
+        });
+        const now = new Date();
+        const diffDays = Math.max(1, Math.round((target - now) / (1000 * 60 * 60 * 24)));
+        previewText.textContent = 'Scheduled Delivery: ' + formatted + ' (in ~' + diffDays + ' days)';
+      }
+    } catch (e) {
+      const previewText = document.getElementById('delivery-preview-text');
+      if (previewText) previewText.textContent = e.message || 'Please pick a valid delivery date.';
+    }
+  }
+
+  function selectPreset(preset) {
+    selectedPreset = preset;
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-preset') === preset);
+    });
+
+    const customWrap = document.getElementById('custom-date-container');
+    const customDateInput = document.getElementById('custom-date');
+    if (preset === 'custom') {
+      customWrap.style.display = 'block';
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const minStr = tomorrow.toISOString().split('T')[0];
+      customDateInput.min = minStr;
+      if (!customDateInput.value) {
+        const oneMonth = new Date();
+        oneMonth.setMonth(oneMonth.getMonth() + 1);
+        customDateInput.value = oneMonth.toISOString().split('T')[0];
+      }
+      customDateInput.focus();
+    } else {
+      customWrap.style.display = 'none';
+    }
+    updateDeliveryPreview();
+  }
+
+  function toggleRecipientField() {
+    const isOther = document.querySelector('input[name="recipient-choice"]:checked').value === 'other';
+    document.getElementById('other-recipient-wrap').style.display = isOther ? 'block' : 'none';
+    if (isOther) document.getElementById('recipient-email').focus();
+  }
+
+  function toggleLockField() {
+    const isLocked = document.getElementById('lock-toggle').checked;
+    document.getElementById('passcode-input-wrap').style.display = isLocked ? 'block' : 'none';
+    if (isLocked) document.getElementById('passcode-input').focus();
+  }
+
+  function toggleVisibilityTile() {
+    const isPrivate = document.querySelector('input[name="visibility"]:checked').value === 'private';
+    document.getElementById('tile-private').classList.toggle('active', isPrivate);
+    document.getElementById('tile-public').classList.toggle('active', !isPrivate);
+  }
+
+  document.getElementById('future-letter-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('submit-btn');
+    btn.disabled = true;
+    btn.textContent = 'Sealing Time Capsule...';
+
+    try {
+      const deliveryDate = calculateDeliveryDate();
+      const isSelf = document.querySelector('input[name="recipient-choice"]:checked').value === 'self';
+      const senderEmail = document.getElementById('sender-email').value.trim();
+      const recipientEmail = isSelf ? senderEmail : (document.getElementById('recipient-email').value.trim() || senderEmail);
+      const subject = document.getElementById('subject').value.trim();
+      const body = document.getElementById('body-input').value.trim();
+      const category = document.getElementById('category').value;
+      const visibility = document.querySelector('input[name="visibility"]:checked').value;
+      const isLocked = document.getElementById('lock-toggle').checked;
+      const passcode = isLocked ? document.getElementById('passcode-input').value : null;
+
+      if (isLocked && (!passcode || !passcode.trim())) {
+        throw new Error('Please enter a passcode to lock this capsule or uncheck the lock option.');
+      }
+
+      const res = await fetch('/api/futureme/letters', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          senderEmail,
+          recipientEmail,
+          subject,
+          body,
+          deliveryDate: deliveryDate.toISOString(),
+          deliveryPreset: selectedPreset,
+          category,
+          visibility,
+          sendToSelf: isSelf,
+          isLocked,
+          passcode,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || data.message || 'Failed to seal letter');
+
+      if (window.WoxToast) {
+        WoxToast.success(data.message);
+      } else {
+        alert(data.message);
+      }
+
+      document.getElementById('future-letter-form').reset();
+      selectPreset('1y');
+      loadMyLetters();
+    } catch (err) {
+      if (window.WoxToast) {
+        WoxToast.error('Error: ' + err.message);
+      } else {
+        alert('Error: ' + err.message);
+      }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Seal Letter in Time Capsule';
+    }
+  });
+
+  // Initialize delivery date preview on load
+  document.addEventListener('DOMContentLoaded', () => {
+    updateDeliveryPreview();
+  });
+
+  // ── User Vault Loader ──
+  async function loadMyLetters() {
+    const vaultSection = document.getElementById('my-vault');
+    const container = document.getElementById('vault-letters-container');
+    try {
+      const res = await fetch('/api/futureme/my-letters', { credentials: 'include' });
+      if (!res.ok) {
+        // Not authenticated
+        vaultSection.style.display = 'none';
+        return;
+      }
+      const data = await res.json();
+      vaultSection.style.display = 'block';
+
+      if (!data.letters || data.letters.length === 0) {
+        container.innerHTML = '<div style="text-align: center; padding: 2rem; color: var(--color-text-secondary);">' +
+          'You have not sealed any letters to the future yet. Use the form above to write your first capsule!' +
+        '</div>';
+        return;
+      }
+
+      container.innerHTML = data.letters.map(function(l) {
+        var targetDate = new Date(l.delivery_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+        var isScheduled = l.status === 'scheduled';
+        var isDelivered = l.status === 'delivered';
+        var lockBadge = l.is_locked ? '<span class="badge badge-amber" style="font-size: 0.7rem;">Passcode Locked</span>' : '<span class="badge badge-green" style="font-size: 0.7rem;">Open</span>';
+        var statusBadgeClass = isDelivered ? 'badge-green' : isScheduled ? 'badge-purple' : 'badge-amber';
+
+        var unlockBtn = '';
+        if (l.is_locked && isScheduled) {
+          unlockBtn = '<button type="button" class="btn btn-secondary btn-xs" onclick="openUnlockModal(\'' + l.id + '\')">Unlock & Peek</button>';
+        }
+        var cancelBtn = '';
+        if (isScheduled) {
+          cancelBtn = '<button type="button" class="btn btn-ghost btn-xs" style="color: var(--color-error);" onclick="cancelLetter(\'' + l.id + '\')">Cancel</button>';
+        }
+
+        return '<div class="vault-letter-card" id="letter-' + l.id + '">' +
+          '<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.5rem;">' +
+            '<div>' +
+              '<h4 style="margin: 0 0 0.25rem 0; font-size: 1.1rem; color: #fff;">' + (l.subject || 'Untitled Letter') + '</h4>' +
+              '<div style="display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap;">' +
+                '<span class="badge badge-purple" style="font-size: 0.7rem;">' + (l.category || 'General') + '</span>' +
+                '<span class="text-secondary" style="font-size: 0.75rem;">To: ' + (l.recipient_email || '') + '</span>' +
+                '<span class="text-secondary" style="font-size: 0.75rem;">• ' + (l.word_count || 0) + ' words</span>' +
+              '</div>' +
+            '</div>' +
+            '<div style="display: flex; gap: 0.35rem; align-items: center;">' +
+              lockBadge +
+              '<span class="badge ' + statusBadgeClass + '" style="font-size: 0.7rem;">' + l.status.toUpperCase() + '</span>' +
+            '</div>' +
+          '</div>' +
+          '<div style="font-size: 0.8125rem; color: var(--color-text-secondary); margin-bottom: 0.75rem;">' +
+            'Delivery Target: <strong>' + targetDate + '</strong>' +
+          '</div>' +
+          '<div id="body-preview-' + l.id + '" style="background: var(--color-bg-card); padding: 0.75rem 1rem; border-radius: var(--radius-sm); font-size: 0.875rem; color: var(--color-text-secondary); border: 1px solid var(--color-border); white-space: pre-wrap; font-family: Georgia, serif; line-height: 1.6; margin-bottom: 0.75rem;">' +
+            (l.body || '') +
+          '</div>' +
+          '<div style="display: flex; justify-content: flex-end; gap: 0.5rem;">' +
+            unlockBtn +
+            cancelBtn +
+          '</div>' +
+        '</div>';
+      }).join('');
+    } catch (e) {
+      vaultSection.style.display = 'none';
+    }
+  }
+
+  function openUnlockModal(id) {
+    activeUnlockId = id;
+    document.getElementById('modal-passcode').value = '';
+    document.getElementById('modal-error').style.display = 'none';
+    document.getElementById('unlock-modal').style.display = 'flex';
+    document.getElementById('modal-passcode').focus();
+  }
+
+  function closeUnlockModal() {
+    document.getElementById('unlock-modal').style.display = 'none';
+    activeUnlockId = null;
+  }
+
+  async function submitUnlockLetter() {
+    if (!activeUnlockId) return;
+    var passcode = document.getElementById('modal-passcode').value;
+    var errEl = document.getElementById('modal-error');
+    if (!passcode) {
+      errEl.textContent = 'Please enter your passcode.';
+      errEl.style.display = 'block';
+      return;
+    }
+
+    try {
+      var res = await fetch('/api/futureme/my-letters/' + activeUnlockId + '/unlock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ passcode: passcode }),
+      });
+
+      var data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || data.error || 'Incorrect passcode');
+      }
+
+      var previewEl = document.getElementById('body-preview-' + activeUnlockId);
+      if (previewEl) {
+        previewEl.innerHTML = data.body;
+        previewEl.style.color = '#ffffff';
+        previewEl.style.borderColor = 'var(--color-success)';
+      }
+
+      closeUnlockModal();
+      if (window.WoxToast) {
+        WoxToast.success('Time Capsule unlocked successfully!');
+      } else {
+        alert('Time Capsule unlocked successfully!');
+      }
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.style.display = 'block';
+    }
+  }
+
+  async function cancelLetter(id) {
+    if (!confirm('Are you sure you want to cancel this scheduled letter?')) return;
+    try {
+      var res = await fetch('/api/futureme/my-letters/' + id, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      var data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Failed to cancel letter');
+      if (window.WoxToast) {
+        WoxToast.success('Letter cancelled successfully');
+      } else {
+        alert('Letter cancelled successfully');
+      }
+      loadMyLetters();
+    } catch (err) {
+      if (window.WoxToast) {
+        WoxToast.error('Error: ' + err.message);
+      } else {
+        alert('Error: ' + err.message);
+      }
+    }
+  }
+
+  // Auto load vault on startup
+  loadMyLetters();
+</script>
+` }) %>

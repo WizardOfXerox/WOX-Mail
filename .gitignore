@@ -1,0 +1,149 @@
+# ==============================================================================
+# WOXMAIL GITIGNORE CONFIGURATION
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Environment Variables & Secrets (CRITICAL)
+# ------------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.env
+*.pem
+*.key
+*.cert
+*.crt
+*.p12
+*.pfx
+*.csr
+*.pub
+id_rsa*
+secrets/
+
+# Cloudflare Tunnel & Provider Local Configs
+config.yml
+config.yaml
+!config.example.yml
+!config.example.yaml
+tools/tunnel-credentials.json
+tools/tunnel-config.yml
+!tools/tunnel-credentials.example.json
+!tools/tunnel-config.example.yml
+*.credentials.json
+
+# Tor Hidden Service Secret Keys & Runtime State
+tor/hidden_service/
+tor/data/
+tor/tor/
+
+# ------------------------------------------------------------------------------
+# 2. Dependencies & Package Managers
+# ------------------------------------------------------------------------------
+node_modules/
+.pnp
+.pnp.js
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+
+# ------------------------------------------------------------------------------
+# 3. Production Builds, Bundles & Caches
+# ------------------------------------------------------------------------------
+dist/
+public/dist/
+build/
+client/dist/
+out/
+.vite/
+.cache/
+.parcel-cache/
+.turbo/
+
+# ------------------------------------------------------------------------------
+# 4. Executables, Binaries & Database Backups
+# ------------------------------------------------------------------------------
+*.exe
+*.dll
+*.so
+*.dylib
+*.bin
+cloudflared.exe
+backups/
+*.dump
+*.sql.gz
+*.sqlite
+*.sqlite3
+*.db
+pgdata/
+redisdata/
+
+# ------------------------------------------------------------------------------
+# 5. Logs & Crash Reports
+# ------------------------------------------------------------------------------
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+pino-*.log
+node_crash.log
+server_debug.log
+service.log
+
+# ------------------------------------------------------------------------------
+# 6. Test Reports, Coverage & Playwright
+# ------------------------------------------------------------------------------
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+tests/screenshots/
+.tempmediaStorage/
+.user_uploaded/
+
+# ------------------------------------------------------------------------------
+# 7. Temporary, Scratch & Local Debugging Scripts
+# ------------------------------------------------------------------------------
+scratch/
+scratch_*
+tmp/
+temp/
+.temp/
+*.tmp
+*.bak
+
+# ------------------------------------------------------------------------------
+# 8. Operating System & IDE Files
+# ------------------------------------------------------------------------------
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# JetBrains / Visual Studio / VS Code
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.sublime-project
+*.sublime-workspace
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

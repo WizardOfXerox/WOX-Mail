@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>You're Invited to WoxMail</title>
+</head>
+<body style="margin:0;padding:0;background:#0f0f1a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0f0f1a;padding:40px 0;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#1a1a2e;border-radius:20px;overflow:hidden;">
+        <tr><td style="padding:40px 40px 20px;text-align:center;">
+          <div style="margin-bottom:12px;display:inline-block;color:#7c3aed;">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><polyline points="16 11 18 13 22 9"/></svg>
+          </div>
+          <h1 style="color:#f0f0f5;font-size:24px;margin:0;">You're Invited!</h1>
+        </td></tr>
+        <tr><td style="padding:0 40px 30px;color:#9898b0;font-size:15px;line-height:1.6;">
+          <p>Hi,</p>
+          <p>You've been invited to join <strong style="color:#a78bfa;">WoxMail</strong> — a private email suite at <strong>@wox.world</strong>.</p>
+          <div style="background:#252545;padding:20px;border-radius:12px;margin:20px 0;text-align:center;">
+            <div style="font-size:13px;color:#6868a0;margin-bottom:8px;">Your Invite Code</div>
+            <div style="font-size:24px;color:#a78bfa;font-family:'JetBrains Mono',monospace;font-weight:700;letter-spacing:2px;">{{inviteCode}}</div>
+            {{#if expiresAt}}
+            <div style="font-size:12px;color:#6868a0;margin-top:8px;">Expires: {{expiresAt}}</div>
+            {{/if}}
+          </div>
+          <p>With WoxMail, you get:</p>
+          <ul style="padding-left:20px;">
+            <li>A permanent <strong>@wox.world</strong> email address</li>
+            <li>Two-factor authentication</li>
+            <li>Built-in 2FA authenticator (WoxAuth)</li>
+            <li>Calendar, email aliases, and more</li>
+          </ul>
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;">
+            <tr><td align="center">
+              <a href="{{registerUrl}}" style="display:inline-block;background:#7c3aed;color:#fff;padding:12px 32px;border-radius:9999px;text-decoration:none;font-weight:600;font-size:15px;">Create Your Account →</a>
+            </td></tr>
+          </table>
+          {{#if note}}
+          <p style="font-size:13px;color:#6868a0;font-style:italic;">Note from admin: {{note}}</p>
+          {{/if}}
+        </td></tr>
+        <tr><td style="padding:20px 40px;border-top:1px solid #252545;text-align:center;font-size:12px;color:#6868a0;">
+          WoxMail — wox.world
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>

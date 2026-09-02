@@ -1,0 +1,109 @@
+<%- include('layouts/base', {
+  title: 'Public Epistles & Letters from the Past — FutureMe',
+  headExtra: `
+    <style>
+      .public-hero { text-align: center; max-width: 780px; margin: 2rem auto 2.5rem; }
+      .public-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.5rem; margin-bottom: 3rem; }
+      .letter-card { background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 1.5rem; display: flex; flex-direction: column; transition: all var(--transition-fast); }
+      .letter-card:hover { border-color: var(--color-primary); box-shadow: 0 4px 20px var(--color-primary-glow); transform: translateY(-2px); }
+      .letter-meta { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; font-size: 0.75rem; }
+      .letter-body { font-family: Georgia, serif; font-size: 0.9375rem; line-height: 1.7; color: var(--color-text-secondary); white-space: pre-wrap; flex: 1; margin: 0.75rem 0 1rem; }
+      .filter-bar { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; margin-bottom: 2rem; }
+      .filter-btn { padding: 0.4rem 0.85rem; border-radius: var(--radius-pill); font-size: 0.8125rem; font-weight: 500; background: var(--color-bg-elevated); border: 1px solid var(--color-border); color: var(--color-text-secondary); cursor: pointer; transition: all var(--transition-fast); }
+      .filter-btn:hover { color: var(--color-text-primary); border-color: var(--color-primary-light); }
+      .filter-btn.active { background: var(--color-primary); color: #ffffff; border-color: var(--color-primary); }
+    </style>
+  `,
+  body: `
+<div class="container">
+  <div class="public-hero">
+    <div class="badge badge-purple" style="margin-bottom: 0.75rem;">
+      Public Time Capsule Feed
+    </div>
+    <h1 style="font-size: 2.25rem; font-weight: 800; font-family: Outfit, sans-serif; margin-bottom: 0.5rem;">
+      Epistles from the Past
+    </h1>
+    <p class="text-secondary" style="font-size: 1.05rem; margin-bottom: 1.5rem;">
+      Real reflections, advice, and predictions written by anonymous souls years ago, unlocked today.
+    </p>
+    <a href="/futureme" class="btn btn-primary btn-sm">
+      Write Your Own Letter to the Future
+    </a>
+  </div>
+
+  <!-- Category filter bar -->
+  <div class="filter-bar">
+    <button class="filter-btn active" onclick="filterCategory('all')">All Letters</button>
+    <button class="filter-btn" onclick="filterCategory('Goals')">Goals</button>
+    <button class="filter-btn" onclick="filterCategory('Life Advice')">Life Advice</button>
+    <button class="filter-btn" onclick="filterCategory('Reflections')">Reflections</button>
+    <button class="filter-btn" onclick="filterCategory('Predictions')">Predictions</button>
+    <button class="filter-btn" onclick="filterCategory('Love & Relationships')">Relationships</button>
+    <button class="filter-btn" onclick="filterCategory('Career')">Career</button>
+  </div>
+
+  <!-- Dynamic Letters Grid -->
+  <div id="letters-grid" class="public-grid">
+    <div style="grid-column: 1 / -1; text-align: center; padding: 3rem;" class="text-secondary">
+      Loading letters from the past...
+    </div>
+  </div>
+</div>
+
+<script>
+  let activeCat = 'all';
+
+  async function loadPublicLetters(category = 'all') {
+    activeCat = category;
+    const grid = document.getElementById('letters-grid');
+    grid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; padding: 3rem;" class="text-secondary">Loading letters from the past...</div>';
+
+    try {
+      const res = await fetch('/api/futureme/public?category=' + encodeURIComponent(category));
+      const data = await res.json();
+
+      if (!data.letters || data.letters.length === 0) {
+        grid.innerHTML = \`
+          <div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1rem;" class="card">
+            <span style="font-size: 2.5rem; display: block; margin-bottom: 0.5rem;"></span>
+            <h3>No public letters in this category yet</h3>
+            <p class="text-secondary" style="margin: 0.5rem 0 1.5rem;">Be the first to seal an anonymous time capsule reflection for future generations.</p>
+            <a href="/futureme" class="btn btn-primary btn-sm">Write First Letter</a>
+          </div>
+        \`;
+        return;
+      }
+
+      grid.innerHTML = data.letters.map(l => \`
+        <div class="letter-card">
+          <div class="letter-meta">
+            <span class="badge badge-purple">\${escapeHtml(l.category || 'General')}</span>
+            <span class="text-tertiary"> Written \${l.timeSpan}</span>
+          </div>
+          <h3 style="font-size: 1.125rem; font-weight: 700; margin: 0 0 0.25rem;">\${escapeHtml(l.subject)}</h3>
+          <div class="letter-body">"\${escapeHtml(l.excerpt)}"</div>
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; border-top: 1px solid var(--color-border); padding-top: 0.75rem;" class="text-tertiary">
+            <span>\${l.word_count || 0} words</span>
+            <span>Delivered: \${l.delivered_at ? new Date(l.delivered_at).toLocaleDateString() : 'Just now'}</span>
+          </div>
+        </div>
+      \`).join('');
+    } catch (err) {
+      grid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; color: var(--color-error);">Error loading letters: ' + err.message + '</div>';
+    }
+  }
+
+  function filterCategory(cat) {
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.textContent.toLowerCase().includes(cat.toLowerCase()) || (cat === 'all' && btn.textContent.includes('All')));
+    });
+    loadPublicLetters(cat);
+  }
+
+  function escapeHtml(str) {
+    return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  document.addEventListener('DOMContentLoaded', () => loadPublicLetters('all'));
+</script>
+` }) %>

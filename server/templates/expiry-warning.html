@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mailbox Expiring Soon</title>
+</head>
+<body style="margin:0;padding:0;background:#0f0f1a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0f0f1a;padding:40px 0;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#1a1a2e;border-radius:20px;overflow:hidden;">
+        <tr><td style="padding:40px 40px 20px;text-align:center;">
+          <div style="font-size:32px;margin-bottom:8px;">⏰</div>
+          <h1 style="color:#f0f0f5;font-size:24px;margin:0;">Your Mailbox is Expiring</h1>
+        </td></tr>
+        <tr><td style="padding:0 40px 30px;color:#9898b0;font-size:15px;line-height:1.6;">
+          <p>Hi there,</p>
+          <p>Your personal temp mailbox <strong style="color:#a78bfa;">{{address}}</strong> will expire in <strong style="color:#ef4444;">{{timeRemaining}}</strong>.</p>
+          <p>After expiry, all messages will be permanently deleted and the address will become unavailable.</p>
+          <div style="background:#252545;padding:16px;border-radius:12px;margin:16px 0;text-align:center;">
+            <div style="font-size:13px;color:#6868a0;margin-bottom:4px;">Expires at</div>
+            <div style="font-size:18px;color:#f0f0f5;font-weight:600;">{{expiryDate}}</div>
+          </div>
+          <p>To keep your mailbox active, log in and extend your expiry before it runs out.</p>
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;">
+            <tr><td align="center">
+              <a href="{{loginUrl}}" style="display:inline-block;background:#7c3aed;color:#fff;padding:12px 32px;border-radius:9999px;text-decoration:none;font-weight:600;font-size:15px;">Extend Mailbox →</a>
+            </td></tr>
+          </table>
+          <p style="font-size:13px;color:#6868a0;">Want a permanent email? Ask for an invite to <strong>@wox.world</strong>.</p>
+        </td></tr>
+        <tr><td style="padding:20px 40px;border-top:1px solid #252545;text-align:center;font-size:12px;color:#6868a0;">
+          WoxMail — mail.wox.world
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
