@@ -8,6 +8,7 @@ import { getFolderIcon } from './Sidebar.jsx';
 export default function MessageList({
   messages = [],
   loading = false,
+  error = null,
   pagination,
   selectedUid,
   folder = 'INBOX',
@@ -114,13 +115,17 @@ export default function MessageList({
     try {
       const isAllInboxes = folder === '__all_inboxes' || folder === 'All Inboxes';
       const cleanFolder = isAllInboxes ? 'INBOX' : folder;
+      const accountParam = activeAccount?.id ? `&accountId=${encodeURIComponent(activeAccount.id)}` : '';
       const endpoint = cleanFolder === 'INBOX'
-        ? `/api/mail/inbox?page=${nextPage}&limit=25`
-        : `/api/mail/folder/${encodeURIComponent(cleanFolder)}?page=${nextPage}&limit=25`;
+        ? `/api/mail/inbox?page=${nextPage}&limit=25${accountParam}`
+        : `/api/mail/folder/${encodeURIComponent(cleanFolder)}?page=${nextPage}&limit=25${accountParam}`;
 
       const res = await fetch(endpoint, { credentials: 'include' });
-      if (!res.ok) throw new Error('Failed to fetch more emails');
-      const data = await res.json();
+      if (!res.ok) {
+        setHasMore(false);
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
       const newMsgs = data.messages || [];
 
       if (newMsgs.length === 0) {
@@ -142,7 +147,7 @@ export default function MessageList({
     } finally {
       setLoadingMore(false);
     }
-  }, [continuousPage, folder, hasMore, loading, loadingMore, pagination]);
+  }, [continuousPage, folder, hasMore, loading, loadingMore, pagination, activeAccount?.id]);
 
   const handleScroll = (e) => {
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
@@ -553,7 +558,17 @@ export default function MessageList({
               }}
               title={isProtonLocked ? "Proton PGP keys locked. Click to decrypt inbox." : "Proton Cloud Sync. Click to re-authenticate or decrypt."}
             >
-              {isProtonLocked ? '🔒 Unlock' : '⚡ Proton Sync'}
+              {isProtonLocked ? (
+                <>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                  <span>Unlock</span>
+                </>
+              ) : (
+                <>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                  <span>Proton Sync</span>
+                </>
+              )}
             </button>
           )}
           {onRefresh && (
@@ -714,8 +729,9 @@ export default function MessageList({
         <div className="filter-active-banner">
           <span>Filter: <strong>{activeFilterLabel}</strong></span>
           {onClearFilter && (
-            <button type="button" className="btn-ghost btn-xs" onClick={onClearFilter} title="Clear filter">
-              ✕ Clear
+            <button type="button" className="btn-ghost btn-xs" onClick={onClearFilter} title="Clear filter" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              <span>Clear</span>
             </button>
           )}
         </div>
@@ -798,10 +814,32 @@ export default function MessageList({
                 type="button"
                 className="btn btn-primary btn-lg"
                 onClick={onUnlockProton}
-                style={{ fontWeight: 700, padding: '0.65rem 1.6rem', boxShadow: '0 0 25px var(--color-primary-glow)' }}
+                style={{ fontWeight: 700, padding: '0.65rem 1.6rem', boxShadow: '0 0 25px var(--color-primary-glow)', display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
               >
-                🔓 Unlock &amp; Decrypt Inbox
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+                <span>Unlock &amp; Decrypt Inbox</span>
               </button>
+            </div>
+          ) : error ? (
+            <div className="empty-state" style={{ padding: '3rem 1.5rem', textAlign: 'center' }}>
+              <span className="empty-icon" style={{ display: 'inline-flex', color: 'var(--color-error)', marginBottom: '0.75rem' }}>
+                <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              </span>
+              <p style={{ fontWeight: 600, color: 'var(--color-text-primary)', fontSize: '0.95rem' }}>Unable to load {folder}</p>
+              <p className="text-secondary" style={{ fontSize: '0.8125rem', marginTop: '0.25rem', maxWidth: '340px', margin: '0.25rem auto 0 auto' }}>
+                {error.message || error || 'There was an issue communicating with the mail server.'}
+              </p>
+              {onRefresh && (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={onRefresh}
+                  style={{ marginTop: '1rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
+                  <span>Retry Folder</span>
+                </button>
+              )}
             </div>
           ) : (
             <div className="empty-state">
@@ -1020,7 +1058,7 @@ export default function MessageList({
               </div>
             ) : !hasMore ? (
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', color: 'var(--color-text-tertiary)', fontSize: '0.75rem', background: 'rgba(255, 255, 255, 0.04)', padding: '0.35rem 0.75rem', borderRadius: 'var(--radius-pill)', border: '1px solid var(--color-border-subtle)' }}>
-                <span>✓</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                 <span>You've reached the end of {folder} ({continuousMessages.length.toLocaleString()} emails)</span>
               </div>
             ) : (
@@ -1028,9 +1066,10 @@ export default function MessageList({
                 type="button"
                 className="btn btn-ghost btn-xs"
                 onClick={loadMoreContinuous}
-                style={{ fontSize: '0.75rem', color: 'var(--color-primary-light)', fontWeight: 600 }}
+                style={{ fontSize: '0.75rem', color: 'var(--color-primary-light)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
               >
-                Load next 25 emails ↓
+                <span>Load next 25 emails</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
               </button>
             )}
           </div>

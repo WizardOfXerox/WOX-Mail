@@ -52,7 +52,7 @@ test('Suite 01: Core Utilities & Cryptographic Invariants', async (t) => {
 
     // Tampering test: modify 1 byte of ciphertext
     const parts = encrypted.split(':');
-    const tamperedCipher = parts[3].slice(0, -2) + 'aa';
+    const tamperedCipher = parts[3].slice(0, -2) + (parts[3].endsWith('aa') ? 'ff' : 'aa');
     const tamperedString = `${parts[0]}:${parts[1]}:${parts[2]}:${tamperedCipher}`;
     assert.equal(decryptPayload(tamperedString, passphrase), null, 'Tampered ciphertext must fail GCM auth');
   });

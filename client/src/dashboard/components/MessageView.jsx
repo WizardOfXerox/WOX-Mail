@@ -18,6 +18,7 @@ const NOTE_COLORS = [
 export default function MessageView({
   message,
   loading,
+  error = null,
   embedded = false,
   folders = [],
   onBack,
@@ -488,6 +489,27 @@ export default function MessageView({
       }
     });
   }, [message?.html, message?.uid, allowImagesThisEmail, allowScriptsThisEmail, privacyPrefs]);
+
+  if (error && !loading) {
+    return (
+      <section className={`dashboard-viewer ${embedded ? 'dashboard-viewer-embedded' : ''}`}>
+        <div className="empty-state" style={{ padding: '3rem 1.5rem', textAlign: 'center' }}>
+          <span className="empty-icon" style={{ display: 'inline-flex', color: 'var(--color-text-tertiary)', marginBottom: '0.75rem' }}>
+            <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          </span>
+          <p style={{ fontWeight: 600, color: 'var(--color-text-primary)', fontSize: '0.95rem' }}>Message Unavailable</p>
+          <p className="text-secondary" style={{ fontSize: '0.8125rem', marginTop: '0.25rem', maxWidth: '340px', margin: '0.25rem auto 0 auto' }}>
+            {error.message || error || 'This email could not be loaded or may belong to another folder.'}
+          </p>
+          {onBack && (
+            <button type="button" className="btn btn-secondary btn-sm" onClick={onBack} style={{ marginTop: '1rem' }}>
+              Return to Message List
+            </button>
+          )}
+        </div>
+      </section>
+    );
+  }
 
   if (!message && !loading) {
     return (

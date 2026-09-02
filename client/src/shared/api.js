@@ -45,7 +45,7 @@ export async function api(path, options = {}) {
       ...rest,
     });
   } catch (networkErr) {
-    if (typeof window !== 'undefined' && window.WoxBeep) {
+    if (typeof window !== 'undefined' && window.WoxBeep && window.__WOX_DEBUG_BEEP__) {
       window.WoxBeep(`Network Error: ${method} ${cleanPath} (${networkErr.message})`, networkErr);
     }
     throw networkErr;
@@ -63,7 +63,9 @@ export async function api(path, options = {}) {
     const err = new Error(data.error || `API error ${res.status}`);
     err.status = res.status;
     err.details = data.details;
-    if (typeof window !== 'undefined' && window.WoxBeep) {
+    // Strictly do not beep on routine 4xx (404 Not Found, 400 Bad Request, etc.)
+    // Only beep on 5xx server errors if developer audio debug mode is explicitly active
+    if (res.status >= 500 && typeof window !== 'undefined' && window.WoxBeep && window.__WOX_DEBUG_BEEP__) {
       window.WoxBeep(`API Error: ${method} ${cleanPath} -> HTTP ${res.status} (${err.message})`, err);
     }
     throw err;

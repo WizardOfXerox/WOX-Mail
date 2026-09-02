@@ -139,6 +139,8 @@ export async function resolveFolder(client, folder) {
   if (fLower === 'starred') return 'Starred';
   if (fLower === 'the feed' || fLower === 'thefeed' || fLower === '__feed') return 'The Feed';
   if (fLower === 'paper trail' || fLower === 'papertrail' || fLower === '__papertrail') return 'Paper Trail';
+  if (fLower === 'promotions' || fLower === 'promotion') return 'Promotions';
+  if (fLower === 'social') return 'Social';
   if (fLower === 'outbox') return 'Outbox';
 
   const isGmail = Boolean(
@@ -500,7 +502,7 @@ export async function fetchMessage(client, folder, uid) {
   }
 
   try {
-    const msg = await Promise.race([
+    let msg = await Promise.race([
       client.fetchOne(String(uid), {
         envelope: true,
         flags: true,
@@ -510,6 +512,30 @@ export async function fetchMessage(client, folder, uid) {
       }, { uid: true }),
       new Promise((_, reject) => setTimeout(() => reject(new Error('IMAP fetchOne timeout')), 25000)),
     ]);
+
+    // Resilient fallback: If not found in INBOX for virtual categories, check All Mail / Archive
+    if (!msg && (folder === 'Social' || folder === 'Promotions' || folder === 'The Feed' || folder === 'Paper Trail')) {
+      const isGmail = Boolean(
+        client?.options?.host?.includes('gmail') ||
+        client?.options?.auth?.user?.endsWith('@gmail.com') ||
+        client?.serverInfo?.vendor?.toLowerCase()?.includes('google')
+      );
+      const fallbackFolder = isGmail ? '[Gmail]/All Mail' : 'Archive';
+      if (lock) {
+        try { lock.release(); } catch {}
+        lock = null;
+      }
+      try {
+        lock = await acquireMailboxLock(client, fallbackFolder, 15000);
+        msg = await client.fetchOne(String(uid), {
+          envelope: true,
+          flags: true,
+          bodyStructure: true,
+          uid: true,
+          source: true,
+        }, { uid: true });
+      } catch {}
+    }
 
     if (!msg) return null;
 

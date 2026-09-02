@@ -125,10 +125,16 @@ export default function App() {
     NotificationService.requestPermission();
 
     const handleError = (e) => {
-      NotificationService.playErrorBeep(`Uncaught Error: ${e.message} (${e.filename || 'unknown'}:${e.lineno || 0})`, e.error);
+      console.error('[WoxMail App Error]', e.message, e.error);
+      if (typeof window !== 'undefined' && window.__WOX_DEBUG_BEEP__) {
+        NotificationService.playErrorBeep(`Uncaught Error: ${e.message} (${e.filename || 'unknown'}:${e.lineno || 0})`, e.error);
+      }
     };
     const handleUnhandledRejection = (e) => {
-      NotificationService.playErrorBeep(`Unhandled Rejection: ${e.reason?.message || e.reason}`, e.reason);
+      console.warn('[WoxMail Unhandled Rejection]', e.reason?.message || e.reason);
+      if (typeof window !== 'undefined' && window.__WOX_DEBUG_BEEP__) {
+        NotificationService.playErrorBeep(`Unhandled Rejection: ${e.reason?.message || e.reason}`, e.reason);
+      }
     };
 
     window.addEventListener('error', handleError);
@@ -140,8 +146,8 @@ export default function App() {
   }, []);
 
   const { folders, refetch: refetchFolders } = useFolders(activeAccount);
-  const { messages, pagination, loading: msgsLoading, refetch: refetchMessages } = useMessages(activeFolder, page, activeAccount);
-  const { message, loading: msgLoading } = useMessage(selectedUid, activeFolder, activeAccount);
+  const { messages, pagination, loading: msgsLoading, error: msgsError, refetch: refetchMessages } = useMessages(activeFolder, page, activeAccount);
+  const { message, loading: msgLoading, error: msgError } = useMessage(selectedUid, activeFolder, activeAccount);
 
   // Monitor incoming emails for desktop notification & sound
   useEffect(() => {
@@ -270,12 +276,15 @@ export default function App() {
 
   // Auto-select first message in split mode when switching folders on desktop (disabled on mobile)
   useEffect(() => {
+    // Strictly do NOT auto-select while new folder messages are loading or if folder is transitioning
+    if (msgsLoading) return;
     if (!isMobile && layoutMode !== 'list' && messages.length > 0 && !selectedUid && !activeFolder.startsWith('__')) {
       setSelectedUid(messages[0].uid);
     }
-  }, [messages, layoutMode, activeFolder, isMobile]);
+  }, [messages, layoutMode, activeFolder, isMobile, msgsLoading, selectedUid]);
 
   const handleFolderChange = (folder) => {
+    if (folder === activeFolder) return;
     setActiveFolder(folder);
     setSelectedUid(null);
     setPage(1);
@@ -752,6 +761,7 @@ export default function App() {
                   <MessageView
                     message={message}
                     loading={msgLoading}
+                    error={msgError}
                     embedded={false}
                     folders={folders}
                     onBack={() => setSelectedUid(null)}
@@ -772,6 +782,7 @@ export default function App() {
                   <MessageList
                     messages={messages}
                     loading={msgsLoading}
+                    error={msgsError}
                     pagination={pagination}
                     selectedUid={selectedUid}
                     folder={activeFolder}
@@ -824,6 +835,7 @@ export default function App() {
                     <MessageView
                       message={message}
                       loading={msgLoading}
+                      error={msgError}
                       embedded={false}
                       folders={folders}
                       onBack={() => setSelectedUid(null)}
@@ -844,6 +856,7 @@ export default function App() {
                     <MessageList
                       messages={messages}
                       loading={msgsLoading}
+                      error={msgsError}
                       pagination={pagination}
                       selectedUid={selectedUid}
                       folder={activeFolder}
@@ -897,6 +910,7 @@ export default function App() {
                     <MessageList
                       messages={messages}
                       loading={msgsLoading}
+                      error={msgsError}
                       pagination={pagination}
                       selectedUid={selectedUid}
                       folder={activeFolder}
@@ -951,6 +965,7 @@ export default function App() {
                       <MessageView
                         message={message}
                         loading={msgLoading}
+                        error={msgError}
                         embedded={true}
                         folders={folders}
                         onBack={() => setSelectedUid(null)}

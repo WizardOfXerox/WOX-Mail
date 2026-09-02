@@ -443,7 +443,13 @@ router.get('/folder/:name', async (req, res, next) => {
       pagination: paginationMeta(rawResult.total, page, limit),
     });
   } catch (err) {
-    next(err);
+    logger.warn({ folder: folderName, userId: req.user?.id, err: err.message }, 'Failed to fetch folder messages');
+    return res.status(502).json({
+      error: `Failed to load messages from ${folderName}: ${err.message}`,
+      folder: folderName,
+      messages: [],
+      pagination: paginationMeta(0, page, limit),
+    });
   }
 });
 
@@ -556,12 +562,15 @@ router.get('/message/:uid', async (req, res, next) => {
     // Handle outbox message fetch
     if (rawUid.startsWith('outbox_') || folder.toLowerCase() === 'outbox') {
       const outboxMsg = await outboxService.getOutboxMessageById(req.user.id, rawUid);
-      if (!outboxMsg) return res.status(404).json({ error: 'Outbox message not found' });
-      return res.json(outboxMsg);
+      if (outboxMsg) return res.json(outboxMsg);
+      return res.status(404).json({ error: 'Outbox message not found' });
     }
 
     const client = await getIMAPConnection(req.user, req.query.accountId || req.headers['x-account-id']);
     const uid = parseInt(req.params.uid, 10);
+    if (isNaN(uid)) {
+      return res.status(400).json({ error: 'Invalid message UID' });
+    }
 
     const msg = await imapService.fetchMessage(client, folder, uid);
     if (!msg) {

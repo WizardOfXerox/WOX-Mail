@@ -25,13 +25,17 @@ export function useApi(path, deps = []) {
       const result = await get(path);
       setData(result);
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Failed to fetch data');
+      setData(null);
     } finally {
       setLoading(false);
     }
   }, [path]);
 
-  useEffect(() => { refetch(); }, [refetch, ...deps]);
+  useEffect(() => {
+    setData(null);
+    refetch();
+  }, [refetch, ...deps]);
 
   return { data, loading, error, refetch };
 }
@@ -193,29 +197,59 @@ export function useMessages(folder, page = 1, activeAccount = null) {
 export function useMessage(uid, folder = 'INBOX', activeAccount = null) {
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   const isProton = activeAccount?.provider === 'proton';
   const cleanFolder = (folder === '__all_inboxes' || folder === 'All Inboxes' || folder === 'Inboxes') ? 'INBOX' : (folder || 'INBOX');
   const accountParam = activeAccount?.id ? `&accountId=${encodeURIComponent(activeAccount.id)}` : '';
 
   useEffect(() => {
-    if (!uid) { setMessage(null); return; }
+    if (!uid) {
+      setMessage(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
+    setError(null);
+    let active = true;
 
     if (isProton && ProtonSessionStore.hasActiveSession()) {
       fetchProtonMessage(uid)
-        .then(setMessage)
-        .catch(() => setMessage(null))
-        .finally(() => setLoading(false));
+        .then((data) => {
+          if (active) setMessage(data);
+        })
+        .catch((err) => {
+          if (active) {
+            setError(err);
+            setMessage(null);
+          }
+        })
+        .finally(() => {
+          if (active) setLoading(false);
+        });
     } else {
       get(`/mail/message/${uid}?folder=${encodeURIComponent(cleanFolder)}${accountParam}`)
-        .then(setMessage)
-        .catch(() => setMessage(null))
-        .finally(() => setLoading(false));
+        .then((data) => {
+          if (active) setMessage(data);
+        })
+        .catch((err) => {
+          if (active) {
+            setError(err);
+            setMessage(null);
+          }
+        })
+        .finally(() => {
+          if (active) setLoading(false);
+        });
     }
+
+    return () => {
+      active = false;
+    };
   }, [uid, cleanFolder, isProton, activeAccount?.id]);
 
-  return { message, loading };
+  return { message, loading, error };
 }
 
 /**
