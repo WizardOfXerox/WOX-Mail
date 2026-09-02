@@ -118,13 +118,14 @@ export default function App() {
 
   const knownMsgUidsRef = React.useRef(new Set());
   const initialLoadDoneRef = React.useRef(false);
+  const previousFolderRef = React.useRef(activeFolder);
 
   // Request notifications on load
   useEffect(() => {
     NotificationService.requestPermission();
   }, []);
 
-  const { folders, refetch: refetchFolders } = useFolders();
+  const { folders, refetch: refetchFolders } = useFolders(activeAccount);
   const { messages, pagination, loading: msgsLoading, refetch: refetchMessages } = useMessages(activeFolder, page, activeAccount);
   const { message, loading: msgLoading } = useMessage(selectedUid, activeFolder, activeAccount);
 
@@ -132,14 +133,15 @@ export default function App() {
   useEffect(() => {
     if (!messages || messages.length === 0) return;
 
-    if (!initialLoadDoneRef.current) {
-      // First load: seed existing messages so we don't spam notifications for old mail
-      messages.forEach((m) => knownMsgUidsRef.current.add(m.uid));
+    if (!initialLoadDoneRef.current || previousFolderRef.current !== activeFolder) {
+      // First load or folder changed: seed existing messages without playing chime
+      previousFolderRef.current = activeFolder;
+      knownMsgUidsRef.current = new Set(messages.map((m) => m.uid));
       initialLoadDoneRef.current = true;
       return;
     }
 
-    // Check for newly arrived unread messages
+    // Check for newly arrived unread messages in CURRENT active folder
     const newlyArrived = messages.filter((m) => !knownMsgUidsRef.current.has(m.uid) && !m.seen && !m.isRead);
     if (newlyArrived.length > 0) {
       const top = newlyArrived[0];
@@ -156,7 +158,7 @@ export default function App() {
 
     // Update known set
     messages.forEach((m) => knownMsgUidsRef.current.add(m.uid));
-  }, [messages]);
+  }, [messages, activeFolder]);
 
   const handleProtonUnlocked = () => {
     setIsProtonUnlocked(true);

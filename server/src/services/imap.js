@@ -62,6 +62,31 @@ export async function listFolders(client) {
 }
 
 /**
+ * Fast folder list using client.list() without expensive STATUS round-trips.
+ * Caches results on client instance for 60 seconds.
+ */
+export async function getFolderListFast(client) {
+  if (client._cachedFolders && (Date.now() - (client._cachedFoldersTime || 0) < 60000)) {
+    return client._cachedFolders;
+  }
+  try {
+    const list = await client.list();
+    const folders = (list || []).map((f) => ({
+      name: f.name,
+      path: f.path,
+      specialUse: f.specialUse || null,
+      delimiter: f.delimiter,
+    }));
+    client._cachedFolders = folders;
+    client._cachedFoldersTime = Date.now();
+    return folders;
+  } catch (err) {
+    logger.debug({ err: err.message }, 'Fast folder list failed');
+    return [];
+  }
+}
+
+/**
  * Resolve folder alias (e.g. 'Spam' -> 'Junk', 'Sent' -> 'Sent').
  * @param {ImapFlow} client
  * @param {string} folder
@@ -71,7 +96,7 @@ export async function resolveFolder(client, folder) {
   if (!folder) return 'INBOX';
   const fLower = folder.toLowerCase().trim();
 
-  if (fLower === 'inbox') return 'INBOX';
+  if (fLower === 'inbox' || fLower === 'inboxes') return 'INBOX';
   if (fLower === '__all_inboxes' || fLower === 'all inboxes' || fLower === 'all_inbox' || fLower === '__all') return 'INBOX';
   if (fLower === 'starred') return 'Starred';
   if (fLower === 'the feed' || fLower === 'thefeed' || fLower === '__feed') return 'The Feed';
@@ -79,7 +104,7 @@ export async function resolveFolder(client, folder) {
   if (fLower === 'outbox') return 'Outbox';
 
   try {
-    const folders = await listFolders(client);
+    const folders = await getFolderListFast(client);
 
     // 1. Direct name or path match
     let match = folders.find((f) => f.name.toLowerCase() === fLower || f.path.toLowerCase() === fLower);
@@ -91,7 +116,7 @@ export async function resolveFolder(client, folder) {
       if (match) return match.path;
     }
     if (fLower === 'trash' || fLower === 'deleted' || fLower === 'bin') {
-      match = folders.find((f) => f.specialUse === '\\Trash' || f.name.toLowerCase().includes('trash') || f.name.toLowerCase().includes('bin') || f.path.toLowerCase().includes('trash'));
+      match = folders.find((f) => f.specialUse === '\\Trash' || f.name.toLowerCase().includes('trash') || f.name.toLowerCase().includes('bin') || f.path.toLowerCase().includes('trash') || f.path.toLowerCase().includes('bin'));
       if (match) return match.path;
     }
     if (fLower === 'spam' || fLower === 'junk') {
@@ -107,21 +132,25 @@ export async function resolveFolder(client, folder) {
       if (match) return match.path;
     }
     if (fLower === 'social') {
-      match = folders.find((f) => f.name.toLowerCase().includes('social') || f.path.toLowerCase().includes('social'));
+      match = folders.find((f) => f.specialUse === '\\Social' || f.name.toLowerCase().includes('social') || f.path.toLowerCase().includes('social'));
       if (match) return match.path;
+      return 'Social';
     }
-    if (fLower === 'promotions') {
-      match = folders.find((f) => f.name.toLowerCase().includes('promotion') || f.path.toLowerCase().includes('promotion'));
+    if (fLower === 'promotions' || fLower === 'promotion') {
+      match = folders.find((f) => f.specialUse === '\\Promotions' || f.name.toLowerCase().includes('promotion') || f.path.toLowerCase().includes('promotion'));
       if (match) return match.path;
+      return 'Promotions';
     }
   } catch {
-    // Fallback to static resolution if listFolders fails
+    // Fallback to static resolution if list fails
   }
 
   if (fLower === 'spam' || fLower === 'junk') return 'Junk';
   if (fLower === 'sent') return 'Sent';
   if (fLower === 'trash') return 'Trash';
   if (fLower === 'drafts') return 'Drafts';
+  if (fLower === 'promotions') return 'Promotions';
+  if (fLower === 'social') return 'Social';
   return folder;
 }
 
@@ -145,6 +174,12 @@ export async function fetchMessages(client, folder = 'INBOX', { page = 1, limit 
   }
   if (resolved === 'Paper Trail') {
     return fetchPaperTrailMessages(client, { page, limit });
+  }
+  if (resolved === 'Promotions') {
+    return fetchPromotionsMessages(client, { page, limit });
+  }
+  if (resolved === 'Social') {
+    return fetchSocialMessages(client, { page, limit });
   }
 
   let lock;
@@ -292,6 +327,45 @@ export async function fetchPaperTrailMessages(client, { page = 1, limit = 25 } =
   const total = paperTrailMessages.length;
   const startIdx = (page - 1) * limit;
   const messages = paperTrailMessages.slice(startIdx, startIdx + limit);
+  return { messages, total };
+}
+
+/**
+ * Fetch Promotions messages (marketing, deals, offers, promotions).
+ */
+export async function fetchPromotionsMessages(client, { page = 1, limit = 25 } = {}) {
+  const { messages: allInbox = [] } = await fetchMessages(client, 'INBOX', { page: 1, limit: 100 });
+  const promoRegex = /promo|discount|sale|deal|offer|coupon|save|clearance|exclusive offer|shop now|special offer|free shipping|limited time|flash sale|reward|cashback|gift card|voucher|perk|store|deals/i;
+  const paperTrailRegex = /receipt|invoice|order confirmation|payment received|billing statement/i;
+
+  const promoMessages = allInbox.filter((m) => {
+    const fromStr = typeof m.from === 'object' ? (m.from?.name || m.from?.address || '') : (m.from || '');
+    const text = `${m.subject} ${fromStr}`;
+    return !paperTrailRegex.test(text) && promoRegex.test(text);
+  });
+
+  const total = promoMessages.length;
+  const startIdx = (page - 1) * limit;
+  const messages = promoMessages.slice(startIdx, startIdx + limit);
+  return { messages, total };
+}
+
+/**
+ * Fetch Social messages (social networks, community, collaboration alerts).
+ */
+export async function fetchSocialMessages(client, { page = 1, limit = 25 } = {}) {
+  const { messages: allInbox = [] } = await fetchMessages(client, 'INBOX', { page: 1, limit: 100 });
+  const socialRegex = /github|linkedin|twitter|x\.com|facebook|instagram|discord|reddit|slack|youtube|tiktok|pinterest|threads|medium|mastodon|twitch|community|follower|mention|commented|invited you|connection request/i;
+
+  const socialMessages = allInbox.filter((m) => {
+    const fromStr = typeof m.from === 'object' ? (m.from?.name || m.from?.address || '') : (m.from || '');
+    const text = `${m.subject} ${fromStr}`;
+    return socialRegex.test(text);
+  });
+
+  const total = socialMessages.length;
+  const startIdx = (page - 1) * limit;
+  const messages = socialMessages.slice(startIdx, startIdx + limit);
   return { messages, total };
 }
 

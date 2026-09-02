@@ -220,17 +220,21 @@ router.get('/folders', async (req, res, next) => {
       return f;
     });
 
-    // Enrich with virtual folders (Starred, The Feed, Paper Trail) in a single fast pass
+    // Enrich with virtual folders (Starred, The Feed, Paper Trail, Promotions, Social) in a single fast pass
     try {
       const inboxRes = await imapService.fetchMessages(client, 'INBOX', { page: 1, limit: 100 }).catch(() => ({ messages: [], total: 0 }));
       const msgs = inboxRes.messages || [];
 
-      const feedRegex = /newsletter|digest|weekly|monthly|updates|news|shield|guide|announcement|welcome to|bulletin|medium|substack|dev\.to|github digests|promo|special offer|discount|sale|marketing|trends/i;
+      const feedRegex = /newsletter|digest|weekly|monthly|updates|news|shield|guide|announcement|welcome to|bulletin|medium|substack|dev\.to|github digests/i;
       const paperTrailRegex = /letter|future|receipt|invoice|order|confirmation|payment|transaction|billing|ticket|pin|code|otp|verify|statement|purchase|tracking|e2e|support request/i;
+      const promoRegex = /promo|discount|sale|deal|offer|coupon|save|clearance|exclusive offer|shop now|special offer|free shipping|limited time|flash sale|reward|cashback|gift card|voucher|perk|store|deals/i;
+      const socialRegex = /github|linkedin|twitter|x\.com|facebook|instagram|discord|reddit|slack|youtube|tiktok|pinterest|threads|medium|mastodon|twitch|community|follower|mention|commented|invited you|connection request/i;
 
       let starredCount = 0;
       let feedCount = 0;
       let paperCount = 0;
+      let promoCount = 0;
+      let socialCount = 0;
 
       for (const m of msgs) {
         if (m.isStarred) starredCount++;
@@ -238,6 +242,10 @@ router.get('/folders', async (req, res, next) => {
         const text = `${m.subject} ${fromStr}`;
         if (paperTrailRegex.test(text)) {
           paperCount++;
+        } else if (promoRegex.test(text)) {
+          promoCount++;
+        } else if (socialRegex.test(text)) {
+          socialCount++;
         } else if (feedRegex.test(text)) {
           feedCount++;
         }
@@ -258,6 +266,24 @@ router.get('/folders', async (req, res, next) => {
           path: 'Paper Trail',
           specialUse: null,
           messages: paperCount,
+          unseen: 0,
+        });
+      }
+      if (!folders.some((f) => f.name.toLowerCase() === 'promotions')) {
+        folders.push({
+          name: 'Promotions',
+          path: 'Promotions',
+          specialUse: '\\Promotions',
+          messages: promoCount,
+          unseen: 0,
+        });
+      }
+      if (!folders.some((f) => f.name.toLowerCase() === 'social')) {
+        folders.push({
+          name: 'Social',
+          path: 'Social',
+          specialUse: '\\Social',
+          messages: socialCount,
           unseen: 0,
         });
       }
@@ -354,7 +380,8 @@ router.get('/folder/:name', async (req, res, next) => {
     const folderName = decodeURIComponent(req.params.name);
     const { page, limit } = parsePagination(req.query);
 
-    if (folderName === '__all_inboxes' || folderName.toLowerCase() === 'all inboxes') {
+    const fLower = folderName.toLowerCase().trim();
+    if (fLower === '__all_inboxes' || fLower === 'all inboxes' || fLower === 'inboxes') {
       return res.redirect(`/api/mail/inbox?page=${page}&limit=${limit}`);
     }
 

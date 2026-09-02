@@ -208,13 +208,30 @@ export default function Sidebar({
 
   // Merge system folders with IMAP folder counts
   const enrichedFolders = SYSTEM_FOLDERS.map((sf) => {
-    const match = folders.find(
-      (f) =>
-        f.name.toLowerCase() === sf.name.toLowerCase() ||
-        f.specialUse === sf.specialUse ||
-        f.path.toLowerCase() === sf.name.toLowerCase() ||
-        (sf.name === 'Spam' && (f.name.toLowerCase() === 'junk' || f.specialUse === '\\Junk'))
-    );
+    const match = folders.find((f) => {
+      if (!f) return false;
+      const fName = (f.name || '').toLowerCase();
+      const fPath = (f.path || '').toLowerCase();
+      const sfName = sf.name.toLowerCase();
+
+      // Direct name or path match
+      if (fName === sfName || fPath === sfName) return true;
+
+      // Special-use match (strictly non-null)
+      if (sf.specialUse && f.specialUse === sf.specialUse) return true;
+
+      // Provider-specific aliases (e.g. Gmail [Gmail]/Bin, [Gmail]/Sent Mail, [Gmail]/Drafts)
+      if (sf.name === 'Spam' && (fName === 'junk' || f.specialUse === '\\Junk' || fPath.includes('spam') || fPath.includes('junk'))) return true;
+      if (sf.name === 'Trash' && (fName === 'bin' || fName === 'deleted' || f.specialUse === '\\Trash' || fPath.includes('trash') || fPath.includes('bin'))) return true;
+      if (sf.name === 'Sent' && (fName.includes('sent') || f.specialUse === '\\Sent' || fPath.includes('sent'))) return true;
+      if (sf.name === 'Drafts' && (fName.includes('draft') || f.specialUse === '\\Drafts' || fPath.includes('draft'))) return true;
+      if (sf.name === 'Archive' && (fName === 'all mail' || f.specialUse === '\\Archive' || f.specialUse === '\\All' || fPath.includes('all mail'))) return true;
+      if (sf.name === 'Starred' && (fName === 'starred' || f.specialUse === '\\Flagged' || fPath.includes('starred'))) return true;
+      if (sf.name === 'Promotions' && (fName.includes('promotion') || f.specialUse === '\\Promotions' || fPath.includes('promotion'))) return true;
+      if (sf.name === 'Social' && (fName.includes('social') || f.specialUse === '\\Social' || fPath.includes('social'))) return true;
+
+      return false;
+    });
     return { ...sf, messages: match?.messages || 0, unseen: match?.unseen || 0 };
   });
 

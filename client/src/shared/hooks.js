@@ -46,9 +46,11 @@ export function useUser() {
 
 /**
  * Hook for IMAP folders.
+ * @param {object|null} [activeAccount]
  */
-export function useFolders() {
-  const { data, loading, refetch } = useApi('/mail/folders');
+export function useFolders(activeAccount = null) {
+  const accountParam = activeAccount?.id ? `?accountId=${encodeURIComponent(activeAccount.id)}` : '';
+  const { data, loading, refetch } = useApi(`/mail/folders${accountParam}`, [activeAccount?.id]);
   return { folders: data?.folders || [], loading, refetch };
 }
 
@@ -143,13 +145,15 @@ export function useMessages(folder, page = 1, activeAccount = null) {
     }
   }, [refetchProton, isProton, isAllInboxes, folder, page]);
 
+  const accountParam = activeAccount?.id ? `&accountId=${encodeURIComponent(activeAccount.id)}` : '';
+  const isInboxFolder = folder === 'INBOX' || folder === 'Inbox' || folder === 'Inboxes';
   const path = isAllInboxes || isProton
     ? null
-    : folder === 'INBOX'
-      ? `/mail/inbox?page=${page}&limit=25`
-      : `/mail/folder/${encodeURIComponent(folder)}?page=${page}&limit=25`;
+    : isInboxFolder
+      ? `/mail/inbox?page=${page}&limit=25${accountParam}`
+      : `/mail/folder/${encodeURIComponent(folder)}?page=${page}&limit=25${accountParam}`;
 
-  const { data, loading, error, refetch } = useApi(path, [folder, page, activeAccount]);
+  const { data, loading, error, refetch } = useApi(path, [folder, page, activeAccount?.id]);
 
   if (isAllInboxes) {
     return {
@@ -191,7 +195,8 @@ export function useMessage(uid, folder = 'INBOX', activeAccount = null) {
   const [loading, setLoading] = useState(false);
 
   const isProton = activeAccount?.provider === 'proton';
-  const cleanFolder = (folder === '__all_inboxes' || folder === 'All Inboxes') ? 'INBOX' : (folder || 'INBOX');
+  const cleanFolder = (folder === '__all_inboxes' || folder === 'All Inboxes' || folder === 'Inboxes') ? 'INBOX' : (folder || 'INBOX');
+  const accountParam = activeAccount?.id ? `&accountId=${encodeURIComponent(activeAccount.id)}` : '';
 
   useEffect(() => {
     if (!uid) { setMessage(null); return; }
@@ -203,12 +208,12 @@ export function useMessage(uid, folder = 'INBOX', activeAccount = null) {
         .catch(() => setMessage(null))
         .finally(() => setLoading(false));
     } else {
-      get(`/mail/message/${uid}?folder=${encodeURIComponent(cleanFolder)}`)
+      get(`/mail/message/${uid}?folder=${encodeURIComponent(cleanFolder)}${accountParam}`)
         .then(setMessage)
         .catch(() => setMessage(null))
         .finally(() => setLoading(false));
     }
-  }, [uid, cleanFolder, isProton]);
+  }, [uid, cleanFolder, isProton, activeAccount?.id]);
 
   return { message, loading };
 }
