@@ -13,6 +13,165 @@
     return match ? match[1] : '';
   }
 
+  // ─── Dynamic Domain Detection & Custom Server Configuration ──
+
+  const emailInput = document.getElementById('email');
+  const serverDrawer = document.getElementById('custom-server-drawer');
+  const domainBadge = document.getElementById('domain-badge');
+  const imapHostInput = document.getElementById('imap_host');
+  const imapPortInput = document.getElementById('imap_port');
+  const smtpHostInput = document.getElementById('smtp_host');
+  const smtpPortInput = document.getElementById('smtp_port');
+  const imapSecureCheckbox = document.getElementById('imap_secure');
+  const serverStatusHint = document.getElementById('server-status-hint');
+  const passwordLabel = document.getElementById('password-label');
+
+  const KNOWN_PRESETS = {
+    'gmail.com': { name: 'Google / Gmail', badge: 'badge-red' },
+    'googlemail.com': { name: 'Google / Gmail', badge: 'badge-red' },
+    'outlook.com': { name: 'Outlook / Hotmail', badge: 'badge-blue' },
+    'hotmail.com': { name: 'Outlook / Hotmail', badge: 'badge-blue' },
+    'live.com': { name: 'Outlook / Hotmail', badge: 'badge-blue' },
+    'msn.com': { name: 'Outlook / Hotmail', badge: 'badge-blue' },
+    'office365.com': { name: 'Microsoft 365', badge: 'badge-blue' },
+    'yahoo.com': { name: 'Yahoo Mail', badge: 'badge-purple' },
+    'ymail.com': { name: 'Yahoo Mail', badge: 'badge-purple' },
+    'rocketmail.com': { name: 'Yahoo Mail', badge: 'badge-purple' },
+    'icloud.com': { name: 'Apple iCloud', badge: 'badge-blue' },
+    'me.com': { name: 'Apple iCloud', badge: 'badge-blue' },
+    'mac.com': { name: 'Apple iCloud', badge: 'badge-blue' },
+    'zoho.com': { name: 'Zoho Mail', badge: 'badge-green' },
+    'zohomail.com': { name: 'Zoho Mail', badge: 'badge-green' },
+    'aol.com': { name: 'AOL Mail', badge: 'badge-blue' },
+    'fastmail.com': { name: 'Fastmail', badge: 'badge-blue' },
+    'proton.me': { name: 'Proton Mail', badge: 'badge-purple' },
+    'protonmail.com': { name: 'Proton Mail', badge: 'badge-purple' },
+    'pm.me': { name: 'Proton Mail', badge: 'badge-purple' },
+    'yandex.com': { name: 'Yandex Mail', badge: 'badge-red' },
+    'gmx.com': { name: 'GMX Mail', badge: 'badge-blue' },
+  };
+
+  let lastCheckedDomain = '';
+  let probeDebounceTimer = null;
+
+  async function checkDomainProbe(domain) {
+    if (!domain || domain === lastCheckedDomain) return;
+    lastCheckedDomain = domain;
+
+    try {
+      const res = await fetch(`${API}/probe-domain?domain=${encodeURIComponent(domain)}`);
+      if (!res.ok) return;
+      const info = await res.json();
+
+      if (info.isPreset) {
+        // MX record or preset domain resolved to a major cloud provider
+        if (serverDrawer) serverDrawer.style.display = 'none';
+        if (domainBadge) {
+          domainBadge.textContent = info.name || info.provider.toUpperCase();
+          domainBadge.className = 'badge badge-purple';
+          domainBadge.style.display = 'inline-block';
+        }
+        if (passwordLabel) {
+          passwordLabel.textContent = `${info.name || 'Provider'} App Password`;
+        }
+      } else {
+        // Custom domain confirmed
+        if (serverDrawer) serverDrawer.style.display = 'block';
+        if (domainBadge) {
+          domainBadge.textContent = 'CUSTOM DOMAIN';
+          domainBadge.className = 'badge badge-amber';
+          domainBadge.style.display = 'inline-block';
+        }
+        if (passwordLabel) {
+          passwordLabel.textContent = 'Mailbox Password';
+        }
+        if (serverStatusHint) {
+          serverStatusHint.textContent = `Default: mail.${domain}`;
+        }
+      }
+    } catch {
+      // Fallback stays as custom domain
+    }
+  }
+
+  function handleEmailInput() {
+    if (!emailInput) return;
+    const rawVal = emailInput.value.trim().toLowerCase();
+
+    if (!rawVal.includes('@') || rawVal.endsWith('@')) {
+      if (serverDrawer) serverDrawer.style.display = 'none';
+      if (domainBadge) domainBadge.style.display = 'none';
+      if (passwordLabel) passwordLabel.textContent = 'Password / App Password';
+      lastCheckedDomain = '';
+      return;
+    }
+
+    const domain = rawVal.split('@')[1].trim();
+    if (!domain || !domain.includes('.')) {
+      if (serverDrawer) serverDrawer.style.display = 'none';
+      if (domainBadge) domainBadge.style.display = 'none';
+      return;
+    }
+
+    // Check internal domains
+    if (domain === 'wox.world' || domain === 'mail.wox.world') {
+      if (serverDrawer) serverDrawer.style.display = 'none';
+      if (domainBadge) {
+        domainBadge.textContent = 'WOXMAIL';
+        domainBadge.className = 'badge badge-purple';
+        domainBadge.style.display = 'inline-block';
+      }
+      if (passwordLabel) passwordLabel.textContent = 'WoxMail Password';
+      lastCheckedDomain = domain;
+      return;
+    }
+
+    // Check known presets
+    const preset = KNOWN_PRESETS[domain];
+    if (preset) {
+      if (serverDrawer) serverDrawer.style.display = 'none';
+      if (domainBadge) {
+        domainBadge.textContent = preset.name;
+        domainBadge.className = `badge ${preset.badge}`;
+        domainBadge.style.display = 'inline-block';
+      }
+      if (passwordLabel) passwordLabel.textContent = `${preset.name} App Password`;
+      lastCheckedDomain = domain;
+      return;
+    }
+
+    // It's a custom domain!
+    if (serverDrawer) serverDrawer.style.display = 'block';
+    if (domainBadge) {
+      domainBadge.textContent = 'CUSTOM DOMAIN';
+      domainBadge.className = 'badge badge-amber';
+      domainBadge.style.display = 'inline-block';
+    }
+    if (passwordLabel) passwordLabel.textContent = 'Mailbox Password';
+
+    // Auto-fill smart defaults if empty or previous domain default
+    if (imapHostInput && (!imapHostInput.value || imapHostInput.value.startsWith('mail.') || imapHostInput.value.startsWith('imap.'))) {
+      imapHostInput.value = `mail.${domain}`;
+    }
+    if (smtpHostInput && (!smtpHostInput.value || smtpHostInput.value.startsWith('mail.') || smtpHostInput.value.startsWith('smtp.'))) {
+      smtpHostInput.value = `mail.${domain}`;
+    }
+
+    // Run DNS MX probe to detect Google Workspace or Microsoft 365 on custom domains
+    clearTimeout(probeDebounceTimer);
+    probeDebounceTimer = setTimeout(() => {
+      checkDomainProbe(domain);
+    }, 450);
+  }
+
+  if (emailInput) {
+    emailInput.addEventListener('input', handleEmailInput);
+    emailInput.addEventListener('change', handleEmailInput);
+    emailInput.addEventListener('blur', handleEmailInput);
+    // Initial check if field is pre-filled
+    if (emailInput.value) handleEmailInput();
+  }
+
   // ─── Login Form ──────────────────────────────────────
 
   const loginForm = document.getElementById('login-form');
@@ -31,6 +190,22 @@
       btn.disabled = true;
       btn.textContent = 'Signing in...';
 
+      const isCustomServer = serverDrawer && serverDrawer.style.display !== 'none';
+      const bodyPayload = {
+        email,
+        password,
+        remember: rememberMe,
+      };
+
+      if (isCustomServer) {
+        bodyPayload.imap_host = imapHostInput?.value?.trim() || `mail.${email.split('@')[1]}`;
+        bodyPayload.imap_port = Number(imapPortInput?.value) || 993;
+        bodyPayload.imap_secure = imapSecureCheckbox ? imapSecureCheckbox.checked : true;
+        bodyPayload.smtp_host = smtpHostInput?.value?.trim() || `mail.${email.split('@')[1]}`;
+        bodyPayload.smtp_port = Number(smtpPortInput?.value) || 465;
+        bodyPayload.smtp_secure = imapSecureCheckbox ? imapSecureCheckbox.checked : true;
+      }
+
       try {
         const res = await fetch(`${API}/login`, {
           method: 'POST',
@@ -39,7 +214,7 @@
             'x-csrf-token': getCsrfToken(),
           },
           credentials: 'include',
-          body: JSON.stringify({ email, password, remember: rememberMe }),
+          body: JSON.stringify(bodyPayload),
         });
 
         const data = await res.json();

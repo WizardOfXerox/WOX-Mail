@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
+import dns from 'dns/promises';
 import { query } from '../config/database.js';
 import { redis, setex as redisSetex, get as redisGet, del as redisDel } from '../config/redis.js';
 import { hashPassword, verifyPassword, generateToken, generateRecoveryCodes } from '../utils/crypto.js';
@@ -223,6 +224,93 @@ function detectEmailProvider(email) {
   return null;
 }
 
+// ─── GET /api/auth/probe-domain ──────────────────────────
+
+router.get('/probe-domain', async (req, res) => {
+  const domain = (req.query.domain || '').trim().toLowerCase();
+  if (!domain || !domain.includes('.')) {
+    return res.status(400).json({ error: 'Valid domain required' });
+  }
+
+  // 1. Check known provider presets
+  const provider = detectEmailProvider(`test@${domain}`);
+  if (provider) {
+    const preset = PROVIDER_PRESETS[provider];
+    return res.json({
+      provider,
+      isPreset: true,
+      name: preset.name,
+      imap_host: preset.imap_host,
+      imap_port: preset.imap_port,
+      imap_secure: preset.imap_secure,
+      smtp_host: preset.smtp_host,
+      smtp_port: preset.smtp_port,
+      smtp_secure: preset.smtp_secure,
+    });
+  }
+
+  // 2. Probe MX records for custom domain
+  try {
+    const mxRecords = await dns.resolveMx(domain).catch(() => []);
+    if (mxRecords && mxRecords.length > 0) {
+      mxRecords.sort((a, b) => a.priority - b.priority);
+      const primaryMx = (mxRecords[0].exchange || '').toLowerCase();
+      if (primaryMx.includes('google') || primaryMx.includes('aspmx')) {
+        return res.json({
+          provider: 'gmail',
+          isPreset: true,
+          name: 'Google Workspace',
+          imap_host: 'imap.gmail.com',
+          imap_port: 993,
+          imap_secure: true,
+          smtp_host: 'smtp.gmail.com',
+          smtp_port: 465,
+          smtp_secure: true,
+        });
+      }
+      if (primaryMx.includes('outlook') || primaryMx.includes('microsoft')) {
+        return res.json({
+          provider: 'outlook',
+          isPreset: true,
+          name: 'Microsoft 365 / Exchange',
+          imap_host: 'outlook.office365.com',
+          imap_port: 993,
+          imap_secure: true,
+          smtp_host: 'smtp.office365.com',
+          smtp_port: 587,
+          smtp_secure: false,
+        });
+      }
+    }
+
+    return res.json({
+      provider: 'custom',
+      isPreset: false,
+      name: `${domain} (Custom Domain)`,
+      imap_host: `mail.${domain}`,
+      imap_port: 993,
+      imap_secure: true,
+      smtp_host: `mail.${domain}`,
+      smtp_port: 465,
+      smtp_secure: true,
+    });
+  } catch {
+    return res.json({
+      provider: 'custom',
+      isPreset: false,
+      name: `${domain} (Custom Domain)`,
+      imap_host: `mail.${domain}`,
+      imap_port: 993,
+      imap_secure: true,
+      smtp_host: `mail.${domain}`,
+      smtp_port: 465,
+      smtp_secure: true,
+    });
+  }
+});
+
+// ─── POST /api/auth/login ────────────────────────────────
+
 router.post('/login',
   loginLimiter,
   validate({
@@ -231,7 +319,16 @@ router.post('/login',
   }),
   async (req, res, next) => {
     try {
-      let { email, password } = req.body;
+      let {
+        email,
+        password,
+        imap_host,
+        imap_port,
+        imap_secure,
+        smtp_host,
+        smtp_port,
+        smtp_secure,
+      } = req.body;
 
       // Allow login with just username (auto-append domain)
       if (!email.includes('@')) {
@@ -246,18 +343,45 @@ router.post('/login',
       );
 
       if (result.rows.length === 0) {
-        // Direct Login with External Email (Gmail, Outlook, Yahoo, Fastmail)
+        // Direct Login with External Email (Gmail, Outlook, Yahoo, Fastmail, or Custom IMAP)
         const provider = detectEmailProvider(normalizedEmail);
+        let serverConfig = null;
+
         if (provider) {
           const preset = PROVIDER_PRESETS[provider];
-          const testRes = await testConnection({
+          serverConfig = {
             provider,
+            name: preset.name,
             imap_host: preset.imap_host,
             imap_port: preset.imap_port,
             imap_secure: preset.imap_secure,
             smtp_host: preset.smtp_host,
             smtp_port: preset.smtp_port,
             smtp_secure: preset.smtp_secure,
+          };
+        } else if (normalizedEmail.includes('@') && !normalizedEmail.endsWith('@wox.world') && !normalizedEmail.endsWith('@mail.wox.world')) {
+          const domain = normalizedEmail.split('@')[1];
+          serverConfig = {
+            provider: 'custom',
+            name: `${domain} (Custom IMAP)`,
+            imap_host: String(imap_host || `mail.${domain}`).trim(),
+            imap_port: Number(imap_port) || 993,
+            imap_secure: imap_secure !== false && imap_secure !== 'false',
+            smtp_host: String(smtp_host || `mail.${domain}`).trim(),
+            smtp_port: Number(smtp_port) || 465,
+            smtp_secure: smtp_secure !== false && smtp_secure !== 'false',
+          };
+        }
+
+        if (serverConfig) {
+          const testRes = await testConnection({
+            provider: serverConfig.provider,
+            imap_host: serverConfig.imap_host,
+            imap_port: serverConfig.imap_port,
+            imap_secure: serverConfig.imap_secure,
+            smtp_host: serverConfig.smtp_host,
+            smtp_port: serverConfig.smtp_port,
+            smtp_secure: serverConfig.smtp_secure,
             email: normalizedEmail,
             password,
           });
@@ -265,7 +389,10 @@ router.post('/login',
           if (testRes.imap.success) {
             // Auto-provision user account
             const basePrefix = normalizedEmail.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 20);
-            let username = `${basePrefix}_${provider}`.toLowerCase();
+            const domainSuffix = serverConfig.provider === 'custom'
+              ? normalizedEmail.split('@')[1].replace(/[^a-zA-Z0-9_]/g, '_')
+              : serverConfig.provider;
+            let username = `${basePrefix}_${domainSuffix}`.toLowerCase().slice(0, 30);
             const uCheck = await query('SELECT id FROM users WHERE username = $1', [username]);
             if (uCheck.rows.length > 0) {
               username = `${basePrefix}_${uuidv4().slice(0, 6)}`.toLowerCase();
@@ -282,10 +409,16 @@ router.post('/login',
 
             // Connect external mailbox in vault
             await connectAccount(newUser.id, {
-              provider,
+              provider: serverConfig.provider,
               email: normalizedEmail,
               password,
-              display_name: preset.name,
+              display_name: serverConfig.name,
+              imap_host: serverConfig.imap_host,
+              imap_port: serverConfig.imap_port,
+              imap_secure: serverConfig.imap_secure,
+              smtp_host: serverConfig.smtp_host,
+              smtp_port: serverConfig.smtp_port,
+              smtp_secure: serverConfig.smtp_secure,
               is_default: true,
             });
 
@@ -295,19 +428,21 @@ router.post('/login',
             return res.json({
               user: { id: newUser.id, email: newUser.email, username: newUser.username },
               token,
-              message: `Connected and logged in with ${preset.name}!`,
+              message: `Connected and logged in with ${serverConfig.name}!`,
             });
           } else {
-            await logAuthEvent(null, false, req, `${provider} direct login failed`);
-            const helpMsg = provider === 'gmail'
+            await logAuthEvent(null, false, req, `${serverConfig.provider} direct login failed`);
+            const helpMsg = serverConfig.provider === 'gmail'
               ? 'Gmail login failed: Ensure you use a 16-character Google App Password (generate at myaccount.google.com/apppasswords).'
-              : provider === 'proton'
+              : serverConfig.provider === 'proton'
               ? 'Proton Mail uses zero-knowledge encryption and requires the official Proton Mail Bridge app running locally. Use the Bridge IMAP/SMTP ports and generated password from your Proton Bridge app.'
-              : provider === 'icloud'
+              : serverConfig.provider === 'icloud'
               ? 'iCloud login failed: Generate an App-Specific Password at appleid.apple.com under Sign-In and Security.'
-              : provider === 'yahoo'
+              : serverConfig.provider === 'yahoo'
               ? 'Yahoo login failed: Generate an App Password in your Yahoo Account Security page.'
-              : `${preset.name} login failed: Invalid email or password.`;
+              : serverConfig.provider === 'custom'
+              ? `Custom IMAP login failed: Could not connect to ${serverConfig.imap_host}:${serverConfig.imap_port}. Check your server hostname, port, and mailbox credentials. (${testRes.imap.error || ''})`
+              : `${serverConfig.name} login failed: Invalid email or password.`;
             return res.status(401).json({ error: helpMsg });
           }
         }
@@ -349,6 +484,45 @@ router.post('/login',
               email: user.email,
               password,
               display_name: preset.name,
+              is_default: true,
+            });
+          }
+        } else if (user.email.includes('@') && !user.email.endsWith('@wox.world') && !user.email.endsWith('@mail.wox.world')) {
+          const domain = user.email.split('@')[1];
+          const accRes = await query('SELECT * FROM connected_accounts WHERE user_id = $1 AND is_default = TRUE LIMIT 1', [user.id]);
+          const acc = accRes.rows[0];
+          const finalImapHost = String(imap_host || acc?.imap_host || `mail.${domain}`).trim();
+          const finalImapPort = Number(imap_port || acc?.imap_port) || 993;
+          const finalSmtpHost = String(smtp_host || acc?.smtp_host || `mail.${domain}`).trim();
+          const finalSmtpPort = Number(smtp_port || acc?.smtp_port) || 465;
+
+          const testRes = await testConnection({
+            provider: 'custom',
+            imap_host: finalImapHost,
+            imap_port: finalImapPort,
+            imap_secure: imap_secure !== false,
+            smtp_host: finalSmtpHost,
+            smtp_port: finalSmtpPort,
+            smtp_secure: smtp_secure !== false,
+            email: user.email,
+            password,
+          });
+
+          if (testRes.imap.success) {
+            passwordValid = true;
+            const newHash = await hashPassword(password);
+            await query('UPDATE users SET password_hash = $1 WHERE id = $2', [newHash, user.id]);
+            await connectAccount(user.id, {
+              provider: 'custom',
+              email: user.email,
+              password,
+              display_name: `${domain} (Custom IMAP)`,
+              imap_host: finalImapHost,
+              imap_port: finalImapPort,
+              imap_secure: imap_secure !== false,
+              smtp_host: finalSmtpHost,
+              smtp_port: finalSmtpPort,
+              smtp_secure: smtp_secure !== false,
               is_default: true,
             });
           }
