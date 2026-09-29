@@ -9,8 +9,10 @@ import { dailyCleanup } from '../services/cleanup.js';
 import { runBackupCycle } from '../../jobs/backup.js';
 import { runNightlyAggregation } from '../../jobs/analytics-aggregate.js';
 import { processPendingCampaigns } from '../services/campaignService.js';
+import { processDueDripSteps } from '../services/dripService.js';
 import { processInboundSupportEmails } from './supportIngestionJob.js';
 import { processInboundVerificationReplies } from './inboundReplyJob.js';
+import { processInboundArchiveEmails } from './archiveIngestionJob.js';
 import { checkDueFollowUps } from '../services/followUpService.js';
 import pino from 'pino';
 
@@ -46,6 +48,16 @@ export function startJobs() {
     }
   });
 
+  // Every 30 seconds: dispatch due drip sequence steps
+  cron.schedule('*/30 * * * * *', async () => {
+    try {
+      const count = await processDueDripSteps();
+      if (count > 0) logger.info({ count }, 'Drip automations: processed due steps');
+    } catch (err) {
+      logger.error({ err }, 'Drip step dispatch job failed');
+    }
+  });
+
   // Every 3 minutes: ingest inbound support emails
   cron.schedule('*/3 * * * *', async () => {
     try {
@@ -53,6 +65,16 @@ export function startJobs() {
       if (count > 0) logger.info({ count }, 'Support desk: processed inbound tickets');
     } catch (err) {
       logger.error({ err }, 'Support email ingestion job failed');
+    }
+  });
+
+  // Every 30 seconds: ingest inbound compliance archive messages into PostgreSQL vault
+  cron.schedule('*/30 * * * * *', async () => {
+    try {
+      const count = await processInboundArchiveEmails();
+      if (count > 0) logger.info({ count }, 'Compliance archive: ingested new messages into vault');
+    } catch (err) {
+      logger.error({ err }, 'Compliance archive ingestion job failed');
     }
   });
 

@@ -27,7 +27,8 @@ class ProtonAPIClient {
     if (stored) {
       this.uid = stored.uid;
       this.username = stored.email || stored.username || stored.user?.Email || stored.uid;
-      this.accessToken = stored.accessToken;
+      this.email = this.username;
+      this.accessToken = stored.accessToken || stored.uid || 'proton-session-token';
       this.refreshToken = stored.refreshToken;
       this.user = stored.user || { Email: this.username, Name: this.username };
       this.addresses = stored.addresses || [];
@@ -92,14 +93,18 @@ class ProtonAPIClient {
       if (loginRes.ok && data.success) {
         this.uid = data.uid || username;
         this.username = username;
+        this.email = username;
+        this.accessToken = data.accessToken || data.uid || 'proton-session-token';
         this.addresses = data.addresses || [];
         this.user = { Name: username, Email: username };
         ProtonSessionStore.saveSession({
           uid: this.uid,
           email: username,
+          accessToken: this.accessToken,
           user: this.user,
           addresses: this.addresses,
         });
+        try { localStorage.setItem('woxmail_proton_email', username); } catch {}
         return { success: true, user: this.user, addresses: this.addresses };
       }
       if (data.requires2FA) {
@@ -256,9 +261,10 @@ class ProtonAPIClient {
    * @param {number} page - Page number (0-based in Proton API)
    * @param {number} pageSize - Limit
    */
-  async getMessages(labelId = '0', page = 0, pageSize = 25) {
+  async getMessages(labelId = '0', page = 0, pageSize = 25, accountEmail = null) {
     let data;
-    const email = this.username || this.uid || (this.user && (this.user.Email || this.user.email)) || '';
+    const stored = ProtonSessionStore.getSession();
+    const email = accountEmail || this.email || this.username || stored?.email || (typeof window !== 'undefined' && (window.__WOXMAIL_USER__?.email || localStorage.getItem('woxmail_proton_email'))) || '';
     try {
       if (email) {
         const syncRes = await fetch(`${PROTON_PROXY_BASE}/sync/messages?email=${encodeURIComponent(email)}&LabelID=${labelId}&Page=${page}&PageSize=${pageSize}`);
@@ -303,7 +309,7 @@ class ProtonAPIClient {
           from_name: senderName,
           recipient: m.ToList?.[0]?.Address || email || '',
           date: new Date(time * 1000).toISOString(),
-          seen: !m.Unread,
+          seen: !m.Unread && !m.NumUnread,
           starred: (m.LabelIDs || []).includes('10'),
           has_attachments: (m.NumAttachments || m.Attachments?.length || 0) > 0,
           provider: 'proton',
@@ -316,9 +322,10 @@ class ProtonAPIClient {
   /**
    * Get single message and decrypt body.
    */
-  async getMessage(id, addressId = null) {
+  async getMessage(id, addressId = null, accountEmail = null) {
     let messageData;
-    const email = this.username || this.uid || (this.user && (this.user.Email || this.user.email)) || '';
+    const stored = ProtonSessionStore.getSession();
+    const email = accountEmail || this.email || this.username || stored?.email || (typeof window !== 'undefined' && (window.__WOXMAIL_USER__?.email || localStorage.getItem('woxmail_proton_email'))) || '';
     try {
       if (email) {
         const syncRes = await fetch(`${PROTON_PROXY_BASE}/sync/messages/${encodeURIComponent(id)}?email=${encodeURIComponent(email)}`);

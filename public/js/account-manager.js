@@ -88,6 +88,8 @@
      */
     syncCurrentSession: function (user, token) {
       if (!user) return;
+      // Do not sync or persist account to device vault if user unchecked Remember Me
+      if (localStorage.getItem('woxmail_remember_me') === 'false') return;
       this.saveAccount(user, token);
 
       const email = (user.email || `${user.username}@wox.world`).toLowerCase();
@@ -205,6 +207,7 @@
 
     initLoginPage: function () {
       const chooserContainer = document.getElementById('account-chooser-container');
+      const manualLoginHeader = document.getElementById('manual-login-header');
       const loginForm = document.getElementById('login-form');
       const selectedAccountCard = document.getElementById('selected-account-card');
       const emailInput = document.getElementById('email');
@@ -221,16 +224,21 @@
         if (target) {
           this.selectAccount(target);
           return;
+        } else if (emailInput) {
+          emailInput.value = prefillEmail;
+          if (typeof window.handleEmailInput === 'function') window.handleEmailInput();
         }
       }
 
       if (accounts.length > 0 && !forceAddAccount) {
         this.renderChooser(accounts);
         chooserContainer.style.display = 'block';
+        if (manualLoginHeader) manualLoginHeader.style.display = 'none';
         loginForm.style.display = 'none';
         if (selectedAccountCard) selectedAccountCard.style.display = 'none';
       } else {
         chooserContainer.style.display = 'none';
+        if (manualLoginHeader) manualLoginHeader.style.display = 'block';
         loginForm.style.display = 'flex';
         if (selectedAccountCard) selectedAccountCard.style.display = 'none';
         if (accounts.length > 0) {
@@ -294,6 +302,7 @@
 
     selectAccount: function (acc) {
       const chooserContainer = document.getElementById('account-chooser-container');
+      const manualLoginHeader = document.getElementById('manual-login-header');
       const loginForm = document.getElementById('login-form');
       const selectedCard = document.getElementById('selected-account-card');
       const emailInput = document.getElementById('email');
@@ -304,6 +313,9 @@
 
       if (emailInput) {
         emailInput.value = acc.email;
+        if (typeof window.handleEmailInput === 'function') {
+          window.handleEmailInput();
+        }
       }
 
       if (emailFieldGroup) {
@@ -329,6 +341,7 @@
       `;
 
       if (chooserContainer) chooserContainer.style.display = 'none';
+      if (manualLoginHeader) manualLoginHeader.style.display = 'none';
       selectedCard.style.display = 'block';
       loginForm.style.display = 'flex';
 
@@ -340,6 +353,7 @@
 
     showChooser: function () {
       const chooserContainer = document.getElementById('account-chooser-container');
+      const manualLoginHeader = document.getElementById('manual-login-header');
       const loginForm = document.getElementById('login-form');
       const selectedCard = document.getElementById('selected-account-card');
       const emailFieldGroup = document.getElementById('email-field-group');
@@ -352,6 +366,7 @@
 
       this.renderChooser(accounts);
       if (chooserContainer) chooserContainer.style.display = 'block';
+      if (manualLoginHeader) manualLoginHeader.style.display = 'none';
       if (loginForm) loginForm.style.display = 'none';
       if (selectedCard) selectedCard.style.display = 'none';
       if (emailFieldGroup) emailFieldGroup.style.display = 'flex';
@@ -359,6 +374,7 @@
 
     showManualLogin: function () {
       const chooserContainer = document.getElementById('account-chooser-container');
+      const manualLoginHeader = document.getElementById('manual-login-header');
       const loginForm = document.getElementById('login-form');
       const selectedCard = document.getElementById('selected-account-card');
       const emailInput = document.getElementById('email');
@@ -366,12 +382,29 @@
 
       if (chooserContainer) chooserContainer.style.display = 'none';
       if (selectedCard) selectedCard.style.display = 'none';
+      if (manualLoginHeader) manualLoginHeader.style.display = 'block';
       if (emailFieldGroup) emailFieldGroup.style.display = 'flex';
       if (loginForm) loginForm.style.display = 'flex';
 
+      const rememberedEmail = localStorage.getItem('woxmail_remembered_email');
+      const savedRememberPref = localStorage.getItem('woxmail_remember_me');
+
       if (emailInput) {
-        emailInput.value = '';
-        emailInput.focus();
+        if (rememberedEmail && savedRememberPref !== 'false') {
+          emailInput.value = rememberedEmail;
+          if (typeof window.handleEmailInput === 'function') window.handleEmailInput();
+          const passwordInput = document.getElementById('password');
+          if (passwordInput) passwordInput.focus();
+        } else {
+          emailInput.value = '';
+          if (typeof window.handleEmailInput === 'function') window.handleEmailInput();
+          emailInput.focus();
+        }
+      }
+
+      const switchLink = document.getElementById('view-saved-accounts-link');
+      if (switchLink && this.getAccounts().length > 0) {
+        switchLink.style.display = 'inline-block';
       }
     },
 

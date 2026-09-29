@@ -20,7 +20,7 @@ const TOR_EXE = path.join(ROOT_DIR, 'tor', 'tor', 'tor.exe');
 const TORRC = path.join(ROOT_DIR, 'tor', 'torrc');
 const CLOUDFLARED_EXE = fs.existsSync("C:\\Program Files (x86)\\cloudflared\\cloudflared.exe")
   ? "C:\\Program Files (x86)\\cloudflared\\cloudflared.exe"
-  : path.join(ROOT_DIR, 'cloudflared.exe');
+  : (fs.existsSync(path.join(ROOT_DIR, 'tools', 'cloudflared.exe')) ? path.join(ROOT_DIR, 'tools', 'cloudflared.exe') : path.join(ROOT_DIR, 'cloudflared.exe'));
 const TUNNEL_ID = '2b3bde6c-8fb8-431c-bd2b-fceef5c93fe3';
 const PORT = 3001;
 

@@ -2,6 +2,7 @@ import nodemailer from 'nodemailer';
 import { encryptMessage } from './pgpService.js';
 import { query } from '../config/database.js';
 import * as accountService from './accountService.js';
+import { checkMtaStsPolicy, validateOutboundEncryption } from './mtaStsService.js';
 import pino from 'pino';
 
 const logger = pino({ name: 'woxmail:smtp' });
@@ -68,6 +69,14 @@ export async function getTransporterForUser(userOrId, accountId = null) {
   if (accountId) {
     const extAccount = await accountService.getAccountCredentials(userId, accountId);
     if (extAccount) {
+      if (extAccount.provider === 'proton') {
+        return {
+          transporter: { isProton: true },
+          isProton: true,
+          senderEmail: extAccount.email,
+          accountId,
+        };
+      }
       const port = Number(extAccount.smtp_port) || (extAccount.smtp_secure ? 465 : 587);
       const isSecure = extAccount.smtp_secure !== false && (port === 465 || extAccount.smtp_secure === true);
       const transporter = nodemailer.createTransport({
@@ -215,7 +224,7 @@ export async function sendEmail(transporter, options) {
   const isArchiveEnabled = process.env.COMPLIANCE_ARCHIVE_ENABLED === 'true';
   const archiveEmail = (process.env.ARCHIVE_EMAIL || '').trim();
 
-  if (isArchiveEnabled && archiveEmail && cleanHeader(from) !== archiveEmail) {
+  if (isArchiveEnabled && archiveEmail && cleanHeader(from).toLowerCase() !== archiveEmail.toLowerCase()) {
     const existingBcc = mailOptions.bcc
       ? (Array.isArray(mailOptions.bcc) ? mailOptions.bcc : mailOptions.bcc.split(',').map((s) => s.trim()))
       : [];
@@ -238,6 +247,21 @@ export async function sendEmail(transporter, options) {
 
   if (inReplyTo) mailOptions.inReplyTo = cleanHeader(inReplyTo);
   if (references) mailOptions.references = cleanHeader(references);
+
+  // MTA-STS (RFC 8461) Policy Validation Check
+  try {
+    const primaryRecipient = Array.isArray(to) ? to[0] : (typeof to === 'string' ? to.split(',')[0].trim() : '');
+    if (primaryRecipient && primaryRecipient.includes('@')) {
+      const targetDomain = primaryRecipient.split('@')[1];
+      const mtaSts = await checkMtaStsPolicy(targetDomain);
+      if (mtaSts && mtaSts.mode === 'enforce') {
+        mailOptions.headers['X-MTA-STS-Policy'] = 'enforce';
+        logger.info({ targetDomain, mode: mtaSts.mode }, 'MTA-STS policy enforced for outbound delivery');
+      }
+    }
+  } catch (mtaErr) {
+    logger.debug({ err: mtaErr.message }, 'MTA-STS pre-flight check skipped');
+  }
 
   try {
     const result = await transporter.sendMail(mailOptions);
@@ -270,6 +294,23 @@ export async function buildRawMessage(mailOptions) {
  */
 export async function saveSentMessage(client, mailOptions) {
   if (!client) return;
+
+  // Gmail, Google Workspace, and Outlook/Office365 SMTP automatically save sent messages
+  // to the user's Sent Mail folder upon dispatch. Appending via IMAP creates an identical duplicate sent email.
+  const host = (client.options?.host || '').toLowerCase();
+  const sender = (mailOptions.from || '').toLowerCase();
+  if (
+    host.includes('gmail.com') ||
+    host.includes('googlemail.com') ||
+    host.includes('office365.com') ||
+    host.includes('outlook.com') ||
+    sender.endsWith('@gmail.com') ||
+    sender.endsWith('@googlemail.com')
+  ) {
+    logger.debug({ host, sender }, 'Skipping IMAP append for provider that auto-saves sent messages');
+    return;
+  }
+
   try {
     const { appendSentMessage } = await import('./imap.js');
     const rawBuffer = await buildRawMessage(mailOptions);
@@ -294,4 +335,13 @@ export async function verifyConnection(transporter) {
   }
 }
 
-export default { createTransporter, sanitizeOutboundHeaders, sendEmail, verifyConnection, buildRawMessage, saveSentMessage };
+export default {
+  createTransporter,
+  sanitizeOutboundHeaders,
+  sendEmail,
+  verifyConnection,
+  buildRawMessage,
+  saveSentMessage,
+  checkMtaStsPolicy,
+  validateOutboundEncryption,
+};

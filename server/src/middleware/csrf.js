@@ -46,7 +46,9 @@ export function csrfProtection(req, res, next) {
     req.path.startsWith('/api/analytics/click') ||
     req.path.startsWith('/api/analytics/pixel') ||
     req.path.startsWith('/api/cli') ||
-    req.path.startsWith('/api/futureme')
+    req.path.startsWith('/api/futureme') ||
+    req.path === '/api/mail/link-previews' ||
+    req.path === '/mail/link-previews'
   ) {
     return next();
   }

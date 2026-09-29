@@ -25,6 +25,14 @@
   function showToast(message, type = 'info', duration = 3500, action = null) {
     initContainer();
 
+    // Play subtle notification chime
+    try {
+      if (window.WoxAudio && localStorage.getItem('woxmail_sound') !== 'false') {
+        const preset = type === 'error' ? window.WoxAudio.PRESETS.TERMINAL : (type === 'success' ? window.WoxAudio.PRESETS.SOVEREIGN : window.WoxAudio.PRESETS.GLASS);
+        window.WoxAudio.playChime(preset, 0.25);
+      }
+    } catch (_) {}
+
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
     

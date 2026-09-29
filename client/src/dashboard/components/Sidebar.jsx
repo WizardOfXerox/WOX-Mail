@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { post, del } from '../../shared/api.js';
+import { useIntl } from '../../i18n/IntlProvider.jsx';
+import AppSwitcher from '../../shared/components/AppSwitcher.jsx';
+import { useExperienceMode } from '../../shared/hooks/useExperienceMode.js';
 
 const SYSTEM_FOLDERS = [
   { name: 'INBOX', label: 'Inbox', specialUse: '\\Inbox' },
@@ -153,13 +156,28 @@ export default function Sidebar({
   onOpenTheme,
   onCompose,
   onUnlockProton,
+  onSelectApp,
 }) {
+  const { t } = useIntl();
+  const { mode, isFeatureVisible, metadata } = useExperienceMode();
   const [screenerPendingCount, setScreenerPendingCount] = useState(0);
   const [showAccountSwitcher, setShowAccountSwitcher] = useState(false);
   const [savedAccounts, setSavedAccounts] = useState([]);
   const [showCreateFolderModal, setShowCreateFolderModal] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [folderLoading, setFolderLoading] = useState(false);
+
+  const getFolderDisplayLabel = (f) => {
+    const keyMap = {
+      'INBOX': 'nav.inbox',
+      'Sent': 'nav.sent',
+      'Drafts': 'nav.drafts',
+      'Trash': 'nav.trash',
+      'Spam': 'nav.spam',
+      'Archive': 'nav.archive',
+    };
+    return keyMap[f.name] ? t(keyMap[f.name], f.label) : f.label;
+  };
   const [canInstallPwa, setCanInstallPwa] = useState(() => {
     return typeof window !== 'undefined' && !window.matchMedia('(display-mode: standalone)').matches && !(window.navigator.standalone === true);
   });
@@ -285,36 +303,52 @@ export default function Sidebar({
 
   return (
     <aside className={`dashboard-sidebar ${isOpen ? 'mobile-open' : ''} ${isEffectivelyCollapsed ? 'collapsed' : ''}`}>
-      <div className="sidebar-header">
-        <a
-          href="/"
-          className="sidebar-logo"
-          title="Go to WoxMail Home Portal"
-          style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center', gap: '0.6rem', fontWeight: 800, fontSize: '1.25rem', letterSpacing: '-0.02em' }}
-        >
-          <img src="/assets/favicon.svg" alt="WoxMail" style={{ width: 28, height: 28, objectFit: 'contain' }} />
-          <span>Wox<span style={{ color: 'var(--color-primary-light)' }}>Mail</span></span>
-        </a>
-        <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+      <div className="sidebar-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.65rem 0.75rem', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0, flex: 1 }}>
+          <AppSwitcher
+            currentApp={
+              activeFolder === '__gatekeeper'
+                ? 'gatekeeper'
+                : activeFolder === '__campaigns'
+                ? 'campaigns'
+                : 'mail'
+            }
+            onSelectApp={onSelectApp}
+          />
+          <a
+            href="/"
+            className="sidebar-logo"
+            title="Go to WoxMail Home Portal"
+            style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 800, fontSize: '1.15rem', letterSpacing: '-0.02em', flexShrink: 0 }}
+          >
+            <img src="/assets/favicon.svg" alt="WoxMail" style={{ width: 26, height: 26, objectFit: 'contain', flexShrink: 0 }} />
+            {!collapsed && (
+              <span style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>Wox<span style={{ color: 'var(--color-primary-light)' }}>Mail</span></span>
+            )}
+          </a>
+        </div>
+        <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', flexShrink: 0 }}>
           {!collapsed && (
-            <a
-              href="/"
-              className="btn btn-ghost btn-xs hide-mobile"
-              title="Return to WoxMail Home Portal"
+            <span
               style={{
-                padding: '0.3rem 0.55rem',
-                fontSize: '0.75rem',
+                fontSize: '0.68rem',
+                fontWeight: 600,
+                padding: '2px 7px',
+                borderRadius: '12px',
+                background: 'rgba(124, 58, 237, 0.15)',
+                color: 'var(--color-primary-light, #c084fc)',
+                border: '1px solid rgba(124, 58, 237, 0.3)',
+                whiteSpace: 'nowrap',
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: '0.3rem',
-                borderRadius: 'var(--radius-pill)',
-                border: '1px solid var(--color-border)',
-                color: 'var(--color-text-secondary)',
+                gap: '3px',
+                flexShrink: 0,
               }}
+              title={`Active Persona: ${metadata.label}`}
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-              <span>Home</span>
-            </a>
+              <span>{metadata.icon}</span>
+              <span>{metadata.badge}</span>
+            </span>
           )}
           {onClose && (
             <button
@@ -351,7 +385,7 @@ export default function Sidebar({
           }}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-          <span>Compose</span>
+          <span>{t('nav.compose', 'Compose')}</span>
         </button>
       </div>
 
@@ -401,154 +435,161 @@ export default function Sidebar({
             </span>
             <span className="sidebar-label">All Inboxes</span>
           </button>
-          {enrichedFolders.map((f) => (
-            <button
-              key={f.name}
-              type="button"
-              className={`sidebar-item ${activeFolder === f.name ? 'active' : ''}`}
-              onClick={() => onFolderChange(f.name)}
-              title={`${f.label}${f.unseen ? ` (${f.unseen} unread)` : ''}`}
-            >
-              <span className="sidebar-icon">{getFolderIcon(f.name, f.specialUse)}</span>
-              <span className="sidebar-label">{f.label}</span>
-              {f.unseen > 0 && <span className="sidebar-badge">{f.unseen}</span>}
-            </button>
-          ))}
+          {enrichedFolders
+            .filter((f) => {
+              if (mode === 'zen') {
+                const zenFolders = ['INBOX', 'Sent', 'Drafts', 'Trash', 'Archive', 'Starred'];
+                return zenFolders.includes(f.name);
+              }
+              return true;
+            })
+            .map((f) => (
+              <button
+                key={f.name}
+                type="button"
+                className={`sidebar-item ${activeFolder === f.name ? 'active' : ''}`}
+                onClick={() => onFolderChange(f.name)}
+                title={`${f.label}${f.unseen ? ` (${f.unseen} unread)` : ''}`}
+              >
+                <span className="sidebar-icon">{getFolderIcon(f.name, f.specialUse)}</span>
+                <span className="sidebar-label">{getFolderDisplayLabel(f)}</span>
+                {f.unseen > 0 && <span className="sidebar-badge">{f.unseen}</span>}
+              </button>
+            ))}
         </div>
 
-        {/* Quarantine Screener Pill */}
-        <div className="nav-section">
-          <div className="nav-section-title">Security & Screening</div>
-          <button
-            type="button"
-            className={`sidebar-item ${activeFolder === '__gatekeeper' ? 'active' : ''}`}
-            onClick={() => onFolderChange('__gatekeeper')}
-            title="The Gatekeeper (Cold Email Screener)"
-          >
-            <span className="sidebar-icon">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><circle cx="12" cy="11" r="2"/></svg>
-            </span>
-            <span className="sidebar-label">The Gatekeeper</span>
-            {screenerPendingCount > 0 && (
-              <span className="sidebar-badge" style={{ background: '#f59e0b', color: '#000' }}>
-                {screenerPendingCount}
-              </span>
-            )}
-          </button>
-          <button
-            type="button"
-            className={`sidebar-item ${activeFolder === '__campaigns' ? 'active' : ''}`}
-            onClick={() => onFolderChange('__campaigns')}
-            title="Sovereign Mass Broadcasts"
-          >
-            <span className="sidebar-icon">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>
-            </span>
-            <span className="sidebar-label">Mass Broadcasts</span>
-          </button>
-          <button
-            type="button"
-            className="sidebar-item"
-            title="Helpdesk & Support"
-            onClick={onOpenSupport}
-          >
-            <span className="sidebar-icon">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            </span>
-            <span className="sidebar-label">Help & Support</span>
-          </button>
-        </div>
-
-        <div className="nav-section">
-          <div className="nav-section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.4rem 0.75rem 0.2rem' }}>
-            <div className="nav-section-title" style={{ margin: 0 }}>Custom Folders</div>
-            {!collapsed && (
+        {/* Quarantine Screener & Broadcasts (Decluttered in Zen mode; accessible via 9-dot launcher) */}
+        {mode !== 'zen' && (isFeatureVisible('screening') || isFeatureVisible('campaigns')) && (
+          <div className="nav-section">
+            <div className="nav-section-title">Tools & Suites</div>
+            {isFeatureVisible('screening') && (
               <button
                 type="button"
-                className="btn btn-ghost btn-xs"
-                style={{ padding: '0.15rem 0.45rem', fontSize: '0.75rem', color: 'var(--color-primary-light)', borderRadius: 'var(--radius-pill)', border: '1px solid rgba(124, 58, 237, 0.25)', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}
-                title="Create New Custom Folder"
-                onClick={() => setShowCreateFolderModal(true)}
+                className={`sidebar-item ${activeFolder === '__gatekeeper' ? 'active' : ''}`}
+                onClick={() => onFolderChange('__gatekeeper')}
+                title="The Gatekeeper (Cold Email Screener)"
               >
-                <span>+ New</span>
+                <span className="sidebar-icon">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><circle cx="12" cy="11" r="2"/></svg>
+                </span>
+                <span className="sidebar-label">The Gatekeeper</span>
+                {screenerPendingCount > 0 && (
+                  <span className="sidebar-badge" style={{ background: '#f59e0b', color: '#000' }}>
+                    {screenerPendingCount}
+                  </span>
+                )}
+              </button>
+            )}
+            {isFeatureVisible('campaigns') && (
+              <button
+                type="button"
+                className={`sidebar-item ${activeFolder === '__campaigns' ? 'active' : ''}`}
+                onClick={() => onFolderChange('__campaigns')}
+                title="Sovereign Mass Broadcasts"
+              >
+                <span className="sidebar-icon">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>
+                </span>
+                <span className="sidebar-label">{t('nav.campaigns', 'Mass Broadcasts')}</span>
               </button>
             )}
           </div>
-          {customFolders.length === 0 && !collapsed && (
+        )}
+
+        {mode !== 'zen' && (
+          <div className="nav-section">
+            <div className="nav-section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.4rem 0.75rem 0.2rem' }}>
+              <div className="nav-section-title" style={{ margin: 0 }}>Custom Folders</div>
+              {!collapsed && (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs"
+                  style={{ padding: '0.15rem 0.45rem', fontSize: '0.75rem', color: 'var(--color-primary-light)', borderRadius: 'var(--radius-pill)', border: '1px solid rgba(124, 58, 237, 0.25)', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}
+                  title="Create New Custom Folder"
+                  onClick={() => setShowCreateFolderModal(true)}
+                >
+                  <span>+ New</span>
+                </button>
+              )}
+            </div>
+            {customFolders.length === 0 && !collapsed && (
+              <button
+                type="button"
+                className="sidebar-item"
+                onClick={() => setShowCreateFolderModal(true)}
+                style={{ fontSize: '0.78rem', color: 'var(--color-text-tertiary)', border: '1px dashed var(--color-border)', justifyContent: 'center', margin: '0.25rem 0.5rem', borderRadius: 'var(--radius-md)', padding: '0.45rem' }}
+              >
+                <span>+ Create Folder</span>
+              </button>
+            )}
+            {customFolders.map((f) => {
+              const fPath = typeof f === 'string' ? f : f.path || f.name || '';
+              const fName = typeof f === 'string' ? f : f.name || f.path || '';
+              return (
+                <div key={fPath} style={{ display: 'flex', alignItems: 'center', width: '100%', position: 'relative' }}>
+                  <button
+                    type="button"
+                    className={`sidebar-item ${activeFolder === fPath ? 'active' : ''}`}
+                    onClick={() => onFolderChange(fPath)}
+                    title={`${fName}${f.unseen ? ` (${f.unseen} unread)` : ''}`}
+                    style={{ flex: 1, minWidth: 0 }}
+                  >
+                    <span className="sidebar-icon">{getFolderIcon(fName)}</span>
+                    <span className="sidebar-label" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fName}</span>
+                    {f && f.unseen > 0 && <span className="sidebar-badge">{f.unseen}</span>}
+                  </button>
+                  {!collapsed && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); handleDeleteFolder(fName); }}
+                      title={`Delete folder "${fName}"`}
+                      style={{ background: 'transparent', border: 'none', color: 'var(--color-text-tertiary)', cursor: 'pointer', padding: '0.35rem', borderRadius: '4px', display: 'flex', alignItems: 'center', opacity: 0.6 }}
+                      onMouseEnter={(e) => { e.currentTarget.style.opacity = 1; e.currentTarget.style.color = 'var(--color-error)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.opacity = 0.6; e.currentTarget.style.color = 'var(--color-text-tertiary)'; }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {mode !== 'zen' && (
+          <div className="nav-section">
+            <div className="nav-section-title">Tools & Features</div>
+            <a href="/" className="sidebar-item" title="Home Portal">
+              <span className="sidebar-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+              </span>
+              <span className="sidebar-label">Home Portal</span>
+            </a>
+            <a href="/futureme" className="sidebar-item" title="Letters to Future">
+              <span className="sidebar-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 14 14"/></svg>
+              </span>
+              <span className="sidebar-label">Letters to Future</span>
+            </a>
+            <a href="/tempmail" className="sidebar-item" title="Disposable Temp Mail">
+              <span className="sidebar-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+              </span>
+              <span className="sidebar-label">Disposable Temp Mail</span>
+            </a>
             <button
               type="button"
               className="sidebar-item"
-              onClick={() => setShowCreateFolderModal(true)}
-              style={{ fontSize: '0.78rem', color: 'var(--color-text-tertiary)', border: '1px dashed var(--color-border)', justifyContent: 'center', margin: '0.25rem 0.5rem', borderRadius: 'var(--radius-md)', padding: '0.45rem' }}
+              title="Command Bar (Ctrl+K)"
+              onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, ctrlKey: true }))}
             >
-              <span>+ Create Folder</span>
+              <span className="sidebar-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+              </span>
+              <span className="sidebar-label">Command Bar (Cmd+K)</span>
             </button>
-          )}
-          {customFolders.map((f) => {
-            const fPath = typeof f === 'string' ? f : f.path || f.name || '';
-            const fName = typeof f === 'string' ? f : f.name || f.path || '';
-            return (
-              <div key={fPath} style={{ display: 'flex', alignItems: 'center', width: '100%', position: 'relative' }}>
-                <button
-                  type="button"
-                  className={`sidebar-item ${activeFolder === fPath ? 'active' : ''}`}
-                  onClick={() => onFolderChange(fPath)}
-                  title={`${fName}${f.unseen ? ` (${f.unseen} unread)` : ''}`}
-                  style={{ flex: 1, minWidth: 0 }}
-                >
-                  <span className="sidebar-icon">{getFolderIcon(fName)}</span>
-                  <span className="sidebar-label" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fName}</span>
-                  {f && f.unseen > 0 && <span className="sidebar-badge">{f.unseen}</span>}
-                </button>
-                {!collapsed && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); handleDeleteFolder(fName); }}
-                    title={`Delete folder "${fName}"`}
-                    style={{ background: 'transparent', border: 'none', color: 'var(--color-text-tertiary)', cursor: 'pointer', padding: '0.35rem', borderRadius: '4px', display: 'flex', alignItems: 'center', opacity: 0.6 }}
-                    onMouseEnter={(e) => { e.currentTarget.style.opacity = 1; e.currentTarget.style.color = 'var(--color-error)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.opacity = 0.6; e.currentTarget.style.color = 'var(--color-text-tertiary)'; }}
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="nav-section">
-          <div className="nav-section-title">Tools & Features</div>
-          <a href="/" className="sidebar-item" title="Home Portal">
-            <span className="sidebar-icon">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-            </span>
-            <span className="sidebar-label">Home Portal</span>
-          </a>
-          <a href="/futureme" className="sidebar-item" title="Letters to Future">
-            <span className="sidebar-icon">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 14 14"/></svg>
-            </span>
-            <span className="sidebar-label">Letters to Future</span>
-          </a>
-          <a href="/tempmail" className="sidebar-item" title="Disposable Temp Mail">
-            <span className="sidebar-icon">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-            </span>
-            <span className="sidebar-label">Disposable Temp Mail</span>
-          </a>
-          <button
-            type="button"
-            className="sidebar-item"
-            title="Command Bar (Ctrl+K)"
-            onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, ctrlKey: true }))}
-          >
-            <span className="sidebar-icon">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-            </span>
-            <span className="sidebar-label">Command Bar (Cmd+K)</span>
-          </button>
-        </div>
+          </div>
+        )}
       </nav>
 
       <div className="sidebar-footer">
@@ -612,7 +653,7 @@ export default function Sidebar({
           <span className="sidebar-icon">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           </span>
-          <span className="sidebar-label">Settings</span>
+          <span className="sidebar-label">{t('nav.settings', 'Settings')}</span>
         </button>
         <button
           type="button"

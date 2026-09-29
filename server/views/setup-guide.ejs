@@ -1,0 +1,956 @@
+<%- include('layouts/base', { title: 'Email Provider Setup Guide', description: 'Step-by-step guides, App Password walkthroughs, and server configuration for Gmail, Outlook, Yahoo, iCloud, Proton, and Custom Domains.', body: `
+
+<div class="guide-page-container container">
+  <!-- Hero Section -->
+  <div class="guide-hero">
+    <div class="guide-badge-pill">
+      <span class="pulse-dot"></span>
+      <span>Universal Inboxes &amp; External Authentication</span>
+    </div>
+    <h1 class="guide-title">Connect Any Email Provider to <span class="text-purple">WoxMail</span></h1>
+    <p class="guide-subtitle">
+      Step-by-step guides, App Password walkthroughs, and server configurations for Gmail, Microsoft Outlook, Yahoo, Apple iCloud, Proton, Fastmail, and Custom Domains.
+    </p>
+
+    <!-- Search & Filter Bar -->
+    <div class="guide-search-wrapper">
+      <div class="guide-search-box">
+        <svg class="icon-svg text-secondary" style="width: 20px; height: 20px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input
+          type="text"
+          id="guide-search"
+          placeholder="Search provider (e.g. Outlook, Gmail, port 993, app password)..."
+          oninput="filterProviders()"
+        >
+      </div>
+
+      <!-- Quick Filter Pills -->
+      <div class="guide-filter-pills" id="filter-pills">
+        <button type="button" class="filter-pill active" onclick="setFilter('all')">All Providers</button>
+        <button type="button" class="filter-pill" onclick="setFilter('outlook')">Microsoft Outlook</button>
+        <button type="button" class="filter-pill" onclick="setFilter('gmail')">Google / Gmail</button>
+        <button type="button" class="filter-pill" onclick="setFilter('yahoo')">Yahoo Mail</button>
+        <button type="button" class="filter-pill" onclick="setFilter('icloud')">Apple iCloud</button>
+        <button type="button" class="filter-pill" onclick="setFilter('proton')">Proton Mail</button>
+        <button type="button" class="filter-pill" onclick="setFilter('fastmail')">Fastmail</button>
+        <button type="button" class="filter-pill" onclick="setFilter('custom')">Custom Domains</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Security Notice Banner -->
+  <div class="guide-security-callout card">
+    <div class="callout-icon">
+      <svg class="stat-icon text-purple" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+      </svg>
+    </div>
+    <div class="callout-content">
+      <h3 style="font-size: 1.05rem; font-weight: 700; margin-bottom: 0.35rem;">Why do major providers require App Passwords?</h3>
+      <p style="font-size: 0.875rem; color: var(--color-text-secondary); margin: 0; line-height: 1.55;">
+        Modern providers (Google, Microsoft, Yahoo, Apple) have deprecated basic password authentication over IMAP to protect against credential stuffing. To access your mail from any third-party client, they issue dedicated <strong>16-character App Passwords</strong> that bypass multi-factor prompts while keeping your primary account password completely private. All external credentials in WoxMail are stored in an isolated, hardware-accelerated <strong>AES-256-GCM encrypted vault</strong>.
+      </p>
+    </div>
+  </div>
+
+  <!-- Provider Cards Grid -->
+  <div class="providers-grid" id="providers-grid">
+
+    <!-- 1. MICROSOFT OUTLOOK / OFFICE 365 -->
+    <div class="provider-card card" data-provider="outlook" id="outlook">
+      <div class="provider-header">
+        <div class="provider-brand">
+          <div class="provider-icon-badge" style="background: rgba(0, 120, 212, 0.15); border-color: rgba(0, 120, 212, 0.35); color: #0078d4;">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M19.5 3h-15A1.5 1.5 0 0 0 3 4.5v15A1.5 1.5 0 0 0 4.5 21h15a1.5 1.5 0 0 0 1.5-1.5v-15A1.5 1.5 0 0 0 19.5 3zm-9 14H7v-2h3.5v2zm0-3.5H7v-2h3.5v2zm0-3.5H7V8h3.5v2zm6.5 7h-5v-9h5v9z"/></svg>
+          </div>
+          <div>
+            <h2 class="provider-title">Microsoft Outlook / Office 365</h2>
+            <div class="provider-domains">@outlook.com · @hotmail.com · @live.com · @msn.com · @office365.com</div>
+          </div>
+        </div>
+        <div class="provider-badges">
+          <span class="badge badge-blue">App Password Required</span>
+          <span class="badge badge-amber">Enable IMAP</span>
+        </div>
+      </div>
+
+      <p class="provider-description">
+        Microsoft accounts with Two-Step Verification require an App Password for third-party IMAP access. POP/IMAP sync must also be toggled on in Outlook Web settings.
+      </p>
+
+      <!-- Step by Step -->
+      <div class="guide-steps">
+        <h4 class="steps-heading">Step-by-Step Setup:</h4>
+        <ol class="steps-list">
+          <li>
+            <strong>Turn on IMAP in Outlook Web:</strong> Log in to <a href="https://outlook.live.com/mail/0/options/mail/accounts" target="_blank" rel="noopener noreferrer" class="external-link">Outlook Web Settings ↗</a>, go to <strong>Mail &rarr; Sync email</strong>, and make sure <strong>"Let devices and apps use POP/IMAP"</strong> is set to <strong>Yes</strong>.
+          </li>
+          <li>
+            <strong>Open Security Options:</strong> Navigate to your <a href="https://account.microsoft.com/security" target="_blank" rel="noopener noreferrer" class="external-link">Microsoft Account Security Dashboard ↗</a> and select <strong>Advanced security options</strong>.
+          </li>
+          <li>
+            <strong>Generate App Password:</strong> Scroll down to the <strong>App passwords</strong> section and click <strong>"Create a new app password"</strong>. Microsoft will generate a dedicated 16-character password.
+          </li>
+          <li>
+            <strong>Sign In on WoxMail:</strong> On WoxMail's <a href="/login" class="inline-link">Sign In page</a> (or in <a href="/settings#accounts" class="inline-link">Connected Accounts</a>), enter your Outlook email address and paste the 16-character App Password.
+          </li>
+        </ol>
+      </div>
+
+      <!-- Server Specs Table -->
+      <div class="specs-table-wrapper">
+        <table class="specs-table">
+          <thead>
+            <tr>
+              <th>Protocol</th>
+              <th>Server Hostname</th>
+              <th>Port</th>
+              <th>Encryption</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>IMAP (Incoming)</strong></td>
+              <td><code>outlook.office365.com</code></td>
+              <td><code>993</code></td>
+              <td><span class="badge badge-green">SSL / TLS</span></td>
+              <td><button type="button" class="btn btn-ghost btn-xs" onclick="copyText('outlook.office365.com', this)">Copy</button></td>
+            </tr>
+            <tr>
+              <td><strong>SMTP (Outgoing)</strong></td>
+              <td><code>smtp.office365.com</code></td>
+              <td><code>587</code></td>
+              <td><span class="badge badge-blue">STARTTLS</span></td>
+              <td><button type="button" class="btn btn-ghost btn-xs" onclick="copyText('smtp.office365.com', this)">Copy</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="provider-footer-actions">
+        <a href="/login" class="btn btn-primary btn-sm">Sign In with Outlook &rarr;</a>
+        <a href="/settings#accounts" class="btn btn-secondary btn-sm">Connect in Settings</a>
+      </div>
+    </div>
+
+    <!-- 2. GOOGLE / GMAIL -->
+    <div class="provider-card card" data-provider="gmail" id="gmail">
+      <div class="provider-header">
+        <div class="provider-brand">
+          <div class="provider-icon-badge" style="background: rgba(234, 67, 53, 0.15); border-color: rgba(234, 67, 53, 0.35); color: #ea4335;">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4-8 5-8-5V6l8 5 8-5v2z"/></svg>
+          </div>
+          <div>
+            <h2 class="provider-title">Google / Gmail &amp; Workspace</h2>
+            <div class="provider-domains">@gmail.com · @googlemail.com · Google Workspace Domains</div>
+          </div>
+        </div>
+        <div class="provider-badges">
+          <span class="badge badge-red">App Password Required</span>
+          <span class="badge badge-purple">2-Step Verification</span>
+        </div>
+      </div>
+
+      <p class="provider-description">
+        Google blocks raw Gmail passwords on third-party mail clients. You must enable 2-Step Verification on your Google Account and generate a 16-character App Password.
+      </p>
+
+      <!-- Step by Step -->
+      <div class="guide-steps">
+        <h4 class="steps-heading">Step-by-Step Setup:</h4>
+        <ol class="steps-list">
+          <li>
+            <strong>Enable 2-Step Verification:</strong> Go to <a href="https://myaccount.google.com/signinoptions/two-step-verification" target="_blank" rel="noopener noreferrer" class="external-link">Google 2-Step Verification ↗</a> and confirm it is turned on.
+          </li>
+          <li>
+            <strong>Open App Passwords:</strong> Navigate to <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener noreferrer" class="external-link">Google App Passwords ↗</a>.
+          </li>
+          <li>
+            <strong>Create App Password:</strong> Under "App name", type <strong>WoxMail</strong> and click <strong>Create</strong>.
+          </li>
+          <li>
+            <strong>Copy the 16-Character Code:</strong> Google will display a 16-character code (e.g. <code>abcd efgh ijkl mnop</code>). Use this as your password on WoxMail.
+          </li>
+        </ol>
+      </div>
+
+      <!-- Server Specs Table -->
+      <div class="specs-table-wrapper">
+        <table class="specs-table">
+          <thead>
+            <tr>
+              <th>Protocol</th>
+              <th>Server Hostname</th>
+              <th>Port</th>
+              <th>Encryption</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>IMAP (Incoming)</strong></td>
+              <td><code>imap.gmail.com</code></td>
+              <td><code>993</code></td>
+              <td><span class="badge badge-green">SSL / TLS</span></td>
+              <td><button type="button" class="btn btn-ghost btn-xs" onclick="copyText('imap.gmail.com', this)">Copy</button></td>
+            </tr>
+            <tr>
+              <td><strong>SMTP (Outgoing)</strong></td>
+              <td><code>smtp.gmail.com</code></td>
+              <td><code>465</code></td>
+              <td><span class="badge badge-green">SSL / TLS</span></td>
+              <td><button type="button" class="btn btn-ghost btn-xs" onclick="copyText('smtp.gmail.com', this)">Copy</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="provider-footer-actions">
+        <a href="/login" class="btn btn-primary btn-sm">Sign In with Gmail &rarr;</a>
+        <a href="/settings#accounts" class="btn btn-secondary btn-sm">Connect in Settings</a>
+      </div>
+    </div>
+
+    <!-- 3. YAHOO MAIL & AOL -->
+    <div class="provider-card card" data-provider="yahoo" id="yahoo">
+      <div class="provider-header">
+        <div class="provider-brand">
+          <div class="provider-icon-badge" style="background: rgba(96, 1, 210, 0.15); border-color: rgba(96, 1, 210, 0.35); color: #a855f7;">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 14.5h-2V13L7.5 6.5h2.2l2.3 5 2.3-5h2.2L13 13v3.5z"/></svg>
+          </div>
+          <div>
+            <h2 class="provider-title">Yahoo Mail &amp; AOL</h2>
+            <div class="provider-domains">@yahoo.com · @ymail.com · @rocketmail.com · @aol.com · @aim.com</div>
+          </div>
+        </div>
+        <div class="provider-badges">
+          <span class="badge badge-purple">App Password Required</span>
+        </div>
+      </div>
+
+      <p class="provider-description">
+        Yahoo requires third-party email clients to connect using a generated App Password rather than your standard Yahoo web login password.
+      </p>
+
+      <!-- Step by Step -->
+      <div class="guide-steps">
+        <h4 class="steps-heading">Step-by-Step Setup:</h4>
+        <ol class="steps-list">
+          <li>
+            <strong>Open Yahoo Security:</strong> Go to <a href="https://login.yahoo.com/account/security" target="_blank" rel="noopener noreferrer" class="external-link">Yahoo Account Security ↗</a> (or AOL Account Security).
+          </li>
+          <li>
+            <strong>Generate Password:</strong> Scroll down and click <strong>Generate app password</strong> (or <em>Manage app passwords</em>).
+          </li>
+          <li>
+            <strong>Enter App Name:</strong> Enter <strong>WoxMail</strong> in the text field and click <strong>Generate password</strong>.
+          </li>
+          <li>
+            <strong>Sign In:</strong> Copy the generated password and use it with your full Yahoo/AOL email address on WoxMail.
+          </li>
+        </ol>
+      </div>
+
+      <!-- Server Specs Table -->
+      <div class="specs-table-wrapper">
+        <table class="specs-table">
+          <thead>
+            <tr>
+              <th>Protocol</th>
+              <th>Server Hostname</th>
+              <th>Port</th>
+              <th>Encryption</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>IMAP (Incoming)</strong></td>
+              <td><code>imap.mail.yahoo.com</code></td>
+              <td><code>993</code></td>
+              <td><span class="badge badge-green">SSL / TLS</span></td>
+              <td><button type="button" class="btn btn-ghost btn-xs" onclick="copyText('imap.mail.yahoo.com', this)">Copy</button></td>
+            </tr>
+            <tr>
+              <td><strong>SMTP (Outgoing)</strong></td>
+              <td><code>smtp.mail.yahoo.com</code></td>
+              <td><code>465</code></td>
+              <td><span class="badge badge-green">SSL / TLS</span></td>
+              <td><button type="button" class="btn btn-ghost btn-xs" onclick="copyText('smtp.mail.yahoo.com', this)">Copy</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="provider-footer-actions">
+        <a href="/login" class="btn btn-primary btn-sm">Sign In with Yahoo &rarr;</a>
+        <a href="/settings#accounts" class="btn btn-secondary btn-sm">Connect in Settings</a>
+      </div>
+    </div>
+
+    <!-- 4. APPLE ICLOUD MAIL -->
+    <div class="provider-card card" data-provider="icloud" id="icloud">
+      <div class="provider-header">
+        <div class="provider-brand">
+          <div class="provider-icon-badge" style="background: rgba(59, 130, 246, 0.15); border-color: rgba(59, 130, 246, 0.35); color: #3b82f6;">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM19 18H6c-2.21 0-4-1.79-4-4 0-2.05 1.53-3.76 3.56-3.97l1.07-.11.5-.95C8.08 7.14 9.94 6 12 6c2.62 0 4.88 1.86 5.39 4.43l.3 1.5 1.53.11c1.56.1 2.78 1.41 2.78 2.96 0 1.65-1.35 3-3 3z"/></svg>
+          </div>
+          <div>
+            <h2 class="provider-title">Apple iCloud Mail</h2>
+            <div class="provider-domains">@icloud.com · @me.com · @mac.com</div>
+          </div>
+        </div>
+        <div class="provider-badges">
+          <span class="badge badge-blue">App-Specific Password</span>
+        </div>
+      </div>
+
+      <p class="provider-description">
+        Apple mandates App-Specific Passwords for any application connecting to iCloud Mail via IMAP/SMTP. Your master Apple Account password will not be accepted.
+      </p>
+
+      <div class="guide-steps">
+        <h4 class="steps-heading">Step-by-Step Setup:</h4>
+        <ol class="steps-list">
+          <li>
+            <strong>Sign In to Apple ID:</strong> Log in at <a href="https://appleid.apple.com" target="_blank" rel="noopener noreferrer" class="external-link">appleid.apple.com ↗</a>.
+          </li>
+          <li>
+            <strong>Navigate to Sign-In &amp; Security:</strong> Click on <strong>Sign-In and Security &rarr; App-Specific Passwords</strong>.
+          </li>
+          <li>
+            <strong>Generate Password:</strong> Click <strong>"Generate an app-specific password"</strong>, name it <strong>WoxMail</strong>, and confirm with your device code.
+          </li>
+          <li>
+            <strong>Sign In:</strong> Enter your full iCloud email and the generated password (format: <code>xxxx-xxxx-xxxx-xxxx</code>).
+          </li>
+        </ol>
+      </div>
+
+      <div class="specs-table-wrapper">
+        <table class="specs-table">
+          <thead>
+            <tr>
+              <th>Protocol</th>
+              <th>Server Hostname</th>
+              <th>Port</th>
+              <th>Encryption</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>IMAP (Incoming)</strong></td>
+              <td><code>imap.mail.me.com</code></td>
+              <td><code>993</code></td>
+              <td><span class="badge badge-green">SSL / TLS</span></td>
+              <td><button type="button" class="btn btn-ghost btn-xs" onclick="copyText('imap.mail.me.com', this)">Copy</button></td>
+            </tr>
+            <tr>
+              <td><strong>SMTP (Outgoing)</strong></td>
+              <td><code>smtp.mail.me.com</code></td>
+              <td><code>587</code></td>
+              <td><span class="badge badge-blue">STARTTLS</span></td>
+              <td><button type="button" class="btn btn-ghost btn-xs" onclick="copyText('smtp.mail.me.com', this)">Copy</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="provider-footer-actions">
+        <a href="/login" class="btn btn-primary btn-sm">Sign In with iCloud &rarr;</a>
+        <a href="/settings#accounts" class="btn btn-secondary btn-sm">Connect in Settings</a>
+      </div>
+    </div>
+
+    <!-- 5. PROTON MAIL -->
+    <div class="provider-card card" data-provider="proton" id="proton">
+      <div class="provider-header">
+        <div class="provider-brand">
+          <div class="provider-icon-badge" style="background: rgba(109, 40, 217, 0.15); border-color: rgba(109, 40, 217, 0.35); color: #8b5cf6;">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h-2v-6h2v6zm4 0h-2v-6h2v6zm-2-8a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></svg>
+          </div>
+          <div>
+            <h2 class="provider-title">Proton Mail</h2>
+            <div class="provider-domains">@proton.me · @protonmail.com · @pm.me</div>
+          </div>
+        </div>
+        <div class="provider-badges">
+          <span class="badge badge-purple">Zero-Knowledge Encrypted</span>
+          <span class="badge badge-green">Native Web Sync &amp; Bridge</span>
+        </div>
+      </div>
+
+      <p class="provider-description">
+        Because Proton Mail uses client-side zero-knowledge encryption, standard IMAP access is provided either via the local <strong>Proton Mail Bridge</strong> or via WoxMail's built-in <strong>Proton Session Integration</strong>.
+      </p>
+
+      <div class="guide-steps">
+        <h4 class="steps-heading">Connection Methods:</h4>
+        <ol class="steps-list">
+          <li>
+            <strong>Method A — WoxMail Native Proton Session:</strong> In your WoxMail Dashboard, click <strong>"Unlock Proton Mail"</strong> in the sidebar. Enter your Proton credentials and 2FA to decrypt and stream messages directly.
+          </li>
+          <li>
+            <strong>Method B — Proton Mail Bridge (Local IMAP):</strong> If running Proton Bridge on your computer, use host <code>127.0.0.1</code>, IMAP port <code>1143</code>, SMTP port <code>1025</code>, with STARTTLS disabled and the Bridge-generated password.
+          </li>
+        </ol>
+      </div>
+
+      <div class="specs-table-wrapper">
+        <table class="specs-table">
+          <thead>
+            <tr>
+              <th>Protocol</th>
+              <th>Bridge Server</th>
+              <th>Port</th>
+              <th>Encryption</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>IMAP (Local Bridge)</strong></td>
+              <td><code>127.0.0.1</code></td>
+              <td><code>1143</code></td>
+              <td><span class="badge badge-blue">STARTTLS</span></td>
+              <td><button type="button" class="btn btn-ghost btn-xs" onclick="copyText('127.0.0.1', this)">Copy</button></td>
+            </tr>
+            <tr>
+              <td><strong>SMTP (Local Bridge)</strong></td>
+              <td><code>127.0.0.1</code></td>
+              <td><code>1025</code></td>
+              <td><span class="badge badge-blue">STARTTLS</span></td>
+              <td><button type="button" class="btn btn-ghost btn-xs" onclick="copyText('127.0.0.1', this)">Copy</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="provider-footer-actions">
+        <a href="/login" class="btn btn-primary btn-sm">Sign In on WoxMail &rarr;</a>
+        <a href="/settings#accounts" class="btn btn-secondary btn-sm">Connect in Settings</a>
+      </div>
+    </div>
+
+    <!-- 6. FASTMAIL -->
+    <div class="provider-card card" data-provider="fastmail" id="fastmail">
+      <div class="provider-header">
+        <div class="provider-brand">
+          <div class="provider-icon-badge" style="background: rgba(2, 132, 199, 0.15); border-color: rgba(2, 132, 199, 0.35); color: #0284c7;">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+          </div>
+          <div>
+            <h2 class="provider-title">Fastmail</h2>
+            <div class="provider-domains">@fastmail.com · @fastmail.fm · Custom Fastmail Domains</div>
+          </div>
+        </div>
+        <div class="provider-badges">
+          <span class="badge badge-blue">App Password Required</span>
+        </div>
+      </div>
+
+      <p class="provider-description">
+        Fastmail supports high-performance IMAP and JMAP connections with dedicated App Passwords.
+      </p>
+
+      <div class="guide-steps">
+        <h4 class="steps-heading">Step-by-Step Setup:</h4>
+        <ol class="steps-list">
+          <li>
+            <strong>Open Password Settings:</strong> Go to <a href="https://app.fastmail.com/settings/passwords" target="_blank" rel="noopener noreferrer" class="external-link">Fastmail Password Settings ↗</a>.
+          </li>
+          <li>
+            <strong>New App Password:</strong> Click <strong>"New App Password"</strong>, name it <strong>WoxMail</strong>, and grant <strong>Mail (IMAP/POP/SMTP)</strong> permissions.
+          </li>
+          <li>
+            <strong>Sign In:</strong> Use your full Fastmail email and the generated password.
+          </li>
+        </ol>
+      </div>
+
+      <div class="specs-table-wrapper">
+        <table class="specs-table">
+          <thead>
+            <tr>
+              <th>Protocol</th>
+              <th>Server Hostname</th>
+              <th>Port</th>
+              <th>Encryption</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>IMAP (Incoming)</strong></td>
+              <td><code>imap.fastmail.com</code></td>
+              <td><code>993</code></td>
+              <td><span class="badge badge-green">SSL / TLS</span></td>
+              <td><button type="button" class="btn btn-ghost btn-xs" onclick="copyText('imap.fastmail.com', this)">Copy</button></td>
+            </tr>
+            <tr>
+              <td><strong>SMTP (Outgoing)</strong></td>
+              <td><code>smtp.fastmail.com</code></td>
+              <td><code>465</code></td>
+              <td><span class="badge badge-green">SSL / TLS</span></td>
+              <td><button type="button" class="btn btn-ghost btn-xs" onclick="copyText('smtp.fastmail.com', this)">Copy</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="provider-footer-actions">
+        <a href="/login" class="btn btn-primary btn-sm">Sign In with Fastmail &rarr;</a>
+        <a href="/settings#accounts" class="btn btn-secondary btn-sm">Connect in Settings</a>
+      </div>
+    </div>
+
+    <!-- 7. CUSTOM DOMAINS / SELF-HOSTED -->
+    <div class="provider-card card" data-provider="custom" id="custom">
+      <div class="provider-header">
+        <div class="provider-brand">
+          <div class="provider-icon-badge" style="background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.35); color: #10b981;">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          </div>
+          <div>
+            <h2 class="provider-title">Custom Domain / Business Email</h2>
+            <div class="provider-domains">cPanel · Postfix · Mailcow · Zimbra · Synology · Private Exchange</div>
+          </div>
+        </div>
+        <div class="provider-badges">
+          <span class="badge badge-green">Automatic MX Detection</span>
+          <span class="badge badge-blue">Custom Ports</span>
+        </div>
+      </div>
+
+      <p class="provider-description">
+        WoxMail automatically probes the MX records of any custom domain entered on the login page and attempts autodiscovery (e.g. <code>mail.yourdomain.com</code>). You can also manually configure server hosts and ports.
+      </p>
+
+      <div class="guide-steps">
+        <h4 class="steps-heading">Step-by-Step Setup:</h4>
+        <ol class="steps-list">
+          <li>
+            <strong>Type Your Email:</strong> On the <a href="/login" class="inline-link">Sign In page</a>, type your full custom email address (e.g. <code>alex@company.com</code>).
+          </li>
+          <li>
+            <strong>Auto-Detection:</strong> WoxMail will probe your domain's MX records. If it's hosted on Google Workspace or Microsoft 365, it will automatically route to their servers.
+          </li>
+          <li>
+            <strong>Manual Server Drawer:</strong> If using a private server, click the <strong>Mail Server Configuration</strong> drawer to specify your exact IMAP host, SMTP host, and custom ports.
+          </li>
+        </ol>
+      </div>
+
+      <div class="specs-table-wrapper">
+        <table class="specs-table">
+          <thead>
+            <tr>
+              <th>Protocol</th>
+              <th>Standard Host Pattern</th>
+              <th>Standard Port</th>
+              <th>Recommended Security</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>IMAP (Incoming)</strong></td>
+              <td><code>mail.yourdomain.com</code></td>
+              <td><code>993</code> (or <code>143</code> STARTTLS)</td>
+              <td><span class="badge badge-green">SSL / TLS</span></td>
+            </tr>
+            <tr>
+              <td><strong>SMTP (Outgoing)</strong></td>
+              <td><code>mail.yourdomain.com</code></td>
+              <td><code>465</code> (or <code>587</code> STARTTLS)</td>
+              <td><span class="badge badge-green">SSL / TLS</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="provider-footer-actions">
+        <a href="/login" class="btn btn-primary btn-sm">Sign In with Custom Domain &rarr;</a>
+        <a href="/settings#accounts" class="btn btn-secondary btn-sm">Connect in Settings</a>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Frequently Asked Questions -->
+  <div class="guide-faq-section card">
+    <h2 style="font-size: 1.35rem; font-weight: 800; margin-bottom: 1.25rem;">Frequently Asked Questions</h2>
+
+    <div class="faq-accordion">
+      <div class="faq-item">
+        <h4 class="faq-question">Why does Microsoft Outlook say "Invalid email or password" even though I can log into outlook.com?</h4>
+        <p class="faq-answer">
+          Microsoft blocks direct password login over IMAP when Two-Step Verification is enabled. You must generate a Microsoft <strong>App Password</strong> in your Microsoft Security Dashboard and use that password. Additionally, verify that POP/IMAP is turned on in Outlook Web under <em>Settings &rarr; Mail &rarr; Sync email</em>.
+        </p>
+      </div>
+
+      <div class="faq-item">
+        <h4 class="faq-question">How are my external passwords protected in WoxMail?</h4>
+        <p class="faq-answer">
+          Your credentials are encrypted using hardware-accelerated <strong>AES-256-GCM authenticated encryption</strong> with an isolated encryption key. They are stored inside your sovereign account vault and are never shared, transmitted in plaintext, or exposed to third parties.
+        </p>
+      </div>
+
+      <div class="faq-item">
+        <h4 class="faq-question">Can I manage multiple accounts at the same time?</h4>
+        <p class="faq-answer">
+          Yes! You can connect as many external accounts as you want in <a href="/settings#accounts" class="inline-link">Settings &rarr; Connected Accounts</a>. The dashboard provides an instant <strong>Account Switcher</strong> in the bottom-left sidebar and header so you can switch between inboxes with a single click.
+        </p>
+      </div>
+
+      <div class="faq-item">
+        <h4 class="faq-question">Can I migrate all my old emails into WoxMail permanently?</h4>
+        <p class="faq-answer">
+          Yes. If you prefer to copy all your folders and messages from Outlook, Gmail, or Yahoo directly into your WoxMail storage, visit the <a href="/settings#migration" class="inline-link">Mailbox Migration Wizard</a> in Settings.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom CTA -->
+  <div class="guide-bottom-cta">
+    <h2>Ready to experience sovereign email?</h2>
+    <p class="text-secondary" style="margin-bottom: 1.25rem;">Connect your account in seconds or create a new disposable identity.</p>
+    <div style="display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap;">
+      <a href="/login" class="btn btn-primary btn-lg">Sign In to Webmail</a>
+      <a href="/tempmail" class="btn btn-secondary btn-lg">Try Disposable Temp Mail</a>
+    </div>
+  </div>
+</div>
+
+<script>
+  function setFilter(category) {
+    const pills = document.querySelectorAll('.filter-pill');
+    pills.forEach(p => p.classList.remove('active'));
+    event.target.classList.add('active');
+
+    const cards = document.querySelectorAll('.provider-card');
+    cards.forEach(card => {
+      if (category === 'all' || card.getAttribute('data-provider') === category) {
+        card.style.display = 'block';
+      } else {
+        card.style.display = 'none';
+      }
+    });
+  }
+
+  function filterProviders() {
+    const query = (document.getElementById('guide-search').value || '').toLowerCase().trim();
+    const cards = document.querySelectorAll('.provider-card');
+
+    cards.forEach(card => {
+      const text = card.innerText.toLowerCase();
+      if (!query || text.includes(query)) {
+        card.style.display = 'block';
+      } else {
+        card.style.display = 'none';
+      }
+    });
+  }
+
+  function copyText(text, btn) {
+    navigator.clipboard.writeText(text).then(() => {
+      const orig = btn.innerText;
+      btn.innerText = 'Copied!';
+      btn.classList.add('btn-primary');
+      setTimeout(() => {
+        btn.innerText = orig;
+        btn.classList.remove('btn-primary');
+      }, 1500);
+    });
+  }
+</script>
+
+<style>
+  .guide-page-container {
+    padding-top: 3rem;
+    padding-bottom: 5rem;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  .guide-hero {
+    text-align: center;
+    margin-bottom: 2.5rem;
+  }
+  .guide-badge-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.35rem 0.85rem;
+    background: rgba(124, 58, 237, 0.12);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    border-radius: 9999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #c084fc;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin-bottom: 1rem;
+  }
+  .pulse-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #a855f7;
+    box-shadow: 0 0 10px #a855f7;
+  }
+  .guide-title {
+    font-size: 2.4rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    margin-bottom: 0.75rem;
+    line-height: 1.2;
+  }
+  .guide-subtitle {
+    font-size: 1.05rem;
+    color: var(--color-text-secondary);
+    max-width: 720px;
+    margin: 0 auto 2rem;
+    line-height: 1.6;
+  }
+  .guide-search-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.25rem;
+    max-width: 760px;
+    margin: 0 auto;
+  }
+  .guide-search-box {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: 9999px;
+    padding: 0.75rem 1.25rem;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  }
+  .guide-search-box input {
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--color-text-primary);
+    font-size: 0.95rem;
+    width: 100%;
+  }
+  .guide-filter-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: center;
+  }
+  .filter-pill {
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-secondary);
+    border-radius: 9999px;
+    padding: 0.4rem 0.9rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .filter-pill:hover, .filter-pill.active {
+    background: #7c3aed;
+    color: #ffffff;
+    border-color: #8b5cf6;
+    box-shadow: 0 0 12px rgba(124, 58, 237, 0.4);
+  }
+  .guide-security-callout {
+    display: flex;
+    align-items: flex-start;
+    gap: 1.25rem;
+    padding: 1.5rem;
+    margin-bottom: 2.5rem;
+    background: rgba(124, 58, 237, 0.08);
+    border-color: rgba(139, 92, 246, 0.25);
+  }
+  .callout-icon {
+    flex-shrink: 0;
+    padding: 0.5rem;
+    background: rgba(124, 58, 237, 0.15);
+    border-radius: 12px;
+  }
+  .providers-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+    margin-bottom: 3.5rem;
+  }
+  .provider-card {
+    padding: 2rem;
+    border-radius: 1rem;
+    border: 1px solid var(--color-border);
+    background: var(--color-bg-card);
+    transition: border-color 0.2s ease;
+  }
+  .provider-card:hover {
+    border-color: rgba(139, 92, 246, 0.4);
+  }
+  .provider-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+  .provider-brand {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+  .provider-icon-badge {
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+    border: 1px solid;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .provider-title {
+    font-size: 1.35rem;
+    font-weight: 700;
+    margin: 0;
+  }
+  .provider-domains {
+    font-size: 0.8125rem;
+    color: var(--color-text-secondary);
+    font-family: 'JetBrains Mono', monospace;
+    margin-top: 0.2rem;
+  }
+  .provider-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+  .provider-description {
+    font-size: 0.92rem;
+    color: var(--color-text-secondary);
+    line-height: 1.55;
+    margin-bottom: 1.5rem;
+  }
+  .guide-steps {
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: 0.75rem;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .steps-heading {
+    font-size: 0.875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-primary-light);
+    margin-bottom: 0.75rem;
+  }
+  .steps-list {
+    margin: 0;
+    padding-left: 1.25rem;
+    font-size: 0.875rem;
+    line-height: 1.7;
+    color: var(--color-text-secondary);
+  }
+  .steps-list li {
+    margin-bottom: 0.5rem;
+  }
+  .steps-list strong {
+    color: var(--color-text-primary);
+  }
+  .external-link, .inline-link {
+    color: var(--color-primary-light);
+    text-decoration: underline;
+    font-weight: 600;
+  }
+  .specs-table-wrapper {
+    overflow-x: auto;
+    margin-bottom: 1.5rem;
+  }
+  .specs-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+  }
+  .specs-table th {
+    text-align: left;
+    padding: 0.6rem 0.75rem;
+    border-bottom: 1px solid var(--color-border);
+    color: var(--color-text-secondary);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .specs-table td {
+    padding: 0.75rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    color: var(--color-text-primary);
+  }
+  .provider-footer-actions {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    padding-top: 0.5rem;
+  }
+  .guide-faq-section {
+    padding: 2rem;
+    margin-bottom: 3.5rem;
+  }
+  .faq-accordion {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+  .faq-item {
+    padding-bottom: 1.25rem;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .faq-item:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+  .faq-question {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 0.4rem;
+    color: var(--color-text-primary);
+  }
+  .faq-answer {
+    font-size: 0.875rem;
+    color: var(--color-text-secondary);
+    line-height: 1.6;
+    margin: 0;
+  }
+  .guide-bottom-cta {
+    text-align: center;
+    padding: 3rem 1.5rem;
+    background: linear-gradient(135deg, rgba(124, 58, 237, 0.1) 0%, rgba(59, 130, 246, 0.08) 100%);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    border-radius: 1.25rem;
+  }
+  .guide-bottom-cta h2 {
+    font-size: 1.75rem;
+    font-weight: 800;
+    margin-bottom: 0.5rem;
+  }
+
+  @media (max-width: 768px) {
+    .guide-title { font-size: 1.8rem; }
+    .provider-card { padding: 1.25rem; }
+    .provider-header { flex-direction: column; align-items: flex-start; }
+    .specs-table th, .specs-table td { padding: 0.5rem; font-size: 0.78rem; }
+  }
+</style>
+
+` }) %>

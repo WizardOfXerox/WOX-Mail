@@ -1,18 +1,45 @@
 import { Router } from 'express';
 import { authenticateProtonAccount, getProtonMessages, getProtonMessageDetails, sendProtonMail, getProtonAddresses, activeSessions } from '../services/protonServerSync.js';
 import * as complianceArchiveService from '../services/complianceArchiveService.js';
+import { query } from '../config/database.js';
+import { encryptCredentials, decryptCredentials } from '../services/accountService.js';
 
 const router = Router();
 const PROTON_API_HOST = 'mail.proton.me';
 const PROTON_BASE_URL = `https://${PROTON_API_HOST}/api`;
 
 /**
- * 0. Check live session status
+ * 0. Check live session status (with auto-resume from connected_accounts if needed)
  */
 router.get('/sync/status', async (req, res) => {
   let email = req.query.email || req.headers['x-proton-email'] || req.user?.email;
   if (email === 'undefined' || email === 'null') email = req.user?.email;
-  const isSessionActive = !!(email && activeSessions.has(email.toLowerCase().trim()));
+  if (!email) return res.json({ active: false });
+
+  const cacheKey = email.toLowerCase().trim();
+  let isSessionActive = Boolean(activeSessions.has(cacheKey));
+
+  // If memory session is lost (e.g. server restart), auto-restore from saved credentials
+  if (!isSessionActive) {
+    try {
+      const connRes = await query(
+        `SELECT credentials_encrypted, iv, auth_tag FROM connected_accounts 
+         WHERE LOWER(email) = $1 AND provider = 'proton' AND is_active = TRUE LIMIT 1`,
+        [cacheKey]
+      );
+      if (connRes.rows.length > 0 && connRes.rows[0].credentials_encrypted) {
+        const { credentials_encrypted, iv, auth_tag } = connRes.rows[0];
+        const pass = decryptCredentials(credentials_encrypted, iv, auth_tag);
+        if (pass) {
+          await authenticateProtonAccount(cacheKey, pass);
+          isSessionActive = activeSessions.has(cacheKey);
+        }
+      }
+    } catch (restoreErr) {
+      console.warn('[ProtonSync] Auto-resume failed:', restoreErr.message);
+    }
+  }
+
   res.json({ active: isSessionActive, email });
 });
 
@@ -28,7 +55,38 @@ router.post('/login', async (req, res) => {
 
   try {
     const result = await authenticateProtonAccount(email, password);
-    return res.json(result);
+
+    // Persist encrypted credentials to connected_accounts for seamless future sessions
+    try {
+      const normEmail = email.toLowerCase().trim();
+      const userRes = await query('SELECT id FROM users WHERE LOWER(email) = $1', [normEmail]);
+      const userId = req.user?.id || userRes.rows[0]?.id;
+      if (userId) {
+        const { ciphertext, iv, authTag } = encryptCredentials(password);
+        await query(`
+          INSERT INTO connected_accounts (
+            user_id, provider, email, display_name, imap_host, imap_port, imap_secure, smtp_host, smtp_port, smtp_secure,
+            auth_type, credentials_encrypted, iv, auth_tag, is_default, is_active, color, created_at, updated_at
+          ) VALUES (
+            $1, 'proton', $2, 'Proton Mail', 'mail-api.proton.me', 993, true, 'mail-api.proton.me', 465, true,
+            'password', $3, $4, $5, false, true, '#6d4aff', NOW(), NOW()
+          )
+          ON CONFLICT (user_id, email) DO UPDATE SET
+            credentials_encrypted = EXCLUDED.credentials_encrypted,
+            iv = EXCLUDED.iv,
+            auth_tag = EXCLUDED.auth_tag,
+            is_active = TRUE,
+            updated_at = NOW()
+        `, [userId, normEmail, ciphertext, iv, authTag]);
+      }
+    } catch (dbErr) {
+      console.warn('[ProtonSync] Storing credentials warning:', dbErr.message);
+    }
+
+    return res.json({
+      ...result,
+      accessToken: result.uid || 'proton-session-token',
+    });
   } catch (err) {
     console.error('[ProtonSync] Login error:', err.message);
     return res.status(401).json({ error: err.message });
@@ -106,7 +164,8 @@ router.get('/addresses', async (req, res) => {
  */
 router.post('/send', async (req, res) => {
   const { email, from, to, cc, bcc, subject, text, html, attachments } = req.body;
-  const targetEmail = email || req.headers['x-proton-email'];
+  const cleanFrom = from ? (from.includes('<') ? from.replace(/.*<([^>]+)>.*/, '$1').trim() : from.trim()) : null;
+  const targetEmail = email || req.headers['x-proton-email'] || cleanFrom || req.user?.email;
 
   if (!targetEmail) {
     return res.status(400).json({ error: 'Proton account email required.' });

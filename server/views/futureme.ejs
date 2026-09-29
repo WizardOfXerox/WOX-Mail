@@ -9,8 +9,8 @@
       .preset-btn { min-height: 44px; display: flex; align-items: center; justify-content: center; padding: 0.65rem 0.5rem; background: var(--color-bg-page); border: 1px solid var(--color-border); border-radius: var(--radius-md); color: var(--color-text-primary); font-weight: 600; font-size: 0.875rem; cursor: pointer; text-align: center; transition: all var(--transition-fast); }
       .preset-btn:hover { border-color: var(--color-primary-light); background: var(--color-bg-hover); }
       .preset-btn.active { background: var(--color-primary); color: #ffffff; border-color: var(--color-primary); box-shadow: 0 0 15px var(--color-primary-glow); }
-      .prompts-container { display: flex; gap: 0.5rem; overflow-x: auto; white-space: nowrap; padding-bottom: 0.4rem; -webkit-overflow-scrolling: touch; }
-      .prompt-chip { font-size: 0.78rem; background: var(--color-bg-elevated); border: 1px solid var(--color-border); color: var(--color-primary-light); padding: 0.45rem 0.85rem; border-radius: var(--radius-pill); cursor: pointer; transition: all var(--transition-fast); flex-shrink: 0; min-height: 36px; }
+      .prompts-container { display: flex; gap: 0.5rem; flex-wrap: wrap; padding-bottom: 0.4rem; }
+      .prompt-chip { font-size: 0.78rem; background: var(--color-bg-elevated); border: 1px solid var(--color-border); color: var(--color-primary-light); padding: 0.45rem 0.85rem; border-radius: var(--radius-pill); cursor: pointer; transition: all var(--transition-fast); min-height: 36px; white-space: nowrap; }
       .prompt-chip:hover, .prompt-chip:active { background: rgba(124, 58, 237, 0.2); border-color: var(--color-primary); }
       .radio-tile-group { display: flex; gap: 0.75rem; flex-direction: column; margin-top: 0.5rem; }
       .radio-tile { display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.875rem 1rem; background: var(--color-bg-page); border: 1px solid var(--color-border); border-radius: var(--radius-md); cursor: pointer; transition: all var(--transition-fast); min-height: 44px; }

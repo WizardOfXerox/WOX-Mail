@@ -48,6 +48,6 @@ export class ProtonSessionStore {
    */
   static hasActiveSession() {
     const session = this.getSession();
-    return !!(session && session.accessToken && session.uid);
+    return !!(session && (session.accessToken || session.uid || session.email));
   }
 }

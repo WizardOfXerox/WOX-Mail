@@ -93,6 +93,9 @@ router.get('/status/:token', async (req, res, next) => {
  * Test helper for simulating an inbound verification email reply.
  */
 router.post('/simulate-inbound', async (req, res, next) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ error: 'Endpoint not available in production' });
+  }
   try {
     const { fromEmail, toEmail, subject, textBody } = req.body;
     const { processInboundReply } = await import('../services/verificationService.js');

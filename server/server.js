@@ -65,6 +65,11 @@ import dossierRouter from './src/routes/dossier.js';
 import snippetsRouter from './src/routes/snippets.js';
 import securitySandboxRouter from './src/routes/securitySandbox.js';
 import automationAndProtocolsRouter from './src/routes/automationAndProtocols.js';
+import dripAutomationsRouter from './src/routes/dripAutomations.js';
+import spamScoreRouter from './src/routes/spamScore.js';
+import migrationRouter from './src/routes/migration.js';
+import transactionalApiRouter from './src/routes/transactionalApi.js';
+import announcementsRouter from './src/routes/announcements.js';
 import { setVerificationSocketIO } from './src/services/verificationService.js';
 
 // Background jobs
@@ -206,6 +211,12 @@ app.use('/api/deliverability', deliverabilityRouter);
 app.use('/api/dossier', dossierRouter);
 app.use('/api/snippets', snippetsRouter);
 app.use('/api/security', securitySandboxRouter);
+app.use('/api/campaigns/drip', dripAutomationsRouter);
+app.use('/api/campaigns', dripAutomationsRouter);
+app.use('/api/campaigns', spamScoreRouter);
+app.use('/api/mail/migration', migrationRouter);
+app.use('/api/announcements', announcementsRouter);
+app.use('/api', transactionalApiRouter);
 app.use('/api', automationAndProtocolsRouter);
 app.use('/', automationAndProtocolsRouter);
 app.use('/', autodiscoverRouter);

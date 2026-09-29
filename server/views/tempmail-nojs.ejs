@@ -78,10 +78,10 @@
           <% } %>
 
           <div style="padding: 1rem; background: var(--color-bg-page); border-radius: var(--radius-md); line-height: 1.6; margin-top: 1rem; overflow-x: auto;">
-            <% if (selectedMessage.html) { %>
-              <%- selectedMessage.sanitizedHtml || selectedMessage.html %>
+            <% if (selectedMessage.sanitizedHtml) { %>
+              <%- selectedMessage.sanitizedHtml %>
             <% } else { %>
-              <pre style="font-family: var(--font-body); white-space: pre-wrap; margin: 0;"><%= selectedMessage.text %></pre>
+              <pre style="font-family: var(--font-body); white-space: pre-wrap; margin: 0;"><%= selectedMessage.text || selectedMessage.html || '(Empty message)' %></pre>
             <% } %>
           </div>
         </div>

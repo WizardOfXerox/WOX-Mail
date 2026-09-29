@@ -13,17 +13,25 @@ class WoxNotificationService {
    * Request native OS notification permission.
    */
   async requestPermission() {
-    if (typeof window === 'undefined' || !('Notification' in window)) {
+    try {
+      if (typeof window === 'undefined' || !('Notification' in window)) {
+        return false;
+      }
+      if (Notification.permission === 'granted') {
+        return true;
+      }
+      if (Notification.permission !== 'denied') {
+        const req = Notification.requestPermission();
+        if (req && typeof req.then === 'function') {
+          const permission = await req.catch(() => 'denied');
+          return permission === 'granted';
+        }
+      }
+      return false;
+    } catch {
+      // Browsers like iOS Safari block non-user-gesture permission requests
       return false;
     }
-    if (Notification.permission === 'granted') {
-      return true;
-    }
-    if (Notification.permission !== 'denied') {
-      const permission = await Notification.requestPermission();
-      return permission === 'granted';
-    }
-    return false;
   }
 
   /**
@@ -37,7 +45,7 @@ class WoxNotificationService {
         this.audioCtx = new AudioContext();
       }
       if (this.audioCtx.state === 'suspended') {
-        this.audioCtx.resume();
+        this.audioCtx.resume().catch(() => {});
       }
 
       const now = this.audioCtx.currentTime;
@@ -58,7 +66,7 @@ class WoxNotificationService {
       osc.start(now);
       osc.stop(now + 0.35);
     } catch (e) {
-      console.warn('[Notifications] Audio chime error:', e);
+      // Audio autoplay policy or mobile suspension - safely ignored
     }
   }
 
@@ -128,26 +136,52 @@ class WoxNotificationService {
    * @param {Function} [options.onClick] - Click callback
    */
   notify({ from, subject, preview, onClick }) {
-    // 1. Play sound
-    this.playChime();
+    // 1. Play sound safely
+    try {
+      this.playChime();
+    } catch {}
 
     // 2. Check if desktop notifications are supported & granted
-    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-      const title = `New email from ${from || 'Unknown'}`;
-      const body = subject ? (preview ? `${subject}\n${preview}` : subject) : preview || 'You received a new email';
+    try {
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+        const title = `New email from ${from || 'Unknown'}`;
+        const body = subject ? (preview ? `${subject}\n${preview}` : subject) : preview || 'You received a new email';
 
-      const notification = new Notification(title, {
-        body: body.slice(0, 150),
-        icon: '/icons/icon-192x192.png',
-        tag: `woxmail-new-${Date.now()}`,
-        requireInteraction: false,
-      });
+        // Check if ServiceWorkerRegistration is available (required on Android/iOS PWA)
+        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+          navigator.serviceWorker.ready.then((reg) => {
+            if (reg && typeof reg.showNotification === 'function') {
+              reg.showNotification(title, {
+                body: body.slice(0, 150),
+                icon: '/icons/icon-192.png',
+                badge: '/icons/icon-192.png',
+                tag: `woxmail-new-${Date.now()}`,
+              });
+            }
+          }).catch(() => {});
+        } else {
+          try {
+            // Standard desktop browser Notification fallback
+            const notification = new Notification(title, {
+              body: body.slice(0, 150),
+              icon: '/icons/icon-192.png',
+              tag: `woxmail-new-${Date.now()}`,
+              requireInteraction: false,
+            });
 
-      notification.onclick = () => {
-        window.focus();
-        notification.close();
-        if (typeof onClick === 'function') onClick();
-      };
+            notification.onclick = () => {
+              window.focus();
+              notification.close();
+              if (typeof onClick === 'function') onClick();
+            };
+          } catch (constructorErr) {
+            // Mobile Chrome/Safari throws TypeError: Illegal constructor when calling new Notification
+            // Silently caught to prevent mobile app crashes
+          }
+        }
+      }
+    } catch (notifErr) {
+      // Global notification safety catch
     }
   }
 }

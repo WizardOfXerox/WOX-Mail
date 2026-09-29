@@ -6,7 +6,8 @@ async function main() {
   const email = 'archive@wox.world';
   const res = await query('SELECT id, email, username FROM users WHERE email = $1', [email]);
   if (res.rows.length === 0) {
-    const hash = await hashPassword('Archive@01172006#WOX');
+    const archivePass = process.env.ARCHIVE_PASSWORD || process.env.ADMIN_PASSWORD || 'DevArchivePass2026!';
+    const hash = await hashPassword(archivePass);
     await query(
       `INSERT INTO users (username, email, password_hash, display_name, is_admin)
        VALUES ($1, $2, $3, $4, $5)`,

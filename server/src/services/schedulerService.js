@@ -6,6 +6,7 @@
 import { query } from '../config/database.js';
 import { getTransporterForUser, sendEmail, saveSentMessage } from './smtp.js';
 import { createConnection } from './imap.js';
+import * as outboxService from './outboxService.js';
 
 /**
  * Process due scheduled emails.
@@ -50,8 +51,9 @@ export async function processDueEmails() {
       });
 
       // Append copy to user's Sent IMAP folder
+      let client;
       try {
-        const client = await createConnection(user.email, user.imap_password);
+        client = await createConnection(user.email, user.imap_password);
         if (client) {
           await saveSentMessage(client, {
             from: fromAddr,
@@ -65,10 +67,11 @@ export async function processDueEmails() {
             messageId: sendResult.messageId,
             date: new Date(),
           });
-          await client.logout();
         }
       } catch (saveErr) {
         console.warn(`Failed to append scheduled email ${email.id} to Sent folder:`, saveErr.message);
+      } finally {
+        if (client) await client.logout().catch(() => {});
       }
 
       await query(
@@ -76,9 +79,20 @@ export async function processDueEmails() {
         [email.id]
       );
 
+      // Mirror completion to outbox tracking
+      await outboxService.updateOutboxStatus(`sched_${email.id}`, {
+        status: 'sent',
+        sentAt: new Date(),
+      }).catch(() => {});
+
       sentCount++;
     } catch (err) {
       console.error(`Failed to send scheduled email ${email.id}:`, err.message);
+      // Mirror failure to outbox tracking
+      await outboxService.updateOutboxStatus(`sched_${email.id}`, {
+        status: 'failed',
+        errorMessage: err.message,
+      }).catch(() => {});
       // Don't mark as sent — will retry next cycle
       // After 5 failures, we should give up (add a retry_count column in future)
     }

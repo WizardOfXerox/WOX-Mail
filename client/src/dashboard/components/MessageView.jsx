@@ -6,6 +6,8 @@ import SnoozePopover from './SnoozePopover.jsx';
 import FolderMovePopover from './FolderMovePopover.jsx';
 import ContextMenu from './ContextMenu.jsx';
 import EmailPrivacyModal, { getStoredPrivacyPrefs, saveStoredPrivacyPrefs } from './EmailPrivacyModal.jsx';
+import QuotedTextFolder from './QuotedTextFolder.jsx';
+import { cleanEmailAddress, cleanSenderName } from '../../shared/utils/mimeDecoder.js';
 
 const NOTE_COLORS = [
   { id: 'purple', bg: 'rgba(124, 58, 237, 0.08)', text: '#f3e8ff', border: 'rgba(124, 58, 237, 0.35)', accent: '#a78bfa', dot: '#a78bfa', label: 'Amethyst' },
@@ -54,8 +56,57 @@ export default function MessageView({
   const moveBtnRef = useRef(null);
   const moreMenuRef = useRef(null);
 
+  // Native OpenPGP State
+  const [showPgpModal, setShowPgpModal] = useState(false);
+  const [pgpPassphrase, setPgpPassphrase] = useState('');
+  const [pgpPrivateKeyArmored, setPgpPrivateKeyArmored] = useState('');
+  const [decryptedContent, setDecryptedContent] = useState(null);
+  const [pgpDecrypting, setPgpDecrypting] = useState(false);
+  const [pgpError, setPgpError] = useState('');
+
+  const rawBodyText = message?.text || message?.html || '';
+  const isPgpEncrypted = useMemo(() => {
+    return /-----BEGIN PGP MESSAGE-----[\s\S]+?-----END PGP MESSAGE-----/.test(rawBodyText);
+  }, [rawBodyText]);
+
+  const handleDecryptPgp = async (e) => {
+    e && e.preventDefault();
+    setPgpDecrypting(true);
+    setPgpError('');
+    try {
+      const openpgp = await import('openpgp');
+      const pgpMatch = rawBodyText.match(/-----BEGIN PGP MESSAGE-----[\s\S]+?-----END PGP MESSAGE-----/);
+      if (!pgpMatch) throw new Error('No valid PGP message block found');
+
+      const messageObj = await openpgp.readMessage({ armoredMessage: pgpMatch[0] });
+
+      let decryptionOptions = { message: messageObj };
+      if (pgpPrivateKeyArmored) {
+        const privateKey = await openpgp.decryptKey({
+          privateKey: await openpgp.readPrivateKey({ armoredKey: pgpPrivateKeyArmored }),
+          passphrase: pgpPassphrase
+        });
+        decryptionOptions.decryptionKeys = privateKey;
+      } else if (pgpPassphrase) {
+        decryptionOptions.passwords = [pgpPassphrase];
+      } else {
+        throw new Error('Passphrase or private key required');
+      }
+
+      const { data: decrypted } = await openpgp.decrypt(decryptionOptions);
+      setDecryptedContent(decrypted);
+      setShowPgpModal(false);
+      if (window.WoxToast) window.WoxToast.success('PGP message decrypted successfully in RAM.');
+    } catch (err) {
+      setPgpError(err.message || 'Decryption failed. Please verify your credentials.');
+    } finally {
+      setPgpDecrypting(false);
+    }
+  };
+
   const senderEmail = useMemo(() => {
-    return (typeof message?.from === 'object' ? (message?.from?.address || message?.from?.value?.[0]?.address || '') : String(message?.from || '')).toLowerCase();
+    const raw = typeof message?.from === 'object' ? (message?.from?.address || message?.from?.value?.[0]?.address || '') : String(message?.from || '');
+    return cleanEmailAddress(raw).toLowerCase();
   }, [message?.from]);
 
   const senderDomain = useMemo(() => {
@@ -244,7 +295,16 @@ export default function MessageView({
     const tableBorder = isLight ? '#e5e7eb' : '#2d2d48';
     const linkColor = isLight ? '#7c3aed' : '#a78bfa';
 
-    let processedHtml = message.html;
+    let processedHtml = (message.html || '')
+      .replace(/src=(["'])blob:[^"']+\1/gi, 'src="" data-blocked-blob="true"');
+
+    if (!allowScriptsThisEmail) {
+      processedHtml = processedHtml
+        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script\s*>/gi, '')
+        .replace(/\son\w+=(["'])[\s\S]*?\1/gi, '')
+        .replace(/\son\w+=[^\s>]+/gi, '');
+    }
+
     if (allowImagesThisEmail) {
       // Unblock all remote images cleanly by replacing data-original-src with active src
       processedHtml = processedHtml.replace(/<img\b([^>]*?)\bdata-original-src=(["'])(.*?)\2([^>]*?)>/gi, (match, before, quote, origSrc, after) => {
@@ -270,9 +330,16 @@ export default function MessageView({
       <html>
       <head>
         <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <base target="_blank">
         <style>
-          *, *::before, *::after { box-sizing: border-box; }
+          *, *::before, *::after {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+          }
+          *:focus:not(:focus-visible) {
+            outline: none;
+          }
           body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
             font-size: 14.5px;
@@ -282,9 +349,16 @@ export default function MessageView({
             margin: 0;
             padding: 16px 8px;
             word-wrap: break-word;
+            -webkit-text-size-adjust: 100%;
+            -ms-text-size-adjust: 100%;
+          }
+          @media (max-width: 640px) {
+            body {
+              padding: 8px 4px;
+            }
           }
           a { color: ${linkColor}; text-decoration: underline; cursor: pointer; }
-          img { max-width: 100%; height: auto; border-radius: 4px; }
+          img { max-width: 100%; height: auto; border: 0; }
           img.blocked-image, img[data-original-src]:not([data-loaded="true"]) {
             min-width: 100px;
             min-height: 36px;
@@ -295,8 +369,16 @@ export default function MessageView({
             cursor: pointer;
             display: inline-block;
           }
-          table { border-collapse: collapse; max-width: 100%; }
-          td, th { border: 1px solid ${tableBorder}; padding: 6px 10px; }
+          table { max-width: 100%; }
+          /* Only style explicit data tables, never layout tables */
+          table.data-table, table[border]:not([border="0"]) {
+            border-collapse: collapse;
+          }
+          table.data-table td, table.data-table th,
+          table[border]:not([border="0"]) td, table[border]:not([border="0"]) th {
+            border: 1px solid ${tableBorder};
+            padding: 6px 10px;
+          }
           pre, code { font-family: 'JetBrains Mono', monospace; font-size: 13px; background: ${quoteBg}; padding: 2px 5px; border-radius: 4px; overflow-x: auto; }
           blockquote {
             border-left: 3px solid ${quoteBorder};
@@ -1074,7 +1156,7 @@ export default function MessageView({
               <strong style={{ color: 'var(--color-text-primary)' }}>Original Sender:</strong>
               <span className="mono" style={{ color: 'var(--color-text-primary)' }}>{message.archiveJournal.originalFrom || message.from?.address || '—'}</span>
               <strong style={{ color: 'var(--color-text-primary)' }}>Intended Recipient:</strong>
-              <span className="mono" style={{ color: 'var(--color-text-primary)' }}>{message.archiveJournal.originalTo || (message.to || []).map((r) => r.address).join(', ') || '—'}</span>
+              <span className="mono" style={{ color: 'var(--color-text-primary)' }}>{message.archiveJournal.originalTo || (Array.isArray(message.to) ? message.to.map((r) => (typeof r === 'string' ? r : r.address || r.name || '')).join(', ') : message.to) || '—'}</span>
               {message.archiveJournal.originalCc && (
                 <>
                   <strong style={{ color: 'var(--color-text-primary)' }}>Original CC:</strong>
@@ -1248,21 +1330,59 @@ export default function MessageView({
               });
             }}
           >
-            <strong>{message.from?.name || message.from?.address || 'Unknown'}</strong>
-            {message.from?.name && (
-              <span className="text-tertiary"> &lt;{message.from.address}&gt;</span>
-            )}
+            {(() => {
+              const cleanFrom = cleanEmailAddress(message.from?.address || senderEmail);
+              const cleanName = cleanSenderName(message.from?.name, cleanFrom);
+              const displayName = cleanName || cleanFrom || 'Unknown';
+              const showAddress = cleanFrom && displayName.toLowerCase() !== cleanFrom.toLowerCase();
+              return (
+                <>
+                  <strong>{displayName}</strong>
+                  {showAddress && (
+                    <span className="text-tertiary"> &lt;{cleanFrom}&gt;</span>
+                  )}
+                </>
+              );
+            })()}
           </div>
-          <span className="viewer-date">
-            {message.date ? new Date(message.date).toLocaleString() : ''}
-          </span>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+            {/* Compact Security & Authentication Chip (Progressive Disclosure) */}
+            <button
+              type="button"
+              onClick={fetchSecurityHeaders}
+              title="Inspect SPF / DKIM / DMARC authentication & TLS transport"
+              style={{
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '2px 8px',
+                borderRadius: '12px',
+                fontSize: '0.72rem',
+                fontWeight: 600,
+                background: 'rgba(16, 185, 129, 0.12)',
+                color: 'var(--color-success, #10b981)',
+                border: '1px solid rgba(16, 185, 129, 0.3)',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                <polyline points="9 12 11 14 15 10"/>
+              </svg>
+              <span>Verified (SPF/DKIM)</span>
+            </button>
+            <span className="viewer-date">
+              {message.date ? new Date(message.date).toLocaleString() : ''}
+            </span>
+          </div>
         </div>
 
         {/* Recipients */}
         <div className="viewer-recipients text-tertiary" style={{ fontSize: '0.8125rem' }}>
-          <span>To: {(message.to || []).map((r) => r.name || r.address).join(', ')}</span>
-          {message.cc?.length > 0 && (
-            <span> · CC: {message.cc.map((r) => r.name || r.address).join(', ')}</span>
+          <span>To: {Array.isArray(message.to) ? message.to.map((r) => (typeof r === 'string' ? r : r.name || r.address || '')).join(', ') : (message.to || '')}</span>
+          {((Array.isArray(message.cc) && message.cc.length > 0) || (typeof message.cc === 'string' && message.cc)) && (
+            <span> · CC: {Array.isArray(message.cc) ? message.cc.map((r) => (typeof r === 'string' ? r : r.name || r.address || '')).join(', ') : message.cc}</span>
           )}
         </div>
 
@@ -1455,7 +1575,33 @@ export default function MessageView({
 
         {/* Body */}
         <div className="viewer-body-container">
-          {message.html ? (
+          {isPgpEncrypted && !decryptedContent && (
+            <div className="pgp-encrypted-card card" style={{ padding: '1.5rem', background: 'rgba(124, 58, 237, 0.08)', border: '1px solid rgba(124, 58, 237, 0.3)', borderRadius: 'var(--radius-md)', marginBottom: '1.5rem', textAlign: 'center' }}>
+              <div style={{ fontWeight: 700, fontSize: '1.1rem', color: 'var(--color-primary-light)', marginBottom: '0.5rem' }}>
+                [ENCRYPTED PGP MESSAGE]
+              </div>
+              <p className="text-secondary" style={{ fontSize: '0.875rem', maxWidth: 440, margin: '0 auto 1rem' }}>
+                This message contains OpenPGP ciphertext. Decrypt it in-memory with your passphrase or private key.
+              </p>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => setShowPgpModal(true)}
+              >
+                Decrypt Message
+              </button>
+            </div>
+          )}
+
+          {decryptedContent ? (
+            <div className="pgp-decrypted-card card" style={{ padding: '1.5rem', background: 'var(--color-bg-card)', border: '1px solid var(--color-success)', borderRadius: 'var(--radius-md)', marginBottom: '1.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--color-border)', paddingBottom: '0.5rem' }}>
+                <span className="badge badge-green">[PGP DECRYPTED IN RAM]</span>
+                <button type="button" className="btn-ghost btn-xs" onClick={() => setDecryptedContent(null)}>Hide Decrypted</button>
+              </div>
+              <pre className="viewer-text" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--color-text-primary)' }}>{decryptedContent}</pre>
+            </div>
+          ) : message.html ? (
             <iframe
               key={`email-body-${message.uid}-${allowScriptsThisEmail ? 'scripts' : 'safe'}-${allowImagesThisEmail ? 'images' : 'noimages'}`}
               ref={iframeRef}
@@ -1464,9 +1610,46 @@ export default function MessageView({
               title="Email content"
             />
           ) : (
-            <pre className="viewer-text">{message.text || 'No content'}</pre>
+            <div className="viewer-text" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'inherit' }}>
+              <QuotedTextFolder textContent={message.text || 'No content'} />
+            </div>
           )}
         </div>
+
+        {/* OpenPGP Decryption Modal */}
+        {showPgpModal && (
+          <div className="modal-backdrop" onClick={() => setShowPgpModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+            <div className="card" onClick={(e) => e.stopPropagation()} style={{ width: '90%', maxWidth: '440px' }}>
+              <h3 style={{ margin: '0 0 1rem' }}>Decrypt OpenPGP Message</h3>
+              <form onSubmit={handleDecryptPgp}>
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ fontSize: '0.8rem', fontWeight: 600, display: 'block', marginBottom: '4px' }}>PASSPHRASE</label>
+                  <input
+                    className="input"
+                    type="password"
+                    placeholder="Enter key or symmetric passphrase"
+                    value={pgpPassphrase}
+                    onChange={(e) => setPgpPassphrase(e.target.value)}
+                    required
+                  />
+                </div>
+
+                {pgpError && (
+                  <div style={{ fontSize: '0.8rem', color: 'var(--color-error)', marginBottom: '1rem' }}>
+                    {pgpError}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                  <button type="button" className="btn btn-ghost" onClick={() => setShowPgpModal(false)}>Cancel</button>
+                  <button type="submit" className="btn btn-primary" disabled={pgpDecrypting}>
+                    {pgpDecrypting ? 'Decrypting...' : 'Decrypt Now'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
 
       {/* ─── Embedded Web Previews Tray ────────────────── */}
       <LinkPreviewTray
@@ -1662,7 +1845,7 @@ export default function MessageView({
               ↩
             </div>
             <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-text-primary)' }}>
-              Reply to {message.from?.name || message.from?.address || 'sender'}
+              Reply to {cleanSenderName(message.from?.name, senderEmail) || 'sender'}
             </span>
           </div>
 

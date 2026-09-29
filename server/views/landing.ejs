@@ -7,7 +7,7 @@
   <div class="container" style="position: relative; z-index: 1;">
     <div class="landing-pill-badge" style="margin-bottom: 1.25rem;">
       <span class="status-dot-pulse"></span>
-      <span>Sovereign Privacy Enclave • Live on <strong style="color:var(--color-text-primary);">wox.world</strong></span>
+      <span>Sovereign Privacy Enclave • Live on <strong style="color:var(--color-text-primary);">mail.wox.world</strong></span>
     </div>
 
     <h1 class="landing-title" style="font-family: 'Outfit', var(--font-body); font-size: clamp(2.2rem, 5vw, 3.75rem); font-weight: 800; line-height: 1.15; letter-spacing: -0.03em; margin-bottom: 1.25rem;">
@@ -20,10 +20,10 @@
     </p>
 
     <!-- Instant Live Generator Card -->
-    <div class="landing-instant-card" style="background: rgba(18, 18, 36, 0.75); backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%); border: 1px solid var(--color-border); border-radius: var(--radius-xl); padding: 1.75rem; max-width: 720px; margin: 0 auto 2.5rem; box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45); text-align: left;">
+    <div class="landing-instant-card" style="background: var(--color-bg-card, rgba(18, 18, 36, 0.75)); backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%); border: 1px solid var(--color-border); border-radius: var(--radius-xl); padding: 1.75rem; max-width: 720px; margin: 0 auto 2.5rem; box-shadow: var(--shadow-lg, 0 16px 48px rgba(0, 0, 0, 0.45)); text-align: left;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
         <div style="display: flex; align-items: center; gap: 0.5rem;">
-          <span style="font-size: 0.9375rem; font-weight: 700; color: #c084fc; display: flex; align-items: center; gap: 0.4rem;">
+          <span style="font-size: 0.9375rem; font-weight: 700; color: var(--color-primary-light, #c084fc); display: flex; align-items: center; gap: 0.4rem;">
             <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
             <span>Instant Disposable Mailbox</span>
           </span>
@@ -34,7 +34,7 @@
         </div>
 
         <!-- Mode Toggle (Pool vs Custom) -->
-        <div class="hero-mode-pills" style="display: inline-flex; background: rgba(10, 10, 22, 0.6); border: 1px solid var(--color-border); border-radius: var(--radius-pill); padding: 3px; gap: 3px;">
+        <div class="hero-mode-pills" style="display: inline-flex; background: var(--color-bg-input, rgba(10, 10, 22, 0.6)); border: 1px solid var(--color-border); border-radius: var(--radius-pill); padding: 3px; gap: 3px;">
           <button type="button" id="mode-btn-pool" class="btn btn-sm" onclick="setHeroMode('pool')" style="border-radius: var(--radius-pill); padding: 0.35rem 0.85rem; font-size: 0.78rem; background: var(--color-primary); color: #fff; border: none; font-weight: 600; cursor: pointer; transition: all 0.15s ease;">
             <span style="display: inline-flex; align-items: center; gap: 0.35rem;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><span>Instant Pool</span></span>
           </button>
@@ -123,7 +123,7 @@
       </div>
 
       <!-- Expiry Duration Selector (Visible in Custom Handle Mode) -->
-      <div id="hero-lifespan-selector-row" style="display: none; align-items: center; justify-content: space-between; padding: 0.85rem 1rem; margin-bottom: 0.85rem; background: rgba(10, 10, 22, 0.5); border: 1px dashed var(--color-border-focus); border-radius: var(--radius-md); flex-wrap: wrap; gap: 0.75rem;">
+      <div id="hero-lifespan-selector-row" style="display: none; align-items: center; justify-content: space-between; padding: 0.85rem 1rem; margin-bottom: 0.85rem; background: var(--color-bg-input, rgba(10, 10, 22, 0.5)); border: 1px dashed var(--color-border-focus); border-radius: var(--radius-md); flex-wrap: wrap; gap: 0.75rem;">
         <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
           <span style="font-size: 0.8125rem; font-weight: 600; color: var(--color-text-primary); display: flex; align-items: center; gap: 0.3rem;">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -152,32 +152,6 @@
           <span style="display: inline-flex; align-items: center; gap: 0.35rem;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span>Zero-Log Encrypted</span></span>
           <span style="display: inline-flex; align-items: center; gap: 0.35rem;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><span>Purelymail Ingest</span></span>
         </div>
-      </div>
-    </div>
-
-    <!-- Live Interactive Shader & Palette Customizer Strip -->
-    <div style="background: rgba(14, 14, 28, 0.65); border: 1px solid var(--color-border); border-radius: var(--radius-pill); padding: 0.5rem 1rem; max-width: 720px; margin: 0 auto 2.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; backdrop-filter: blur(12px);">
-      <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
-        <span style="font-size: 0.78rem; font-weight: 700; color: var(--color-text-secondary); display: flex; align-items: center; gap: 0.3rem;">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 0 20z"/></svg>
-          <span>Live Shaders:</span>
-        </span>
-        <button type="button" class="btn btn-ghost btn-xs" onclick="setLiveShader('aurora')" title="Aurora Atmospheric Waves" style="font-size: 0.72rem; padding: 0.2rem 0.55rem; border: 1px solid var(--color-border); border-radius: var(--radius-pill);">Aurora</button>
-        <button type="button" class="btn btn-ghost btn-xs" onclick="setLiveShader('cyber_mesh')" title="3D Perspective Wireframe Grid" style="font-size: 0.72rem; padding: 0.2rem 0.55rem; border: 1px solid var(--color-border); border-radius: var(--radius-pill);">Cyber Mesh</button>
-        <button type="button" class="btn btn-ghost btn-xs" onclick="setLiveShader('deep_space')" title="Parallax Deep Space Starfield" style="font-size: 0.72rem; padding: 0.2rem 0.55rem; border: 1px solid var(--color-border); border-radius: var(--radius-pill);">Starfield</button>
-        <button type="button" class="btn btn-ghost btn-xs" onclick="setLiveShader('matrix')" title="Matrix Terminal Rain" style="font-size: 0.72rem; padding: 0.2rem 0.55rem; border: 1px solid var(--color-border); border-radius: var(--radius-pill);">Matrix</button>
-        <button type="button" class="btn btn-ghost btn-xs" onclick="setLiveShader('zen_drift')" title="Zen Radial Bloom" style="font-size: 0.72rem; padding: 0.2rem 0.55rem; border: 1px solid var(--color-border); border-radius: var(--radius-pill);">Zen</button>
-        <button type="button" class="btn btn-ghost btn-xs" onclick="setLiveShader('oled_monochrome')" title="Pure OLED Black" style="font-size: 0.72rem; padding: 0.2rem 0.55rem; border: 1px solid var(--color-border); border-radius: var(--radius-pill);">OLED</button>
-      </div>
-
-      <div style="display: flex; align-items: center; gap: 0.35rem;">
-        <span style="font-size: 0.72rem; color: var(--color-text-tertiary);">Accent:</span>
-        <button type="button" onclick="setLiveAccent('purple')" title="Sovereign Purple" style="width: 16px; height: 16px; border-radius: 50%; background: #7c3aed; border: none; cursor: pointer;"></button>
-        <button type="button" onclick="setLiveAccent('emerald')" title="Cyber Emerald" style="width: 16px; height: 16px; border-radius: 50%; background: #10b981; border: none; cursor: pointer;"></button>
-        <button type="button" onclick="setLiveAccent('cobalt')" title="Midnight Cobalt" style="width: 16px; height: 16px; border-radius: 50%; background: #3b82f6; border: none; cursor: pointer;"></button>
-        <button type="button" onclick="setLiveAccent('amber')" title="Sunset Amber" style="width: 16px; height: 16px; border-radius: 50%; background: #f59e0b; border: none; cursor: pointer;"></button>
-        <button type="button" onclick="setLiveAccent('cyan')" title="Matrix Cyan" style="width: 16px; height: 16px; border-radius: 50%; background: #06b6d4; border: none; cursor: pointer;"></button>
-        <button type="button" onclick="setLiveAccent('crimson')" title="Crimson Red" style="width: 16px; height: 16px; border-radius: 50%; background: #ef4444; border: none; cursor: pointer;"></button>
       </div>
     </div>
 
@@ -385,7 +359,7 @@
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary-light)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         </div>
 
-        <div style="margin-top: 1.25rem; background: rgba(10, 10, 22, 0.6); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 1rem; display: flex; gap: 1rem; flex-wrap: wrap;">
+        <div style="margin-top: 1.25rem; background: var(--color-bg-input, rgba(10, 10, 22, 0.6)); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 1rem; display: flex; gap: 1rem; flex-wrap: wrap;">
           <div style="flex: 1; min-width: 140px;">
             <div style="font-size: 0.72rem; color: var(--color-text-tertiary); text-transform: uppercase;">Preset Integrations</div>
             <strong style="color: var(--color-primary-light); font-size: 0.875rem;">Gmail · Outlook · Yahoo · Fastmail</strong>
@@ -465,7 +439,71 @@
         </div>
       </div>
 
-      <!-- Bento 6: FutureMe Time-Locked Encrypted Letters (Col Span 2) -->
+      <!-- Bento 6: OpenPGP & Web Key Directory (WKD) -->
+      <div class="landing-bento-card">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div>
+            <span class="badge badge-purple" style="font-size: 0.75rem;">RFC 9216 & OpenPGP</span>
+            <h3 style="font-size: 1.25rem; font-weight: 700; color: var(--color-text-primary); margin: 0.6rem 0 0.3rem;">
+              Native OpenPGP & WKD Vault
+            </h3>
+            <p class="text-secondary" style="font-size: 0.8125rem; margin: 0; line-height: 1.5;">
+              True client-side decryption. Discover recipient public keys automatically via Web Key Directory (WKD), Mailvelope bridge, and hardware passkeys.
+            </p>
+          </div>
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary-light)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </div>
+      </div>
+
+      <!-- Bento 7: Sieve Rules & Automation Webhooks -->
+      <div class="landing-bento-card">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div>
+            <span class="badge badge-green" style="font-size: 0.75rem;">RFC 5228 Automation</span>
+            <h3 style="font-size: 1.25rem; font-weight: 700; color: var(--color-text-primary); margin: 0.6rem 0 0.3rem;">
+              Sieve Rules & Webhooks
+            </h3>
+            <p class="text-secondary" style="font-size: 0.8125rem; margin: 0; line-height: 1.5;">
+              Server-side mailbox automation. Auto-tagging, newsletter auto-purge, instant webhooks to Discord, Telegram, Slack, or custom REST APIs.
+            </p>
+          </div>
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        </div>
+      </div>
+
+      <!-- Bento 8: Compliance Archiving & SHA-256 Non-Repudiation -->
+      <div class="landing-bento-card">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div>
+            <span class="badge badge-blue" style="font-size: 0.75rem;">Audit & Integrity</span>
+            <h3 style="font-size: 1.25rem; font-weight: 700; color: var(--color-text-primary); margin: 0.6rem 0 0.3rem;">
+              Compliance Journal Archiving
+            </h3>
+            <p class="text-secondary" style="font-size: 0.8125rem; margin: 0; line-height: 1.5;">
+              Real-time SHA-256 non-repudiation hashing across inbound and outbound streams. Tamper-evident regulatory journaling and audit review.
+            </p>
+          </div>
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--color-info)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </div>
+      </div>
+
+      <!-- Bento 9: 1-Click Mailbox Migration -->
+      <div class="landing-bento-card">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div>
+            <span class="badge badge-amber" style="font-size: 0.75rem;">Seamless Onboarding</span>
+            <h3 style="font-size: 1.25rem; font-weight: 700; color: var(--color-text-primary); margin: 0.6rem 0 0.3rem;">
+              1-Click IMAP Migration
+            </h3>
+            <p class="text-secondary" style="font-size: 0.8125rem; margin: 0; line-height: 1.5;">
+              Migrate folders and complete message archives directly from Gmail, Outlook, Yahoo, or cPanel with real-time sync telemetry and zero data loss.
+            </p>
+          </div>
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--color-warning)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+        </div>
+      </div>
+
+      <!-- Bento 10: FutureMe Time-Locked Encrypted Letters (Col Span 2) -->
       <div class="landing-bento-card col-span-2">
         <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap;">
           <div style="flex: 1; min-width: 260px;">
@@ -499,10 +537,10 @@
       </p>
     </div>
 
-    <div class="comparison-wrapper" style="overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: rgba(18, 18, 36, 0.65); backdrop-filter: blur(16px);">
-      <table class="comparison-table" style="width: 100%; min-width: 640px; border-collapse: collapse; text-align: left;">
+    <div class="comparison-wrapper" style="overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-bg-card, rgba(18, 18, 36, 0.65)); backdrop-filter: blur(16px);">
+      <table class="comparison-table" style="width: 100%; min-width: 720px; border-collapse: collapse; text-align: left;">
         <thead>
-          <tr style="border-bottom: 1px solid var(--color-border); background: rgba(10, 10, 22, 0.6);">
+          <tr style="border-bottom: 1px solid var(--color-border); background: var(--color-bg-input, rgba(10, 10, 22, 0.6));">
             <th style="padding: 1rem 1.25rem; font-size: 0.875rem; font-weight: 700; color: var(--color-text-primary);">Feature / Capability</th>
             <th class="highlight" style="padding: 1rem 1.25rem; font-size: 0.875rem; font-weight: 800; color: #c084fc; background: rgba(124, 58, 237, 0.15);">WoxMail</th>
             <th style="padding: 1rem 1.25rem; font-size: 0.875rem; font-weight: 600; color: var(--color-text-secondary);">Gmail</th>
@@ -514,63 +552,95 @@
         <tbody>
           <tr style="border-bottom: 1px solid var(--color-border-subtle);">
             <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><strong>Instant Disposable Temp Mail (0 Signup)</strong></td>
-            <td class="highlight" style="padding: 0.85rem 1.25rem; background: rgba(124, 58, 237, 0.1);"><span class="comp-check" style="color: #4ade80; font-weight: 700;">✓ Included (24-72h)</span></td>
-            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">✗ No</span></td>
-            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">✗ No</span></td>
-            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><span class="comp-check" style="color: #4ade80;">✓ Yes (Ad Heavy)</span></td>
-            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">✗ No</span></td>
+            <td class="highlight" style="padding: 0.85rem 1.25rem; background: rgba(124, 58, 237, 0.1);"><span class="comp-check" style="color: #4ade80; font-weight: 700;">[PASS] Included (24-72h)</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">[FAIL] No</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">[FAIL] No</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><span class="comp-check" style="color: #4ade80;">[PASS] Yes (Ad Heavy)</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">[FAIL] No</span></td>
           </tr>
           <tr style="border-bottom: 1px solid var(--color-border-subtle);">
             <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><strong>Personal Protected Temp Mail (PIN 60d)</strong></td>
-            <td class="highlight" style="padding: 0.85rem 1.25rem; background: rgba(124, 58, 237, 0.1);"><span class="comp-check" style="color: #4ade80; font-weight: 700;">✓ Included</span></td>
-            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">✗ No</span></td>
-            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">✗ No</span></td>
+            <td class="highlight" style="padding: 0.85rem 1.25rem; background: rgba(124, 58, 237, 0.1);"><span class="comp-check" style="color: #4ade80; font-weight: 700;">[PASS] Included</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">[FAIL] No</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">[FAIL] No</span></td>
             <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">Paid ($10/mo)</span></td>
-            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">✗ No</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">[FAIL] No</span></td>
           </tr>
           <tr style="border-bottom: 1px solid var(--color-border-subtle);">
             <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><strong>Permanent Sovereign Enclave Webmail</strong></td>
-            <td class="highlight" style="padding: 0.85rem 1.25rem; background: rgba(124, 58, 237, 0.1);"><span class="comp-check" style="color: #4ade80; font-weight: 700;">✓ Included</span></td>
+            <td class="highlight" style="padding: 0.85rem 1.25rem; background: rgba(124, 58, 237, 0.1);"><span class="comp-check" style="color: #4ade80; font-weight: 700;">[PASS] Included</span></td>
             <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><span class="comp-check" style="color: #4ade80;">Ad-Funded</span></td>
             <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><span class="comp-check" style="color: #4ade80;">Freemium/Paid</span></td>
-            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">✗ No</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">[FAIL] No</span></td>
             <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><span class="comp-check" style="color: #4ade80;">$99 / year</span></td>
           </tr>
           <tr style="border-bottom: 1px solid var(--color-border-subtle);">
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><strong>Native OpenPGP & WKD Auto-Discovery</strong></td>
+            <td class="highlight" style="padding: 0.85rem 1.25rem; background: rgba(124, 58, 237, 0.1);"><span class="comp-check" style="color: #4ade80; font-weight: 700;">[PASS] RFC 9216 WKD</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">[FAIL] No</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><span class="comp-check" style="color: #4ade80;">Proton Internal</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">[FAIL] No</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">[FAIL] No</span></td>
+          </tr>
+          <tr style="border-bottom: 1px solid var(--color-border-subtle);">
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><strong>Sieve Rules Engine & Webhooks</strong></td>
+            <td class="highlight" style="padding: 0.85rem 1.25rem; background: rgba(124, 58, 237, 0.1);"><span class="comp-check" style="color: #4ade80; font-weight: 700;">[PASS] RFC 5228 + Push</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);">Filters Only</td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;">Sieve (No Push)</td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">[FAIL] No</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">[FAIL] No</span></td>
+          </tr>
+          <tr style="border-bottom: 1px solid var(--color-border-subtle);">
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><strong>Compliance Archiving (SHA-256 Journal)</strong></td>
+            <td class="highlight" style="padding: 0.85rem 1.25rem; background: rgba(124, 58, 237, 0.1);"><span class="comp-check" style="color: #4ade80; font-weight: 700;">[PASS] Built-in Audit</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);">Google Vault ($)</td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">[FAIL] No</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">[FAIL] No</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">[FAIL] No</span></td>
+          </tr>
+          <tr style="border-bottom: 1px solid var(--color-border-subtle);">
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><strong>Automated Drip Sequences & Segments</strong></td>
+            <td class="highlight" style="padding: 0.85rem 1.25rem; background: rgba(124, 58, 237, 0.1);"><span class="comp-check" style="color: #4ade80; font-weight: 700;">[PASS] RFC 8058 Drip</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">[FAIL] No</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">[FAIL] No</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">[FAIL] No</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">[FAIL] No</span></td>
+          </tr>
+          <tr style="border-bottom: 1px solid var(--color-border-subtle);">
             <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><strong>Unified Multi-Account IMAP Vault</strong></td>
-            <td class="highlight" style="padding: 0.85rem 1.25rem; background: rgba(124, 58, 237, 0.1);"><span class="comp-check" style="color: #4ade80; font-weight: 700;">✓ AES-256 Vault</span></td>
+            <td class="highlight" style="padding: 0.85rem 1.25rem; background: rgba(124, 58, 237, 0.1);"><span class="comp-check" style="color: #4ade80; font-weight: 700;">[PASS] AES-256 Vault</span></td>
             <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);">Google Only</td>
             <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);">Proton Only</td>
-            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">✗ No</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">[FAIL] No</span></td>
             <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);">Hey Only</td>
           </tr>
           <tr style="border-bottom: 1px solid var(--color-border-subtle);">
-            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><strong>1-View Ephemeral Zero-Click Streams</strong></td>
-            <td class="highlight" style="padding: 0.85rem 1.25rem; background: rgba(124, 58, 237, 0.1);"><span class="comp-check" style="color: #4ade80; font-weight: 700;">✓ Native Zero-Click</span></td>
-            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);">Basic Expire</td>
-            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);">Password Link</td>
-            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">✗ No</span></td>
-            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">✗ No</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><strong>1-Click IMAP Mailbox Migration</strong></td>
+            <td class="highlight" style="padding: 0.85rem 1.25rem; background: rgba(124, 58, 237, 0.1);"><span class="comp-check" style="color: #4ade80; font-weight: 700;">[PASS] Native Sync</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);">Complex POP3</td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;">Easy Switch</td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">[FAIL] No</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">[FAIL] No</span></td>
           </tr>
           <tr style="border-bottom: 1px solid var(--color-border-subtle);">
             <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><strong>AI Copilot & Smart Reply Tone Adjuster</strong></td>
-            <td class="highlight" style="padding: 0.85rem 1.25rem; background: rgba(124, 58, 237, 0.1);"><span class="comp-check" style="color: #4ade80; font-weight: 700;">✓ $0 Gemini/Ollama</span></td>
+            <td class="highlight" style="padding: 0.85rem 1.25rem; background: rgba(124, 58, 237, 0.1);"><span class="comp-check" style="color: #4ade80; font-weight: 700;">[PASS] $0 Gemini/Ollama</span></td>
             <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;">Paid Gemini</td>
             <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);">Proton Scribe ($)</td>
-            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">✗ No</span></td>
-            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">✗ No</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">[FAIL] No</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">[FAIL] No</span></td>
           </tr>
           <tr style="border-bottom: 1px solid var(--color-border-subtle);">
             <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><strong>Apple iOS & Outlook 1-Click Profile</strong></td>
-            <td class="highlight" style="padding: 0.85rem 1.25rem; background: rgba(124, 58, 237, 0.1);"><span class="comp-check" style="color: #4ade80; font-weight: 700;">✓ RFC 6186 + Apple</span></td>
+            <td class="highlight" style="padding: 0.85rem 1.25rem; background: rgba(124, 58, 237, 0.1);"><span class="comp-check" style="color: #4ade80; font-weight: 700;">[PASS] RFC 6186 + Apple</span></td>
             <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;">OAuth Only</td>
             <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);">Bridge Required</td>
-            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">✗ No IMAP</span></td>
-            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">✗ No IMAP</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">[FAIL] No IMAP</span></td>
+            <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">[FAIL] No IMAP</span></td>
           </tr>
           <tr>
             <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><strong>Tracking Pixel & Spy-Script Deflection</strong></td>
-            <td class="highlight" style="padding: 0.85rem 1.25rem; background: rgba(124, 58, 237, 0.1);"><span class="comp-check" style="color: #4ade80; font-weight: 700;">✓ 100% Deflected</span></td>
+            <td class="highlight" style="padding: 0.85rem 1.25rem; background: rgba(124, 58, 237, 0.1);"><span class="comp-check" style="color: #4ade80; font-weight: 700;">[PASS] 100% Deflected</span></td>
             <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);">Loaded / Tracked</td>
             <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem;"><span class="comp-check" style="color: #4ade80;">Blocked</span></td>
             <td style="padding: 0.85rem 1.25rem; font-size: 0.84rem; color: var(--color-text-tertiary);"><span class="comp-cross">Trackers Added</span></td>
@@ -603,7 +673,7 @@
     <div class="device-setup-grid" style="display: flex; flex-direction: column; gap: 1.5rem; max-width: 960px; margin: 0 auto;">
       
       <!-- Card 1: Apple iOS & macOS 1-Click Profile (Featured Glassmorphism Card) -->
-      <div class="device-card featured-device-card" style="background: rgba(18, 18, 36, 0.85); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(124, 58, 237, 0.4); border-radius: var(--radius-xl); padding: 2rem; box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45); transition: transform 0.2s ease, border-color 0.2s ease;">
+      <div class="device-card featured-device-card" style="background: var(--color-bg-card, rgba(18, 18, 36, 0.85)); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(124, 58, 237, 0.4); border-radius: var(--radius-xl); padding: 2rem; box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45); transition: transform 0.2s ease, border-color 0.2s ease;">
         <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1.5rem;">
           <div style="flex: 1; min-width: 260px;">
             <div style="display: flex; align-items: center; gap: 0.65rem; margin-bottom: 0.5rem;">
@@ -657,7 +727,7 @@
       </div>
 
       <!-- Card 2: Standard Autodiscovery Endpoints Active -->
-      <div class="device-card" style="background: rgba(18, 18, 36, 0.75); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 1.75rem; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);">
+      <div class="device-card" style="background: var(--color-bg-card, rgba(18, 18, 36, 0.75)); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 1.75rem; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);">
         <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary-light)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
           <h3 style="font-size: 1.05rem; font-weight: 700; color: var(--color-text-primary); margin: 0;">
@@ -704,7 +774,7 @@
       </div>
 
       <!-- Card 3: Manual Server Configuration Reference -->
-      <div class="device-card" style="background: rgba(18, 18, 36, 0.75); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 1.75rem; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);">
+      <div class="device-card" style="background: var(--color-bg-card, rgba(18, 18, 36, 0.75)); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 1.75rem; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);">
         <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary-light)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
           <h3 style="font-size: 1.05rem; font-weight: 700; color: var(--color-text-primary); margin: 0;">
@@ -859,7 +929,7 @@
 <!-- Final Conversion CTA Banner -->
 <section style="padding: 4rem 0 6rem; text-align: center;">
   <div class="container">
-    <div class="cta-banner-box" style="background: rgba(18, 18, 36, 0.75); border: 1px solid var(--color-border); border-radius: var(--radius-xl); padding: 3.5rem 2rem; backdrop-filter: blur(20px);">
+    <div class="cta-banner-box" style="background: var(--color-bg-card, rgba(18, 18, 36, 0.75)); border: 1px solid var(--color-border); border-radius: var(--radius-xl); padding: 3.5rem 2rem; backdrop-filter: blur(20px);">
       <h2 class="cta-banner-title" style="font-family: 'Outfit', var(--font-body); font-size: clamp(1.8rem, 3.5vw, 2.5rem); font-weight: 800; color: var(--color-text-primary); margin-bottom: 0.75rem;">
         Take Sovereign Control of Your Inbox Today.
       </h2>

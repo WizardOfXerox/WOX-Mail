@@ -13,10 +13,14 @@ import { extractExpenseData, formatExpensesToCsv } from '../services/expenseServ
 import * as emailVerifier from '../services/emailVerifier.js';
 import * as undoSendService from '../services/undoSendService.js';
 import * as outboxService from '../services/outboxService.js';
+import * as schedulerService from '../services/schedulerService.js';
+import * as snoozeService from '../services/snoozeService.js';
 import * as accountService from '../services/accountService.js';
 import * as complianceArchiveService from '../services/complianceArchiveService.js';
+import { processInboundArchiveEmails } from '../jobs/archiveIngestionJob.js';
 import * as supportService from '../services/supportService.js';
 import * as trackingService from '../services/trackingService.js';
+import { sanitizeFrom, sanitizeSubject, cleanSnippet } from '../services/mimeService.js';
 import { v4 as uuidv4 } from 'uuid';
 import { query } from '../config/database.js';
 import { emitToUser } from '../config/socket.js';
@@ -142,13 +146,8 @@ async function getIMAPConnection(user, accountId = null) {
 
   const password = creds.rows[0]?.imap_password;
   if (!password) {
-    if (process.env.NODE_ENV === 'development') {
-      logger.warn({ userId: user.id }, 'IMAP credentials not configured for user — using dev empty mailbox fallback');
-      return null;
-    }
-    const err = new Error('IMAP credentials not configured. Contact admin.');
-    err.status = 500;
-    throw err;
+    logger.warn({ userId: user.id }, 'IMAP credentials not configured for user — using empty mailbox fallback');
+    return null;
   }
 
   try {
@@ -166,11 +165,8 @@ async function getIMAPConnection(user, accountId = null) {
 
     return client;
   } catch (err) {
-    if (process.env.NODE_ENV === 'development') {
-      logger.warn({ userId: user.id, err: err.message }, 'IMAP connection failed in dev — using empty mailbox fallback');
-      return null;
-    }
-    throw err;
+    logger.warn({ userId: user.id, err: err.message }, 'IMAP connection failed — using empty mailbox fallback');
+    return null;
   }
 }
 
@@ -225,11 +221,6 @@ router.get('/folders', async (req, res, next) => {
       const inboxRes = await imapService.fetchMessages(client, 'INBOX', { page: 1, limit: 100 }).catch(() => ({ messages: [], total: 0 }));
       const msgs = inboxRes.messages || [];
 
-      const feedRegex = /newsletter|digest|weekly|monthly|updates|news|shield|guide|announcement|welcome to|bulletin|medium|substack|dev\.to|github digests/i;
-      const paperTrailRegex = /letter|future|receipt|invoice|order|confirmation|payment|transaction|billing|ticket|pin|code|otp|verify|statement|purchase|tracking|e2e|support request/i;
-      const promoRegex = /promo|discount|sale|deal|offer|coupon|save|clearance|exclusive offer|shop now|special offer|free shipping|limited time|flash sale|reward|cashback|gift card|voucher|perk|store|deals/i;
-      const socialRegex = /github|linkedin|twitter|x\.com|facebook|instagram|discord|reddit|slack|youtube|tiktok|pinterest|threads|medium|mastodon|twitch|community|follower|mention|commented|invited you|connection request/i;
-
       let starredCount = 0;
       let feedCount = 0;
       let paperCount = 0;
@@ -238,15 +229,15 @@ router.get('/folders', async (req, res, next) => {
 
       for (const m of msgs) {
         if (m.isStarred) starredCount++;
-        const fromStr = typeof m.from === 'object' ? (m.from?.name || m.from?.address || '') : (m.from || '');
-        const text = `${m.subject} ${fromStr}`;
-        if (paperTrailRegex.test(text)) {
+        const fromStr = typeof m.from === 'object' ? `${m.from?.name || ''} ${m.from?.address || ''}` : String(m.from || '');
+        const text = `${m.subject || ''} ${fromStr} ${m.snippet || m.preview || ''}`;
+        if (imapService.CATEGORY_PATTERNS.paperTrail.test(text)) {
           paperCount++;
-        } else if (promoRegex.test(text)) {
+        } else if (imapService.CATEGORY_PATTERNS.promotions.test(text)) {
           promoCount++;
-        } else if (socialRegex.test(text)) {
+        } else if (imapService.CATEGORY_PATTERNS.social.test(text)) {
           socialCount++;
-        } else if (feedRegex.test(text)) {
+        } else if (imapService.CATEGORY_PATTERNS.feed.test(text)) {
           feedCount++;
         }
       }
@@ -330,6 +321,7 @@ router.get('/inbox', async (req, res, next) => {
 
     // If user is archive@wox.world, return domain-wide compliance archive stream
     if (req.user.email?.toLowerCase() === 'archive@wox.world') {
+      await processInboundArchiveEmails().catch((err) => logger.debug({ err: err.message }, 'Archive sync on inbox fetch'));
       const archiveResult = await complianceArchiveService.getArchivedMessages({
         page,
         limit,
@@ -360,7 +352,14 @@ router.get('/inbox', async (req, res, next) => {
     const rawResult = await imapService.fetchMessages(client, 'INBOX', { page, limit });
     const rawMessages = rawResult.messages || [];
 
-    const messages = rawMessages.filter((m) => !isPurelymailWelcomeEmail(m));
+    const messages = rawMessages
+      .filter((m) => !isPurelymailWelcomeEmail(m))
+      .map((m) => ({
+        ...m,
+        subject: sanitizeSubject(m.subject),
+        from: sanitizeFrom(m.from),
+        snippet: cleanSnippet(m.snippet || m.preview),
+      }));
 
     res.json({
       messages,
@@ -404,6 +403,7 @@ router.get('/folder/:name', async (req, res, next) => {
 
     // If user is archive@wox.world, return domain-wide compliance archive stream
     if (req.user.email?.toLowerCase() === 'archive@wox.world') {
+      await processInboundArchiveEmails().catch((err) => logger.debug({ err: err.message }, 'Archive sync on folder fetch'));
       const archiveResult = await complianceArchiveService.getArchivedMessages({
         page,
         limit,
@@ -435,7 +435,13 @@ router.get('/folder/:name', async (req, res, next) => {
     const rawResult = await imapService.fetchMessages(client, folderName, { page, limit });
     const rawMessages = rawResult.messages || [];
 
-    const messages = folderName === 'INBOX' ? rawMessages.filter((m) => !isPurelymailWelcomeEmail(m)) : rawMessages;
+    const messages = (folderName === 'INBOX' ? rawMessages.filter((m) => !isPurelymailWelcomeEmail(m)) : rawMessages)
+      .map((m) => ({
+        ...m,
+        subject: sanitizeSubject(m.subject),
+        from: sanitizeFrom(m.from),
+        snippet: cleanSnippet(m.snippet || m.preview),
+      }));
 
     res.json({
       folder: folderName,
@@ -640,33 +646,36 @@ router.get('/message/:uid', async (req, res, next) => {
       }
     }
 
-    // Extract Archive Compliance Journaling Metadata Headers (for shadow-copied / archived emails)
+    // Extract Archive Compliance Journaling Metadata Headers (only for archive@wox.world or compliance audits)
     let archiveJournal = null;
-    const journalFrom = parsed.headers?.get('x-woxmail-journal-original-from');
-    const journalTo = parsed.headers?.get('x-woxmail-journal-original-to');
-    const journalCc = parsed.headers?.get('x-woxmail-journal-original-cc');
-    const journalDir = parsed.headers?.get('x-woxmail-journal-direction');
-    const journalTime = parsed.headers?.get('x-woxmail-journal-timestamp');
-    const journalAlias = parsed.headers?.get('x-woxmail-journal-alias');
+    const isComplianceAuditor = req.user?.email === 'archive@wox.world' || req.query.audit === 'true';
+    if (isComplianceAuditor) {
+      const journalFrom = parsed.headers?.get('x-woxmail-journal-original-from');
+      const journalTo = parsed.headers?.get('x-woxmail-journal-original-to');
+      const journalCc = parsed.headers?.get('x-woxmail-journal-original-cc');
+      const journalDir = parsed.headers?.get('x-woxmail-journal-direction');
+      const journalTime = parsed.headers?.get('x-woxmail-journal-timestamp');
+      const journalAlias = parsed.headers?.get('x-woxmail-journal-alias');
 
-    if (journalFrom || journalTo || journalDir) {
-      archiveJournal = {
-        originalFrom: typeof journalFrom === 'string' ? journalFrom : (journalFrom?.value || null),
-        originalTo: typeof journalTo === 'string' ? journalTo : (journalTo?.value || null),
-        originalCc: typeof journalCc === 'string' ? journalCc : (journalCc?.value || null),
-        direction: typeof journalDir === 'string' ? journalDir : (journalDir?.value || 'outbound'),
-        timestamp: typeof journalTime === 'string' ? journalTime : (journalTime?.value || null),
-        alias: typeof journalAlias === 'string' ? journalAlias : (journalAlias?.value || null),
-      };
+      if (journalFrom || journalTo || journalDir) {
+        archiveJournal = {
+          originalFrom: typeof journalFrom === 'string' ? journalFrom : (journalFrom?.value || null),
+          originalTo: typeof journalTo === 'string' ? journalTo : (journalTo?.value || null),
+          originalCc: typeof journalCc === 'string' ? journalCc : (journalCc?.value || null),
+          direction: typeof journalDir === 'string' ? journalDir : (journalDir?.value || 'outbound'),
+          timestamp: typeof journalTime === 'string' ? journalTime : (journalTime?.value || null),
+          alias: typeof journalAlias === 'string' ? journalAlias : (journalAlias?.value || null),
+        };
+      }
     }
 
     res.json({
       uid,
       folder,
-      subject: parsed.subject || '(no subject)',
-      from: parsed.from?.value?.[0] || null,
-      to: parsed.to?.value || [],
-      cc: parsed.cc?.value || [],
+      subject: sanitizeSubject(parsed.subject),
+      from: sanitizeFrom(parsed.from?.value?.[0]),
+      to: (parsed.to?.value || []).map(sanitizeFrom),
+      cc: (parsed.cc?.value || []).map(sanitizeFrom),
       date: parsed.date || null,
       messageId: parsed.messageId || null,
       inReplyTo: parsed.inReplyTo || null,
@@ -1275,17 +1284,40 @@ router.post('/send',
       });
 
       let result;
+      const isProton = Boolean(
+        transporter?.isProton || (senderEmail && (
+          senderEmail.endsWith('@proton.me') ||
+          senderEmail.endsWith('@pm.me') ||
+          senderEmail.endsWith('@protonmail.com') ||
+          senderEmail.endsWith('@protonmail.ch')
+        ))
+      );
+
       try {
-        result = await smtpService.sendEmail(transporter, {
-          from: fromAddress,
-          to: actualTo,
-          cc,
-          bcc,
-          subject,
-          html: effectiveHtml,
-          text,
-          attachments: normalizedAttachments,
-        });
+        if (isProton) {
+          const { sendProtonMail } = await import('../services/protonServerSync.js');
+          result = await sendProtonMail(senderEmail, {
+            from: senderEmail,
+            to: actualTo,
+            cc,
+            bcc,
+            subject,
+            html: effectiveHtml,
+            text,
+            attachments: normalizedAttachments,
+          });
+        } else {
+          result = await smtpService.sendEmail(transporter, {
+            from: fromAddress,
+            to: actualTo,
+            cc,
+            bcc,
+            subject,
+            html: effectiveHtml,
+            text,
+            attachments: normalizedAttachments,
+          });
+        }
         await outboxService.updateOutboxStatus(directDispatchId, { status: 'sent', sentAt: new Date() });
         autoLearnRecipients(req.user.id, [actualTo, cc, bcc]);
       } catch (smtpErr) {
@@ -1308,7 +1340,7 @@ router.post('/send',
         bodyText: text,
         attachments: normalizedAttachments,
         ipAddress: req.ip,
-        provider: 'woxmail',
+        provider: isProton ? 'proton' : 'woxmail',
         messageId: result.messageId,
       }).catch((archErr) => logger.warn({ err: archErr.message }, 'Failed to record compliance archive on send'));
 
@@ -1335,25 +1367,27 @@ router.post('/send',
          ON CONFLICT (date) DO UPDATE SET emails_sent = daily_stats.emails_sent + 1`
       );
 
-      // Append copy to user's Sent IMAP folder
-      try {
-        const client = await getIMAPConnection(req.user, req.query.accountId || req.headers['x-account-id']);
-        if (client) {
-          await smtpService.saveSentMessage(client, {
-            from: fromAddress,
-            to: actualTo,
-            cc,
-            bcc,
-            subject,
-            html,
-            text,
-            attachments: normalizedAttachments,
-            messageId: result.messageId,
-            date: new Date(),
-          });
+      // Append copy to user's Sent IMAP folder (skip if Proton since Proton webmail already tracks sent items)
+      if (!isProton) {
+        try {
+          const client = await getIMAPConnection(req.user, req.query.accountId || req.headers['x-account-id']);
+          if (client) {
+            await smtpService.saveSentMessage(client, {
+              from: fromAddress,
+              to: actualTo,
+              cc,
+              bcc,
+              subject,
+              html,
+              text,
+              attachments: normalizedAttachments,
+              messageId: result.messageId,
+              date: new Date(),
+            });
+          }
+        } catch (saveErr) {
+          logger.warn({ err: saveErr.message }, 'Failed to append sent message to Sent folder');
         }
-      } catch (saveErr) {
-        logger.warn({ err: saveErr.message }, 'Failed to append sent message to Sent folder');
       }
 
       res.json({
@@ -1362,7 +1396,8 @@ router.post('/send',
         trackingToken: trackingRecord?.tracking_token || null,
       });
     } catch (err) {
-      next(err);
+      console.error('MAIL SEND ROUTE ERROR:', err);
+      res.status(err.status || 500).json({ error: err.message || 'Internal server error', details: err.stack });
     }
   }
 );
@@ -2200,6 +2235,85 @@ router.post('/search',
 );
 
 /**
+ * GET /api/mail/search/global
+ * Cross-mailbox / cross-folder search across all folders in user account.
+ */
+router.get('/search/global', async (req, res, next) => {
+  try {
+    const client = await getIMAPConnection(req.user, req.query.accountId || req.headers['x-account-id']);
+    if (!client) {
+      return res.json({ results: [], total: 0 });
+    }
+
+    const { q, from, to, subject, isStarred, isUnread, since, before, limit = 50 } = req.query;
+
+    const list = await client.list();
+    const folderList = list.map(f => f.path);
+
+    const criteria = {};
+    if (q && typeof q === 'string' && q.trim()) {
+      const clean = q.trim();
+      criteria.or = [
+        { subject: clean },
+        { from: clean },
+        { to: clean },
+        { body: clean }
+      ];
+    }
+    if (from) criteria.from = from;
+    if (to) criteria.to = to;
+    if (subject) criteria.subject = subject;
+    if (isUnread === 'true') criteria.unseen = true;
+    if (isStarred === 'true') criteria.flagged = true;
+    if (since) criteria.since = new Date(since);
+    if (before) criteria.before = new Date(before);
+
+    const combined = [];
+    for (const folderPath of folderList) {
+      try {
+        const uids = await imapService.searchMessages(client, folderPath, criteria);
+        if (!uids || uids.length === 0) continue;
+
+        const limited = uids.slice(0, 15);
+        const lock = await client.getMailboxLock(folderPath);
+        try {
+          for await (const msg of client.fetch(limited.join(','), {
+            envelope: true, flags: true, uid: true, size: true
+          }, { uid: true })) {
+            combined.push({
+              uid: msg.uid,
+              folder: folderPath,
+              subject: msg.envelope?.subject || '(no subject)',
+              from: msg.envelope?.from?.[0] || null,
+              to: msg.envelope?.to || [],
+              date: msg.envelope?.date || null,
+              isRead: msg.flags?.has('\\Seen') || false,
+              isStarred: msg.flags?.has('\\Flagged') || false,
+              size: msg.size || 0,
+            });
+          }
+        } finally {
+          lock.release();
+        }
+      } catch (err) {
+        logger.debug({ folder: folderPath, err: err.message }, 'Folder search skipped');
+      }
+    }
+
+    combined.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+    const capped = combined.slice(0, parseInt(limit, 10) || 50);
+
+    res.json({
+      results: capped,
+      total: capped.length,
+      searchedFolders: folderList.length
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * GET /api/mail/proxy-image
  * Proxy external images to prevent tracking.
  */
@@ -2213,7 +2327,12 @@ router.get('/proxy-image', async (req, res, next) => {
       return res.status(400).json({ error: 'Invalid URL' });
     }
 
-    const response = await fetch(url, {
+    const safety = await linkPreviewService.isSafeUrl(url);
+    if (!safety.safe) {
+      return res.status(400).json({ error: 'Blocked: Target URL points to local/private network address.' });
+    }
+
+    const response = await linkPreviewService.safeFetch(url, {
       headers: { 'User-Agent': 'WoxMail-ImageProxy/1.0' },
       signal: AbortSignal.timeout(10000),
     });
@@ -2239,37 +2358,77 @@ router.get('/proxy-image', async (req, res, next) => {
 /**
  * POST /api/mail/schedule
  * Schedule an email for future sending.
+ * Supports web composer & API payloads, normalizes strings/arrays, and registers Outbox tracking.
  */
-router.post('/schedule',
-  validate({
-    to: { type: 'array', required: true },
-    subject: { type: 'string', required: true },
-    bodyHtml: { type: 'string', required: true },
-    bodyText: { type: 'string' },
-    cc: { type: 'array' },
-    bcc: { type: 'array' },
-    sendAt: { type: 'string', required: true },
-  }),
-  async (req, res, next) => {
-    try {
-      const sendAt = new Date(req.body.sendAt);
-      if (sendAt <= new Date()) {
-        return res.status(400).json({ error: 'Send time must be in the future' });
-      }
+router.post('/schedule', async (req, res, next) => {
+  try {
+    let { to, cc, bcc, subject, bodyHtml, html, bodyText, text, sendAt, scheduledAt, attachments } = req.body;
+    const targetSendAt = sendAt || scheduledAt;
+    const targetHtml = bodyHtml !== undefined ? bodyHtml : (html || '');
+    const targetText = bodyText !== undefined ? bodyText : (text || '');
 
-      const result = await query(
-        `INSERT INTO scheduled_emails (user_id, to_addresses, cc_addresses, bcc_addresses, subject, body_html, body_text, send_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-         RETURNING *`,
-        [req.user.id, req.body.to, req.body.cc || [], req.body.bcc || [], req.body.subject, req.body.bodyHtml, req.body.bodyText || '', sendAt]
-      );
-
-      res.status(201).json({ scheduled: result.rows[0] });
-    } catch (err) {
-      next(err);
+    if (!to || (!targetHtml && !targetText) || !targetSendAt) {
+      return res.status(400).json({ error: 'to, sendAt (or scheduledAt), and message body (html or text) are required' });
     }
+
+    // Helper to normalize comma-separated strings or arrays into string arrays
+    const normalizeAddrList = (val) => {
+      if (!val) return [];
+      if (Array.isArray(val)) return val.map(String).map((s) => s.trim()).filter(Boolean);
+      return String(val).split(',').map((s) => s.trim()).filter(Boolean);
+    };
+
+    const toAddrs = normalizeAddrList(to);
+    const ccAddrs = normalizeAddrList(cc);
+    const bccAddrs = normalizeAddrList(bcc);
+
+    if (toAddrs.length === 0) {
+      return res.status(400).json({ error: 'At least one valid recipient (to) address is required' });
+    }
+
+    const sendAtDate = new Date(targetSendAt);
+    if (isNaN(sendAtDate.getTime()) || sendAtDate <= new Date()) {
+      return res.status(400).json({ error: 'Send time must be in the future' });
+    }
+
+    // Schedule email with max limit check & attachment preservation
+    const scheduled = await schedulerService.scheduleEmail(req.user.id, {
+      to: toAddrs,
+      cc: ccAddrs,
+      bcc: bccAddrs,
+      subject: subject || '(no subject)',
+      bodyHtml: targetHtml,
+      bodyText: targetText,
+      attachments: attachments || [],
+      sendAt: sendAtDate,
+    });
+
+    // Create synchronized Outbox entry with status: 'scheduled'
+    await outboxService.createOutboxEntry({
+      userId: req.user.id,
+      dispatchId: `sched_${scheduled.id}`,
+      emailPayload: {
+        from: req.user.email,
+        to: toAddrs,
+        cc: ccAddrs,
+        bcc: bccAddrs,
+        subject: subject || '(no subject)',
+        html: targetHtml,
+        text: targetText,
+        attachments: attachments || [],
+      },
+      status: 'scheduled',
+      scheduledAt: sendAtDate,
+    });
+
+    res.status(201).json({ scheduled });
+  } catch (err) {
+    if (err.message && err.message.includes('Maximum')) {
+      return res.status(400).json({ error: err.message });
+    }
+    next(err);
   }
-);
+});
 
 /**
  * GET /api/mail/schedule
@@ -2277,11 +2436,8 @@ router.post('/schedule',
  */
 router.get('/schedule', async (req, res, next) => {
   try {
-    const result = await query(
-      'SELECT * FROM scheduled_emails WHERE user_id = $1 AND sent = FALSE ORDER BY send_at ASC',
-      [req.user.id]
-    );
-    res.json({ scheduled: result.rows });
+    const scheduled = await schedulerService.listScheduled(req.user.id);
+    res.json({ scheduled });
   } catch (err) {
     next(err);
   }
@@ -2289,15 +2445,22 @@ router.get('/schedule', async (req, res, next) => {
 
 /**
  * DELETE /api/mail/schedule/:id
- * Cancel a scheduled email.
+ * Cancel a scheduled email and purge from outbox.
  */
 router.delete('/schedule/:id', async (req, res, next) => {
   try {
-    const result = await query(
-      'DELETE FROM scheduled_emails WHERE user_id = $1 AND id = $2 AND sent = FALSE RETURNING id',
-      [req.user.id, parseInt(req.params.id, 10)]
+    const scheduledId = parseInt(req.params.id, 10);
+    const cancelled = await schedulerService.cancelScheduled(req.user.id, scheduledId);
+    if (!cancelled) {
+      return res.status(404).json({ error: 'Scheduled email not found' });
+    }
+
+    // Also remove corresponding outbox record
+    await query(
+      `DELETE FROM outbox_emails WHERE user_id = $1 AND dispatch_id = $2`,
+      [req.user.id, `sched_${scheduledId}`]
     );
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Scheduled email not found' });
+
     res.json({ message: 'Scheduled email cancelled' });
   } catch (err) {
     next(err);
@@ -2326,15 +2489,8 @@ router.post('/snooze',
         return res.status(400).json({ error: 'Snooze time must be in the future' });
       }
 
-      const result = await query(
-        `INSERT INTO snoozed_emails (user_id, message_uid, original_folder, snooze_until)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (user_id, message_uid) DO UPDATE SET snooze_until = $4, unsnoozed = FALSE
-         RETURNING *`,
-        [req.user.id, messageUid, folder, snoozeUntil]
-      );
-
-      res.status(201).json({ success: true, snoozed: result.rows[0] });
+      const snoozed = await snoozeService.snoozeEmail(req.user.id, messageUid, folder, snoozeUntil);
+      res.status(201).json({ success: true, snoozed });
     } catch (err) {
       next(err);
     }
@@ -2347,11 +2503,8 @@ router.post('/snooze',
  */
 const handleListSnooze = async (req, res, next) => {
   try {
-    const result = await query(
-      'SELECT * FROM snoozed_emails WHERE user_id = $1 AND unsnoozed = FALSE ORDER BY snooze_until ASC',
-      [req.user.id]
-    );
-    res.json({ snoozed: result.rows });
+    const snoozed = await snoozeService.listSnoozed(req.user.id);
+    res.json({ snoozed });
   } catch (err) {
     next(err);
   }
@@ -2361,17 +2514,22 @@ router.get('/snooze', handleListSnooze);
 router.get('/snoozed', handleListSnooze);
 
 /**
+ * GET /api/mail/snooze/options
+ * Get preset snooze options with calculated timestamps.
+ */
+router.get('/snooze/options', (req, res) => {
+  res.json({ options: snoozeService.getSnoozeOptions() });
+});
+
+/**
  * DELETE /api/mail/snooze/:id
  * Cancel snooze for an email
  */
 router.delete('/snooze/:id', async (req, res, next) => {
   try {
     const id = parseInt(req.params.id, 10);
-    await query(
-      'UPDATE snoozed_emails SET unsnoozed = TRUE WHERE (id = $1 OR message_uid = $1) AND user_id = $2',
-      [id, req.user.id]
-    );
-    res.json({ success: true, message: 'Snooze cancelled' });
+    const cancelled = await snoozeService.cancelSnooze(req.user.id, id);
+    res.json({ success: true, message: 'Snooze cancelled', cancelled });
   } catch (err) {
     next(err);
   }

@@ -107,7 +107,13 @@ router.post(
       const senderEmail = req.user.email;
 
       const userRes = await query('SELECT imap_password FROM users WHERE id = $1', [senderId]);
-      const senderPass = userRes.rows[0]?.imap_password || (process.env.ADMIN_PASSWORD || '').replace(/^['"]|['"]$/g, '');
+      let senderPass = userRes.rows[0]?.imap_password;
+      if (!senderPass && req.user.role === 'admin') {
+        senderPass = (process.env.ADMIN_PASSWORD || '').replace(/^['"]|['"]$/g, '');
+      }
+      if (!senderPass) {
+        return res.status(400).json({ error: 'Mailbox credentials not configured for sending ephemeral emails' });
+      }
 
       const result = await sendEphemeralStreamEmail({
         senderId,

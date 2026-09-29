@@ -8,16 +8,22 @@ export default function QuotedTextFolder({ htmlContent, textContent }) {
 
   if (!htmlContent && !textContent) return null;
 
-  // Search for common quoted text delimiters
+  const isHtml = Boolean(htmlContent);
   const raw = htmlContent || textContent || '';
   const blockquoteRegex = /<blockquote[\s\S]*?<\/blockquote>/gi;
   const originalMsgRegex = /(-{3,}\s*Original Message\s*-{3,}[\s\S]*)/i;
+  const onWroteRegex = /(\nOn\s+[^\n]+,\s+[^\n]+wrote:\s*\n[\s\S]*)/i;
 
-  const hasBlockquote = blockquoteRegex.test(raw);
+  const hasBlockquote = isHtml && blockquoteRegex.test(raw);
   const hasOriginalMsg = originalMsgRegex.test(raw);
+  const hasOnWrote = !hasOriginalMsg && onWroteRegex.test(raw);
 
-  if (!hasBlockquote && !hasOriginalMsg) {
-    return <div dangerouslySetInnerHTML={{ __html: raw }} />;
+  if (!hasBlockquote && !hasOriginalMsg && !hasOnWrote) {
+    return isHtml ? (
+      <div dangerouslySetInnerHTML={{ __html: raw }} />
+    ) : (
+      <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{raw}</div>
+    );
   }
 
   // Extract main vs quoted
@@ -32,11 +38,19 @@ export default function QuotedTextFolder({ htmlContent, textContent }) {
     const parts = raw.split(originalMsgRegex);
     mainPart = parts[0];
     quotedPart = parts.slice(1).join('');
+  } else if (hasOnWrote) {
+    const parts = raw.split(onWroteRegex);
+    mainPart = parts[0];
+    quotedPart = parts.slice(1).join('');
   }
 
   return (
     <div>
-      <div dangerouslySetInnerHTML={{ __html: mainPart }} />
+      {isHtml ? (
+        <div dangerouslySetInnerHTML={{ __html: mainPart }} />
+      ) : (
+        <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{mainPart}</div>
+      )}
 
       {quotedPart && (
         <div style={{ marginTop: '1rem', borderTop: '1px dashed var(--color-border)', paddingTop: '0.75rem' }}>
@@ -58,10 +72,17 @@ export default function QuotedTextFolder({ htmlContent, textContent }) {
                 borderLeft: '3px solid var(--color-primary)',
                 borderRadius: '0 var(--radius-sm) var(--radius-sm) 0',
                 fontSize: '0.8125rem',
-                color: 'var(--color-text-secondary)'
+                color: 'var(--color-text-secondary)',
+                whiteSpace: isHtml ? 'normal' : 'pre-wrap',
+                wordBreak: 'break-word',
               }}
-              dangerouslySetInnerHTML={{ __html: quotedPart }}
-            />
+            >
+              {isHtml ? (
+                <div dangerouslySetInnerHTML={{ __html: quotedPart }} />
+              ) : (
+                quotedPart
+              )}
+            </div>
           )}
         </div>
       )}

@@ -3,11 +3,14 @@ import CampaignComposer from './CampaignComposer.jsx';
 
 /**
  * CampaignsView — WoxNewsletter & Bulk Campaign Broadcaster Dashboard
+ * Upgraded with 4 Tabs: Campaigns, Mailing Lists, Drip Automations, and Dynamic Segments.
  */
 export default function CampaignsView() {
-  const [activeTab, setActiveTab] = useState('campaigns'); // 'campaigns' | 'lists'
+  const [activeTab, setActiveTab] = useState('campaigns'); // 'campaigns' | 'lists' | 'automations' | 'segments'
   const [campaigns, setCampaigns] = useState([]);
   const [lists, setLists] = useState([]);
+  const [sequences, setSequences] = useState([]);
+  const [segments, setSegments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isComposing, setIsComposing] = useState(false);
 
@@ -24,6 +27,27 @@ export default function CampaignsView() {
   // Embed form modal
   const [embedHtml, setEmbedHtml] = useState('');
 
+  // New Sequence Modal
+  const [showNewSeqModal, setShowNewSeqModal] = useState(false);
+  const [newSeqName, setNewSeqName] = useState('');
+  const [newSeqDesc, setNewSeqDesc] = useState('');
+  const [newSeqListId, setNewSeqListId] = useState('');
+
+  // Add Step Modal
+  const [activeSeqForStep, setActiveSeqForStep] = useState(null);
+  const [stepSubject, setStepSubject] = useState('');
+  const [stepDays, setStepDays] = useState(1);
+  const [stepHours, setStepHours] = useState(0);
+  const [stepHtml, setStepHtml] = useState('<p>Hello {{first_name}},</p><p>Welcome to step 2!</p>');
+
+  // New Segment Modal
+  const [showNewSegmentModal, setShowNewSegmentModal] = useState(false);
+  const [newSegmentName, setNewSegmentName] = useState('');
+  const [newSegmentListId, setNewSegmentListId] = useState('');
+  const [segmentTag, setSegmentTag] = useState('');
+  const [segmentStatus, setSegmentStatus] = useState('active');
+  const [previewCount, setPreviewCount] = useState(null);
+
   const fetchCampaigns = async () => {
     try {
       const res = await fetch('/api/campaigns', { credentials: 'include' });
@@ -39,14 +63,42 @@ export default function CampaignsView() {
       const res = await fetch('/api/campaigns/lists', { credentials: 'include' });
       const data = await res.json();
       setLists(data.lists || []);
+      if (data.lists?.[0]?.id) {
+        setNewSeqListId(data.lists[0].id);
+        setNewSegmentListId(data.lists[0].id);
+      }
     } catch (err) {
       console.error('Failed to fetch mailing lists', err);
     }
   };
 
-  useEffect(() => {
+  const fetchSequences = async () => {
+    try {
+      const res = await fetch('/api/campaigns/drip/sequences', { credentials: 'include' });
+      const data = await res.json();
+      setSequences(data.sequences || []);
+    } catch (err) {
+      console.error('Failed to fetch drip sequences', err);
+    }
+  };
+
+  const fetchSegments = async () => {
+    try {
+      const res = await fetch('/api/campaigns/segments', { credentials: 'include' });
+      const data = await res.json();
+      setSegments(data.segments || []);
+    } catch (err) {
+      console.error('Failed to fetch segments', err);
+    }
+  };
+
+  const refreshAll = () => {
     setLoading(true);
-    Promise.all([fetchCampaigns(), fetchLists()]).finally(() => setLoading(false));
+    Promise.all([fetchCampaigns(), fetchLists(), fetchSequences(), fetchSegments()]).finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    refreshAll();
   }, []);
 
   const handleCreateList = async (e) => {
@@ -71,8 +123,128 @@ export default function CampaignsView() {
     }
   };
 
+  const handleCreateSequence = async (e) => {
+    e.preventDefault();
+    if (!newSeqName.trim() || !newSeqListId) return;
+    try {
+      const res = await fetch('/api/campaigns/drip/sequences', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          list_id: parseInt(newSeqListId, 10),
+          name: newSeqName.trim(),
+          description: newSeqDesc.trim()
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setShowNewSeqModal(false);
+        setNewSeqName('');
+        setNewSeqDesc('');
+        fetchSequences();
+      }
+    } catch (err) {
+      alert('Failed to create drip sequence: ' + err.message);
+    }
+  };
+
+  const handleAddStep = async (e) => {
+    e.preventDefault();
+    if (!activeSeqForStep || !stepSubject.trim() || !stepHtml.trim()) return;
+    try {
+      const res = await fetch(`/api/campaigns/drip/sequences/${activeSeqForStep.id}/steps`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          delay_days: parseInt(stepDays, 10) || 0,
+          delay_hours: parseInt(stepHours, 10) || 0,
+          subject: stepSubject.trim(),
+          html_content: stepHtml.trim()
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setActiveSeqForStep(null);
+        setStepSubject('');
+        setStepDays(1);
+        setStepHours(0);
+        fetchSequences();
+      }
+    } catch (err) {
+      alert('Failed to add step: ' + err.message);
+    }
+  };
+
+  const handlePreviewSegmentCount = async () => {
+    if (!newSegmentListId) return;
+    const rules = {
+      match_type: 'all',
+      conditions: []
+    };
+    if (segmentTag.trim()) {
+      rules.conditions.push({ field: 'tags', operator: 'contains', value: [segmentTag.trim().toUpperCase()] });
+    }
+    if (segmentStatus) {
+      rules.conditions.push({ field: 'status', operator: 'equals', value: segmentStatus });
+    }
+
+    try {
+      const res = await fetch('/api/campaigns/segments/preview-count', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ list_id: parseInt(newSegmentListId, 10), rules })
+      });
+      const data = await res.json();
+      setPreviewCount(data.count);
+    } catch (err) {
+      console.warn('Count preview error', err);
+    }
+  };
+
+  const handleCreateSegment = async (e) => {
+    e.preventDefault();
+    if (!newSegmentName.trim() || !newSegmentListId) return;
+
+    const rules = {
+      match_type: 'all',
+      conditions: []
+    };
+    if (segmentTag.trim()) {
+      rules.conditions.push({ field: 'tags', operator: 'contains', value: [segmentTag.trim().toUpperCase()] });
+    }
+    if (segmentStatus) {
+      rules.conditions.push({ field: 'status', operator: 'equals', value: segmentStatus });
+    }
+
+    try {
+      const res = await fetch('/api/campaigns/segments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          list_id: parseInt(newSegmentListId, 10),
+          name: newSegmentName.trim(),
+          rules
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setShowNewSegmentModal(false);
+        setNewSegmentName('');
+        setSegmentTag('');
+        setPreviewCount(null);
+        fetchSegments();
+      }
+    } catch (err) {
+      alert('Failed to create segment: ' + err.message);
+    }
+  };
+
   const handleStartBroadcast = async (campaignId) => {
-    if (!confirm('Are you sure you want to broadcast this campaign to all active subscribers?')) return;
+    if (!confirm('Are you sure you want to broadcast this campaign to active subscribers?')) return;
     try {
       const res = await fetch(`/api/campaigns/${campaignId}/send`, {
         method: 'POST',
@@ -92,7 +264,6 @@ export default function CampaignsView() {
     e.preventDefault();
     if (!csvText.trim() || !importListId) return;
 
-    // Parse simple CSV rows
     const lines = csvText.trim().split('\n');
     const subscribers = [];
 
@@ -105,6 +276,7 @@ export default function CampaignsView() {
           email: parts[0],
           first_name: parts[1] || '',
           last_name: parts[2] || '',
+          tags: parts[3] ? parts[3].split('|') : []
         });
       }
     }
@@ -124,7 +296,7 @@ export default function CampaignsView() {
       });
       const data = await res.json();
       if (data.success) {
-        alert(`✓ Successfully imported ${data.imported} subscribers! (${data.skipped} skipped)`);
+        alert(`Successfully imported ${data.imported} subscribers! (${data.skipped} skipped)`);
         setImportListId(null);
         setCsvText('');
         fetchLists();
@@ -140,15 +312,15 @@ export default function CampaignsView() {
     try {
       const res = await fetch(`/api/campaigns/lists/${listId}/embed`, { credentials: 'include' });
       const data = await res.json();
-      setEmbedHtml(data.html);
+      setEmbedHtml(data.embedHtml);
     } catch (err) {
-      alert('Failed to load embed form');
+      alert('Failed to get embed code: ' + err.message);
     }
   };
 
   if (isComposing) {
     return (
-      <div style={{ flex: 1, padding: '2rem', height: '100vh', overflowY: 'auto', background: 'var(--color-bg-page)' }}>
+      <div style={{ flex: 1, height: '100vh', overflowY: 'auto', background: 'var(--color-bg-page)' }}>
         <CampaignComposer
           lists={lists}
           onSave={() => {
@@ -167,15 +339,14 @@ export default function CampaignsView() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--color-border)', background: 'var(--color-bg-card)', flexWrap: 'wrap', gap: '0.75rem' }}>
         <div>
           <h2 style={{ margin: 0, fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
-            <span>WoxNewsletter & Bulk Broadcaster</span>
+            <span>WoxNewsletter & Marketing Suite</span>
           </h2>
           <p className="text-secondary" style={{ margin: 0, fontSize: '0.75rem' }}>
-            Broadcast branded emails with merge tags, deliverability throttles, and RFC 8058 one-click unsubscribes.
+            Notion block editor, multi-step drip funnels, dynamic segmentation, and one-click deliverability.
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', gap: '0.35rem', background: 'var(--color-bg-input)', padding: '2px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)' }}>
             <button
               type="button"
@@ -191,6 +362,20 @@ export default function CampaignsView() {
             >
               Mailing Lists ({lists.length})
             </button>
+            <button
+              type="button"
+              className={`btn btn-xs ${activeTab === 'automations' ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => setActiveTab('automations')}
+            >
+              Drip Automations ({sequences.length})
+            </button>
+            <button
+              type="button"
+              className={`btn btn-xs ${activeTab === 'segments' ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => setActiveTab('segments')}
+            >
+              Segments ({segments.length})
+            </button>
           </div>
 
           <button
@@ -199,13 +384,13 @@ export default function CampaignsView() {
             onClick={() => setIsComposing(true)}
             disabled={lists.length === 0}
           >
-            New Campaign
+            Compose Campaign
           </button>
         </div>
       </div>
 
-      {/* Main Container */}
-      <div style={{ padding: '1.5rem', maxWidth: 1000, margin: '0 auto', width: '100%' }}>
+      {/* Main Content Area */}
+      <div style={{ padding: '1.5rem', maxWidth: 1050, margin: '0 auto', width: '100%' }}>
         {loading ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             {[...Array(3)].map((_, i) => (
@@ -216,76 +401,34 @@ export default function CampaignsView() {
           /* ── CAMPAIGNS TAB ────────────────────────────────── */
           campaigns.length === 0 ? (
             <div className="card" style={{ textAlign: 'center', padding: '3rem 1.5rem' }}>
-              <span style={{ display: 'inline-flex', color: 'var(--color-primary-light)' }}><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg></span>
               <h3 style={{ margin: '0.5rem 0' }}>No Campaigns Created Yet</h3>
-              <p className="text-secondary" style={{ fontSize: '0.875rem', marginBottom: '1.5rem' }}>
-                Create your first mailing list, import subscribers, and dispatch newsletters.
+              <p className="text-secondary" style={{ maxWidth: 450, margin: '0 auto 1.5rem', fontSize: '0.875rem' }}>
+                Design branded newsletters using our hybrid Notion block editor with spam score checks and responsive previews.
               </p>
-              {lists.length === 0 ? (
-                <button type="button" className="btn btn-primary" onClick={() => setShowNewListModal(true)}>
-                  Create Your First List
-                </button>
-              ) : (
-                <button type="button" className="btn btn-primary" onClick={() => setIsComposing(true)}>
-                  Compose New Campaign
-                </button>
-              )}
+              <button type="button" className="btn btn-primary btn-sm" onClick={() => setIsComposing(true)} disabled={lists.length === 0}>
+                Create Your First Campaign
+              </button>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              {campaigns.map((c) => (
-                <div key={c.id} className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem' }}>
-                    <div>
-                      <strong style={{ fontSize: '1.05rem', color: 'var(--color-text-primary)' }}>{c.title}</strong>
-                      <div className="text-secondary" style={{ fontSize: '0.8125rem', marginTop: '0.2rem' }}>
-                        Subject: <em>"{c.subject}"</em> · List: <strong>{c.list_name || 'Unassigned'}</strong>
-                      </div>
+              {campaigns.map((camp) => (
+                <div key={camp.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '4px' }}>
+                      <span className={`badge ${camp.status === 'sent' ? 'badge-green' : camp.status === 'sending' ? 'badge-purple' : 'badge-neutral'}`}>
+                        [{camp.status.toUpperCase()}]
+                      </span>
+                      <strong style={{ fontSize: '1rem' }}>{camp.title}</strong>
                     </div>
-                    <span
-                      className={`badge ${
-                        c.status === 'sent'
-                          ? 'badge-green'
-                          : c.status === 'sending'
-                          ? 'badge-purple'
-                          : c.status === 'draft'
-                          ? 'badge-amber'
-                          : 'badge-blue'
-                      }`}
-                    >
-                      {c.status.toUpperCase()}
-                    </span>
-                  </div>
-
-                  {/* Telemetry metrics bar */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '0.5rem', background: 'var(--color-bg-page)', padding: '0.6rem 0.8rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border-subtle)' }}>
-                    <div>
-                      <span className="text-tertiary" style={{ fontSize: '0.6875rem', display: 'block' }}>RECIPIENTS</span>
-                      <strong style={{ fontSize: '0.9rem' }}>{c.total_recipients || 0}</strong>
-                    </div>
-                    <div>
-                      <span className="text-tertiary" style={{ fontSize: '0.6875rem', display: 'block' }}>DELIVERED</span>
-                      <strong className="text-green" style={{ fontSize: '0.9rem' }}>{c.sent_count || 0}</strong>
-                    </div>
-                    <div>
-                      <span className="text-tertiary" style={{ fontSize: '0.6875rem', display: 'block' }}>FAILED / BOUNCED</span>
-                      <strong className="text-secondary" style={{ fontSize: '0.9rem' }}>{c.failed_count || 0}</strong>
-                    </div>
-                    <div>
-                      <span className="text-tertiary" style={{ fontSize: '0.6875rem', display: 'block' }}>OPENED</span>
-                      <strong className="text-purple" style={{ fontSize: '0.9rem' }}>{c.open_count || 0}</strong>
+                    <div className="text-secondary" style={{ fontSize: '0.8rem' }}>
+                      Subject: "{camp.subject}" &bull; List: {camp.list_name || 'N/A'} &bull; Recipients: {camp.sent_count || 0} / {camp.total_recipients || 0}
                     </div>
                   </div>
 
-                  {/* Actions */}
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
-                    {c.status === 'draft' && (
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-sm"
-                        onClick={() => handleStartBroadcast(c.id)}
-                      >
-                        Start Broadcast
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    {camp.status === 'draft' && (
+                      <button type="button" className="btn btn-primary btn-sm" onClick={() => handleStartBroadcast(camp.id)}>
+                        Send Broadcast
                       </button>
                     )}
                   </div>
@@ -293,77 +436,259 @@ export default function CampaignsView() {
               ))}
             </div>
           )
-        ) : (
-          /* ── LISTS TAB ────────────────────────────────────── */
+        ) : activeTab === 'lists' ? (
+          /* ── MAILING LISTS TAB ────────────────────────────── */
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <span style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)' }}>
-                Organize subscribers into segmented broadcast groups.
-              </span>
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                onClick={() => setShowNewListModal(true)}
-              >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.1rem' }}>Audience Lists</h3>
+                <p className="text-secondary" style={{ margin: 0, fontSize: '0.8rem' }}>Manage contact lists, tags, and public subscribe forms.</p>
+              </div>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowNewListModal(true)}>
                 + New Mailing List
               </button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              {lists.map((l) => (
-                <div key={l.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.25rem' }}>
-                  <div>
-                    <strong style={{ fontSize: '1rem', color: 'var(--color-text-primary)' }}>{l.name}</strong>
-                    <div className="text-secondary" style={{ fontSize: '0.75rem', marginTop: '0.2rem' }}>
-                      {l.description || 'No description'} · <strong>{l.active_subscribers || 0}</strong> active subscribers ({l.total_subscribers || 0} total)
+            {lists.length === 0 ? (
+              <div className="card" style={{ textAlign: 'center', padding: '3rem 1.5rem' }}>
+                <h3>No Lists Configured</h3>
+                <p className="text-secondary" style={{ fontSize: '0.875rem', marginBottom: '1rem' }}>Create a list to import contacts and trigger automated welcome drips.</p>
+                <button type="button" className="btn btn-primary btn-sm" onClick={() => setShowNewListModal(true)}>Create List</button>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
+                {lists.map(l => (
+                  <div key={l.id} className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <strong style={{ fontSize: '1.1rem' }}>{l.name}</strong>
+                        <span className="badge badge-purple">{l.total_subscribers || 0} subs</span>
+                      </div>
+                      <p className="text-secondary" style={{ fontSize: '0.8rem', margin: '0.5rem 0' }}>{l.description || 'No description provided.'}</p>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', borderTop: '1px solid var(--color-border)', paddingTop: '0.75rem' }}>
+                      <button type="button" className="btn btn-secondary btn-xs" onClick={() => setImportListId(l.id)}>
+                        Import CSV
+                      </button>
+                      <button type="button" className="btn btn-ghost btn-xs" onClick={() => showEmbedCode(l.id)}>
+                        Embed Form
+                      </button>
                     </div>
                   </div>
-
-                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-xs"
-                      onClick={() => setImportListId(l.id)}
-                      title="Bulk import subscribers from CSV"
-                    >
-                      Import CSV
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-xs"
-                      onClick={() => showEmbedCode(l.id)}
-                      title="Get embeddable signup form HTML"
-                    >
-                      &lt;/&gt; Embed Form
-                    </button>
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
+            )}
+          </div>
+        ) : activeTab === 'automations' ? (
+          /* ── DRIP AUTOMATIONS TAB ─────────────────────────── */
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.1rem' }}>Drip Sequences</h3>
+                <p className="text-secondary" style={{ margin: 0, fontSize: '0.8rem' }}>Automated welcome funnels and timed email sequences triggered on signup.</p>
+              </div>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowNewSeqModal(true)} disabled={lists.length === 0}>
+                + New Drip Funnel
+              </button>
             </div>
+
+            {sequences.length === 0 ? (
+              <div className="card" style={{ textAlign: 'center', padding: '3rem 1.5rem' }}>
+                <h3>No Drip Sequences Configured</h3>
+                <p className="text-secondary" style={{ fontSize: '0.875rem', marginBottom: '1rem' }}>Set up an automated sequence (e.g. Day 0 Welcome, Day 3 Onboarding, Day 7 Feature Spotlight).</p>
+                <button type="button" className="btn btn-primary btn-sm" onClick={() => setShowNewSeqModal(true)} disabled={lists.length === 0}>Create Sequence</button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {sequences.map(seq => (
+                  <div key={seq.id} className="card">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span className={`badge ${seq.is_active ? 'badge-green' : 'badge-neutral'}`}>
+                            {seq.is_active ? '[ACTIVE]' : '[PAUSED]'}
+                          </span>
+                          <strong style={{ fontSize: '1.1rem' }}>{seq.name}</strong>
+                        </div>
+                        <div className="text-secondary" style={{ fontSize: '0.8rem', marginTop: '2px' }}>
+                          {seq.description || 'Automated drip funnel'} &bull; {seq.total_steps || 0} Steps &bull; {seq.total_queued || 0} in queue
+                        </div>
+                      </div>
+
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={() => setActiveSeqForStep(seq)}>
+                        + Add Step
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          /* ── DYNAMIC SEGMENTS TAB ─────────────────────────── */
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.1rem' }}>Audience Segments</h3>
+                <p className="text-secondary" style={{ margin: 0, fontSize: '0.8rem' }}>Filter subscribers by tags, engagement, and status for laser-targeted broadcasts.</p>
+              </div>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowNewSegmentModal(true)} disabled={lists.length === 0}>
+                + New Segment
+              </button>
+            </div>
+
+            {segments.length === 0 ? (
+              <div className="card" style={{ textAlign: 'center', padding: '3rem 1.5rem' }}>
+                <h3>No Segments Defined</h3>
+                <p className="text-secondary" style={{ fontSize: '0.875rem', marginBottom: '1rem' }}>Build rule-based groups like [VIP], [BETA], or active customers.</p>
+                <button type="button" className="btn btn-primary btn-sm" onClick={() => setShowNewSegmentModal(true)} disabled={lists.length === 0}>Create Segment</button>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
+                {segments.map(seg => (
+                  <div key={seg.id} className="card">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <strong style={{ fontSize: '1rem' }}>{seg.name}</strong>
+                      <span className="badge badge-purple">[RULE-BASED]</span>
+                    </div>
+                    <p className="text-secondary" style={{ fontSize: '0.8rem', margin: '0.5rem 0' }}>List: {seg.list_name}</p>
+                    <div style={{ background: 'var(--color-bg-input)', padding: '6px 10px', borderRadius: 'var(--radius-sm)', fontSize: '12px', fontFamily: 'monospace' }}>
+                      {JSON.stringify(seg.rules)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
 
       {/* New List Modal */}
       {showNewListModal && (
-        <div className="compose-overlay" onClick={() => setShowNewListModal(false)}>
-          <div className="compose-modal card" style={{ maxWidth: 450 }} onClick={(e) => e.stopPropagation()}>
-            <div className="compose-header">
-              <h3>Create Mailing List</h3>
-              <button type="button" className="btn btn-ghost btn-xs" onClick={() => setShowNewListModal(false)}>✕</button>
-            </div>
-            <form onSubmit={handleCreateList} style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">List Name:</label>
-                <input className="input" placeholder="e.g. VIP Customers, Early Adopters" value={newListName} onChange={(e) => setNewListName(e.target.value)} required />
+        <div className="modal-backdrop" onClick={() => setShowNewListModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div className="card" onClick={(e) => e.stopPropagation()} style={{ width: '90%', maxWidth: '480px' }}>
+            <h3 style={{ margin: '0 0 1rem' }}>Create New Mailing List</h3>
+            <form onSubmit={handleCreateList}>
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, display: 'block', marginBottom: '4px' }}>LIST NAME</label>
+                <input className="input" type="text" placeholder="e.g. VIP Founders" value={newListName} onChange={e => setNewListName(e.target.value)} required />
               </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">Description:</label>
-                <input className="input" placeholder="Optional notes about audience" value={newListDesc} onChange={(e) => setNewListDesc(e.target.value)} />
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, display: 'block', marginBottom: '4px' }}>DESCRIPTION</label>
+                <input className="input" type="text" placeholder="e.g. Weekly dispatch subscribers" value={newListDesc} onChange={e => setNewListDesc(e.target.value)} />
               </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.5rem' }}>
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowNewListModal(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary btn-sm">Create List</button>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                <button type="button" className="btn btn-ghost" onClick={() => setShowNewListModal(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Create List</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* New Drip Sequence Modal */}
+      {showNewSeqModal && (
+        <div className="modal-backdrop" onClick={() => setShowNewSeqModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div className="card" onClick={(e) => e.stopPropagation()} style={{ width: '90%', maxWidth: '480px' }}>
+            <h3 style={{ margin: '0 0 1rem' }}>Create Drip Automation Funnel</h3>
+            <form onSubmit={handleCreateSequence}>
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, display: 'block', marginBottom: '4px' }}>TARGET MAILING LIST</label>
+                <select className="input" value={newSeqListId} onChange={e => setNewSeqListId(e.target.value)} required>
+                  {lists.map(l => (
+                    <option key={l.id} value={l.id}>{l.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, display: 'block', marginBottom: '4px' }}>FUNNEL NAME</label>
+                <input className="input" type="text" placeholder="e.g. Onboarding Drip" value={newSeqName} onChange={e => setNewSeqName(e.target.value)} required />
+              </div>
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, display: 'block', marginBottom: '4px' }}>DESCRIPTION</label>
+                <input className="input" type="text" placeholder="e.g. Welcome emails sent over 7 days" value={newSeqDesc} onChange={e => setNewSeqDesc(e.target.value)} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                <button type="button" className="btn btn-ghost" onClick={() => setShowNewSeqModal(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Create Funnel</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Step Modal */}
+      {activeSeqForStep && (
+        <div className="modal-backdrop" onClick={() => setActiveSeqForStep(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div className="card" onClick={(e) => e.stopPropagation()} style={{ width: '90%', maxWidth: '560px' }}>
+            <h3 style={{ margin: '0 0 1rem' }}>Add Step to: {activeSeqForStep.name}</h3>
+            <form onSubmit={handleAddStep}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.8rem', fontWeight: 600, display: 'block', marginBottom: '4px' }}>DELAY (DAYS)</label>
+                  <input className="input" type="number" min="0" value={stepDays} onChange={e => setStepDays(e.target.value)} required />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.8rem', fontWeight: 600, display: 'block', marginBottom: '4px' }}>DELAY (HOURS)</label>
+                  <input className="input" type="number" min="0" max="23" value={stepHours} onChange={e => setStepHours(e.target.value)} required />
+                </div>
+              </div>
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, display: 'block', marginBottom: '4px' }}>EMAIL SUBJECT</label>
+                <input className="input" type="text" placeholder="e.g. Quick tip for getting started" value={stepSubject} onChange={e => setStepSubject(e.target.value)} required />
+              </div>
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, display: 'block', marginBottom: '4px' }}>HTML CONTENT</label>
+                <textarea className="input" rows={6} value={stepHtml} onChange={e => setStepHtml(e.target.value)} required />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                <button type="button" className="btn btn-ghost" onClick={() => setActiveSeqForStep(null)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Add Step</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* New Segment Modal */}
+      {showNewSegmentModal && (
+        <div className="modal-backdrop" onClick={() => setShowNewSegmentModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div className="card" onClick={(e) => e.stopPropagation()} style={{ width: '90%', maxWidth: '500px' }}>
+            <h3 style={{ margin: '0 0 1rem' }}>Build Dynamic Audience Segment</h3>
+            <form onSubmit={handleCreateSegment}>
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, display: 'block', marginBottom: '4px' }}>SOURCE MAILING LIST</label>
+                <select className="input" value={newSegmentListId} onChange={e => setNewSegmentListId(e.target.value)} required>
+                  {lists.map(l => (
+                    <option key={l.id} value={l.id}>{l.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, display: 'block', marginBottom: '4px' }}>SEGMENT NAME</label>
+                <input className="input" type="text" placeholder="e.g. VIP Founders" value={newSegmentName} onChange={e => setNewSegmentName(e.target.value)} required />
+              </div>
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, display: 'block', marginBottom: '4px' }}>FILTER BY TAG (OPTIONAL)</label>
+                <input className="input" type="text" placeholder="e.g. VIP or BETA" value={segmentTag} onChange={e => setSegmentTag(e.target.value)} />
+              </div>
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, display: 'block', marginBottom: '4px' }}>SUBSCRIBER STATUS</label>
+                <select className="input" value={segmentStatus} onChange={e => setSegmentStatus(e.target.value)}>
+                  <option value="active">Active Only</option>
+                  <option value="unsubscribed">Unsubscribed</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem' }}>
+                <button type="button" className="btn btn-secondary btn-xs" onClick={handlePreviewSegmentCount}>
+                  Preview Count {previewCount !== null ? `(${previewCount} subs)` : ''}
+                </button>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button type="button" className="btn btn-ghost" onClick={() => setShowNewSegmentModal(false)}>Cancel</button>
+                  <button type="submit" className="btn btn-primary">Save Segment</button>
+                </div>
               </div>
             </form>
           </div>
@@ -372,27 +697,24 @@ export default function CampaignsView() {
 
       {/* CSV Import Modal */}
       {importListId && (
-        <div className="compose-overlay" onClick={() => setImportListId(null)}>
-          <div className="compose-modal card" style={{ maxWidth: 520 }} onClick={(e) => e.stopPropagation()}>
-            <div className="compose-header">
-              <h3>Bulk Import Subscribers</h3>
-              <button type="button" className="btn btn-ghost btn-xs" onClick={() => setImportListId(null)}>✕</button>
-            </div>
-            <form onSubmit={handleCsvImport} style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <p className="text-secondary" style={{ fontSize: '0.8125rem', margin: 0 }}>
-                Paste CSV rows in <code>email, first_name, last_name</code> format:
+        <div className="modal-backdrop" onClick={() => setImportListId(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div className="card" onClick={(e) => e.stopPropagation()} style={{ width: '90%', maxWidth: '520px' }}>
+            <h3 style={{ margin: '0 0 1rem' }}>Import Subscribers via CSV</h3>
+            <form onSubmit={handleCsvImport}>
+              <p className="text-secondary" style={{ fontSize: '0.8rem', marginBottom: '0.75rem' }}>
+                Format: <code>email, first_name, last_name, tag1|tag2</code> (one per line)
               </p>
               <textarea
                 className="input mono"
-                style={{ minHeight: '160px', fontSize: '0.75rem' }}
-                placeholder={`john@example.com, John, Doe\nsarah@company.com, Sarah, Smith`}
+                rows={8}
+                placeholder="alice@example.com, Alice, Smith, VIP&#10;bob@example.com, Bob, Jones, BETA"
                 value={csvText}
-                onChange={(e) => setCsvText(e.target.value)}
+                onChange={e => setCsvText(e.target.value)}
                 required
               />
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setImportListId(null)}>Cancel</button>
-                <button type="submit" className="btn btn-primary btn-sm" disabled={importing}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}>
+                <button type="button" className="btn btn-ghost" onClick={() => setImportListId(null)}>Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={importing}>
                   {importing ? 'Importing...' : 'Import Subscribers'}
                 </button>
               </div>
@@ -401,34 +723,14 @@ export default function CampaignsView() {
         </div>
       )}
 
-      {/* Embed HTML Form Modal */}
+      {/* Embed Modal */}
       {embedHtml && (
-        <div className="compose-overlay" onClick={() => setEmbedHtml('')}>
-          <div className="compose-modal card" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
-            <div className="compose-header">
-              <h3>&lt;/&gt; Embeddable Signup Form HTML</h3>
-              <button type="button" className="btn btn-ghost btn-xs" onClick={() => setEmbedHtml('')}>✕</button>
-            </div>
-            <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <p className="text-secondary" style={{ fontSize: '0.8125rem', margin: 0 }}>
-                Paste this HTML snippet into your website or landing page:
-              </p>
-              <pre className="input mono" style={{ fontSize: '0.75rem', height: 140, overflowY: 'auto', whiteSpace: 'pre-wrap' }}>
-                {embedHtml}
-              </pre>
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm"
-                  onClick={() => {
-                    navigator.clipboard.writeText(embedHtml);
-                    alert('Copied embed code to clipboard!');
-                    setEmbedHtml('');
-                  }}
-                >
-                  Copy to Clipboard
-                </button>
-              </div>
+        <div className="modal-backdrop" onClick={() => setEmbedHtml('')} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div className="card" onClick={(e) => e.stopPropagation()} style={{ width: '90%', maxWidth: '520px' }}>
+            <h3 style={{ margin: '0 0 1rem' }}>Embed Signup Form</h3>
+            <textarea className="input mono" rows={8} readOnly value={embedHtml} />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
+              <button type="button" className="btn btn-primary" onClick={() => { navigator.clipboard.writeText(embedHtml); alert('Copied to clipboard!'); }}>Copy Code</button>
             </div>
           </div>
         </div>

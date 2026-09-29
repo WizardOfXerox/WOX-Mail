@@ -1,0 +1,66 @@
+<%- include('layouts/base', { title: 'Security Hall of Fame & Disclosure', body: `
+<div class="container legal-page">
+  <h1>Security Hall of Fame & Vulnerability Disclosure</h1>
+  <p class="text-secondary">RFC 9116 Coordinated Vulnerability Disclosure Policy | Last updated: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+
+  <section>
+    <h2>1. Responsible Disclosure Program</h2>
+    <p>At WoxMail, user privacy and cryptographic sovereignty are our highest priorities. We welcome responsible security researchers and ethical hackers who help us identify and resolve vulnerabilities in our infrastructure, cryptography, and protocols.</p>
+  </section>
+
+  <section>
+    <h2>2. Reporting Security Issues</h2>
+    <p>If you discover a potential security or privacy flaw, please report it directly to our security team:</p>
+    <ul>
+      <li>Primary Security Contact: <a href="mailto:security@wox.world" class="mono text-primary">security@wox.world</a></li>
+      <li>Administrative Escalation: <a href="mailto:admin@wox.world" class="mono text-primary">admin@wox.world</a></li>
+      <li>PGP Encryption Key: <a href="/pgp-key.asc" class="mono text-primary" target="_blank">Download OpenPGP Public Key (/pgp-key.asc)</a></li>
+      <li>Security Policy Document: <a href="/.well-known/security.txt" class="mono text-primary">RFC 9116 security.txt</a></li>
+    </ul>
+    <p>Please encrypt all sensitive vulnerability reports using our published OpenPGP public key before sending.</p>
+  </section>
+
+  <section>
+    <h2>3. Guidelines for Researchers</h2>
+    <p>To qualify for acknowledgment in our Hall of Fame and safe harbor protection, we request that you:</p>
+    <ul>
+      <li>Make a reasonable effort to avoid privacy violations, degradation of user experience, or disruption to production services.</li>
+      <li>Give us reasonable time to investigate, remediate, and patch the reported issue before disclosing details publicly.</li>
+      <li>Do not modify, destroy, or access data belonging to other users.</li>
+      <li>Do not execute denial-of-service (DoS/DDoS) attacks, social engineering, or physical attacks against our team or infrastructure.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>4. Researcher Hall of Fame</h2>
+    <p>We extend our deepest gratitude to the following security researchers who have helped protect the WoxMail ecosystem through responsible disclosure:</p>
+    
+    <div class="hof-list">
+      <div class="hof-card">
+        <div class="hof-name">WoxMail Sovereign Security Audit Team</div>
+        <div class="hof-date">August 2026</div>
+        <div class="hof-desc">Comprehensive zero-knowledge blind search token indexing and IMAP protocol verification.</div>
+      </div>
+      <div class="hof-card">
+        <div class="hof-name">Community Vulnerability Researchers</div>
+        <div class="hof-date">September 2026</div>
+        <div class="hof-desc">End-to-end encryption audit, link sandbox isolation hardening, and RFC 9116 policy alignment.</div>
+      </div>
+    </div>
+  </section>
+</div>
+` }) %>
+
+<style>
+  .legal-page { max-width: 800px; padding: 3rem 1.5rem; }
+  .legal-page h1 { margin-bottom: 0.5rem; }
+  .legal-page h2 { margin-top: 2rem; margin-bottom: 0.75rem; font-size: 1.25rem; }
+  .legal-page p, .legal-page li { color: var(--color-text-secondary); line-height: 1.8; }
+  .legal-page ul { padding-left: 1.5rem; margin-bottom: 1rem; }
+  .legal-page section { margin-bottom: 1.5rem; }
+  .hof-list { display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem; }
+  .hof-card { background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 1rem 1.25rem; }
+  .hof-name { font-weight: 600; color: #fff; font-size: 1.05rem; }
+  .hof-date { font-size: 0.85rem; color: #a1a1aa; margin-top: 0.2rem; }
+  .hof-desc { font-size: 0.9rem; color: #d4d4d8; margin-top: 0.4rem; }
+</style>

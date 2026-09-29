@@ -28,13 +28,15 @@ router.get('/:token/the-feed.xml', async (req, res, next) => {
     let messages = [];
 
     if (user.imap_password) {
+      let client;
       try {
-        const client = await imapService.createConnection(user.email, user.imap_password);
+        client = await imapService.createConnection(user.email, user.imap_password);
         const fetched = await imapService.fetchMessages(client, 'The Feed', { page: 1, limit: 25 });
         messages = fetched.messages || [];
-        await client.logout().catch(() => {});
       } catch (imapErr) {
         logger.warn({ err: imapErr.message }, 'Could not connect to IMAP for RSS feed stream');
+      } finally {
+        if (client) await client.logout().catch(() => {});
       }
     }
 
@@ -42,7 +44,8 @@ router.get('/:token/the-feed.xml', async (req, res, next) => {
     const feedItemsXml = messages.map(m => {
       const title = (m.subject || '(No Subject)').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const author = (m.from?.name || m.from?.address || 'Newsletter').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      const pubDate = m.date ? new Date(m.date).toUTCString() : new Date().toUTCString();
+      const parsedDate = m.date ? new Date(m.date) : null;
+      const pubDate = (parsedDate && !isNaN(parsedDate.getTime())) ? parsedDate.toUTCString() : new Date().toUTCString();
       const guid = `woxmail-msg-${m.uid}-${m.messageId || ''}`;
 
       return `

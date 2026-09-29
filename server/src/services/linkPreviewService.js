@@ -29,22 +29,94 @@ setInterval(() => {
 
 /**
  * Check if an IP address is a private, reserved, loopback, or cloud-metadata IP.
- * @param {string} ip
+ * Covers RFC 1122, RFC 1918, RFC 3927, RFC 6598, RFC 6890, RFC 4291, and cloud metadata.
+ * @param {string} rawIp
  * @returns {boolean}
  */
-export function isPrivateIp(ip) {
-  if (!ip) return true;
+export function isPrivateIp(rawIp) {
+  if (!rawIp || typeof rawIp !== 'string') return true;
 
-  // IPv4 checks
-  if (ip === '127.0.0.1' || ip === 'localhost' || ip === '::1' || ip === '0.0.0.0') return true;
-  if (ip.startsWith('10.')) return true;
-  if (ip.startsWith('192.168.')) return true;
-  if (ip.startsWith('169.254.')) return true; // Link-local & AWS/GCP metadata
-  if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(ip)) return true;
-  if (ip.startsWith('100.64.')) return true; // Carrier-grade NAT
+  let ip = rawIp.trim().toLowerCase();
+
+  // Strip brackets if IPv6 literal like [::1]
+  if (ip.startsWith('[') && ip.endsWith(']')) {
+    ip = ip.slice(1, -1);
+  }
+
+  // Normalize IPv4-mapped IPv6 (e.g. ::ffff:127.0.0.1 or ::ffff:7f00:1)
+  if (ip.startsWith('::ffff:')) {
+    const remainder = ip.slice(7);
+    if (remainder.includes(':')) {
+      const parts = remainder.split(':');
+      if (parts.length === 2) {
+        const w1 = parseInt(parts[0], 16);
+        const w2 = parseInt(parts[1], 16);
+        if (!isNaN(w1) && !isNaN(w2)) {
+          ip = [(w1 >> 8) & 0xff, w1 & 0xff, (w2 >> 8) & 0xff, w2 & 0xff].join('.');
+        }
+      }
+    } else {
+      ip = remainder;
+    }
+  }
+
+  // Common local keywords and loopback literals
+  if (
+    ip === 'localhost' ||
+    ip === '::1' ||
+    ip === '::' ||
+    ip === '0.0.0.0' ||
+    /^0*(:0*)*:?0*1$/.test(ip) ||
+    /^0*(:0*)+$/.test(ip)
+  ) {
+    return true;
+  }
+
+  // IPv4 dotted decimal check
+  const ipv4Match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip);
+  if (ipv4Match) {
+    const [o1, o2, o3, o4] = ipv4Match.slice(1).map(Number);
+    if (o1 > 255 || o2 > 255 || o3 > 255 || o4 > 255) return true; // Invalid octet, treat as unsafe
+
+    // 0.0.0.0/8 (Current network / local)
+    if (o1 === 0) return true;
+    // 10.0.0.0/8 (Private network, RFC 1918)
+    if (o1 === 10) return true;
+    // 100.64.0.0/10 (Shared address / CGNAT, RFC 6598: 100.64.0.0 - 100.127.255.255)
+    if (o1 === 100 && o2 >= 64 && o2 <= 127) return true;
+    // 127.0.0.0/8 (Loopback, RFC 1122)
+    if (o1 === 127) return true;
+    // 169.254.0.0/16 (Link-local & AWS/GCP/Azure cloud metadata)
+    if (o1 === 169 && o2 === 254) return true;
+    // 172.16.0.0/12 (Private network, RFC 1918: 172.16.0.0 - 172.31.255.255)
+    if (o1 === 172 && o2 >= 16 && o2 <= 31) return true;
+    // 192.0.0.0/24 (IETF protocol assignments, RFC 6890)
+    if (o1 === 192 && o2 === 0 && o3 === 0) return true;
+    // 192.0.2.0/24 (TEST-NET-1, RFC 5737)
+    if (o1 === 192 && o2 === 0 && o3 === 2) return true;
+    // 192.88.99.0/24 (6to4 relay anycast, RFC 3068)
+    if (o1 === 192 && o2 === 88 && o3 === 99) return true;
+    // 192.168.0.0/16 (Private network, RFC 1918)
+    if (o1 === 192 && o2 === 168) return true;
+    // 198.18.0.0/15 (Network benchmark tests, RFC 2544: 198.18.0.0 - 198.19.255.255)
+    if (o1 === 198 && (o2 === 18 || o2 === 19)) return true;
+    // 198.51.100.0/24 (TEST-NET-2, RFC 5737)
+    if (o1 === 198 && o2 === 51 && o3 === 100) return true;
+    // 203.0.113.0/24 (TEST-NET-3, RFC 5737)
+    if (o1 === 203 && o2 === 0 && o3 === 113) return true;
+    // 224.0.0.0/4 (Multicast, RFC 5771: 224.0.0.0 - 239.255.255.255)
+    if (o1 >= 224 && o1 <= 239) return true;
+    // 240.0.0.0/4 (Reserved for future use & Broadcast, RFC 1112: 240.0.0.0 - 255.255.255.255)
+    if (o1 >= 240) return true;
+
+    return false;
+  }
 
   // IPv6 checks
-  if (ip.startsWith('fc00:') || ip.startsWith('fd00:') || ip.startsWith('fe80:')) return true;
+  if (ip.startsWith('fc00:') || ip.startsWith('fd00:') || ip.startsWith('fe80:') || ip.startsWith('fe90:') || ip.startsWith('fea0:') || ip.startsWith('feb0:')) return true;
+  if (ip.startsWith('ff')) return true; // Multicast
+  if (ip.startsWith('2001:db8:')) return true; // Documentation
+  if (ip.startsWith('100::') || ip.startsWith('64:ff9b::')) return true;
 
   return false;
 }
@@ -63,13 +135,20 @@ export async function isSafeUrl(rawUrl) {
 
     const hostname = parsed.hostname.toLowerCase();
 
-    // Check common local keywords
-    if (['localhost', '127.0.0.1', '0.0.0.0', 'metadata.google.internal', 'instance-data'].includes(hostname)) {
+    // Check common local keywords & metadata endpoints
+    if ([
+      'localhost',
+      '127.0.0.1',
+      '0.0.0.0',
+      'metadata.google.internal',
+      'instance-data',
+      '169.254.169.254',
+    ].includes(hostname) || hostname.endsWith('.localhost') || hostname.endsWith('.local') || hostname.endsWith('.internal')) {
       return { safe: false, hostname, error: 'Target resolves to loopback/metadata' };
     }
 
-    // Direct IP address check
-    if (/^(\d{1,3}\.){3}\d{1,3}$/.test(hostname)) {
+    // Direct IP address check (handles both IPv4 and IPv6)
+    if (/^(\d{1,3}\.){3}\d{1,3}$/.test(hostname) || hostname.includes(':')) {
       if (isPrivateIp(hostname)) {
         return { safe: false, hostname, error: 'Direct private IP access blocked' };
       }
@@ -91,6 +170,57 @@ export async function isSafeUrl(rawUrl) {
   } catch (err) {
     return { safe: false, hostname: '', error: err.message };
   }
+}
+
+/**
+ * Safe fetch wrapper that prevents SSRF across HTTP 3xx redirect chains.
+ * Enforces redirect: 'manual' and re-validates each destination against isSafeUrl.
+ * @param {string} targetUrl
+ * @param {RequestInit} [options={}]
+ * @param {number} [maxRedirects=5]
+ * @returns {Promise<Response>}
+ */
+export async function safeFetch(targetUrl, options = {}, maxRedirects = 5) {
+  let currUrl = targetUrl;
+  const seenUrls = new Set([currUrl]);
+
+  for (let hop = 0; hop <= maxRedirects; hop++) {
+    const safety = await isSafeUrl(currUrl);
+    if (!safety.safe) {
+      throw new Error(`SSRF Protection: Access to private or local network is blocked (${safety.error || 'unsafe URL'}).`);
+    }
+
+    const fetchOptions = {
+      ...options,
+      redirect: 'manual',
+    };
+
+    const response = await fetch(currUrl, fetchOptions);
+
+    if ([301, 302, 303, 307, 308].includes(response.status)) {
+      const location = response.headers.get('location');
+      if (!location) {
+        return response;
+      }
+
+      const nextUrl = new URL(location, currUrl).toString();
+      if (seenUrls.has(nextUrl)) {
+        throw new Error('SSRF Protection: Redirect loop detected');
+      }
+
+      if (hop === maxRedirects) {
+        throw new Error('SSRF Protection: Maximum redirects exceeded');
+      }
+
+      seenUrls.add(nextUrl);
+      currUrl = nextUrl;
+      continue;
+    }
+
+    return response;
+  }
+
+  throw new Error('SSRF Protection: Unexpected redirect resolution error');
 }
 
 /**
@@ -252,19 +382,18 @@ export async function fetchLinkMetadata(targetUrl) {
     return fallback;
   }
 
-  // Fetch target page
+  // Fetch target page using safeFetch to prevent redirect SSRF
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
   try {
-    const res = await fetch(cleanUrl, {
+    const res = await safeFetch(cleanUrl, {
       signal: controller.signal,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) WoxMail-LinkBot/1.0 (+https://wox.world)',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
       },
-      redirect: 'follow',
     });
 
     clearTimeout(timeoutId);
@@ -367,6 +496,7 @@ export async function fetchBatchLinkMetadata(urls = []) {
 export default {
   isSafeUrl,
   isPrivateIp,
+  safeFetch,
   extractMetaTags,
   fetchLinkMetadata,
   fetchBatchLinkMetadata,

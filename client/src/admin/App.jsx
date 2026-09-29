@@ -403,7 +403,7 @@ function OverviewTab({ onNavigate }) {
             Sovereign Command &amp; Operations Center
           </h1>
           <p style={{ color: 'var(--color-text-secondary, #c4c4dc)', fontSize: '0.875rem', margin: 0, lineHeight: 1.5 }}>
-            Real-time cluster telemetry, user management, and security triage for <strong style={{ color: '#ffffff' }}>wox.world</strong>.
+            Real-time cluster telemetry, user management, and security triage for <strong style={{ color: 'var(--color-text-primary, #ffffff)' }}>mail.wox.world</strong>.
           </p>
         </div>
         <div className="admin-hero-actions" style={{ display: 'flex', gap: '0.65rem', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -2625,7 +2625,7 @@ function AnnouncementsTab() {
                       </span>
                     </td>
                     <td><strong>{a.title}</strong></td>
-                    <td style={{ maxWidth: 300 }} className="truncate">{a.content}</td>
+                    <td style={{ maxWidth: 300 }} className="truncate">{a.content || a.body}</td>
                     <td className="text-secondary">{new Date(a.created_at).toLocaleString()}</td>
                     <td>
                       <button type="button" className="btn btn-ghost btn-xs" onClick={() => handleDelete(a.id)}>

@@ -1,52 +1,201 @@
 <%- include('layouts/base', { title: 'Terms of Service', body: `
 <div class="container legal-page">
-  <h1>Terms of Service</h1>
-  <p class="text-secondary">Last updated: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+  <div class="legal-header">
+    <div class="legal-badge">LEGAL AGREEMENT</div>
+    <h1>Terms of Service</h1>
+    <p class="text-secondary">Effective Date: September 4, 2026 | Last Updated: September 4, 2026</p>
+  </div>
 
-  <section>
-    <h2>1. Acceptance</h2>
-    <p>By using WoxMail, you agree to these terms. If you don't agree, don't use the service.</p>
+  <div class="legal-toc">
+    <div class="toc-title">Table of Contents</div>
+    <ol>
+      <li><a href="#acceptance">Acceptance of Terms</a></li>
+      <li><a href="#eligibility">Account Eligibility & Registration</a></li>
+      <li><a href="#services">Description of Services & Mailbox Tiers</a></li>
+      <li><a href="#acceptable-use">Acceptable Use Policy (AUP) & Prohibited Conduct</a></li>
+      <li><a href="#campaigns">Mailing Lists, Campaigns & Deliverability Standards</a></li>
+      <li><a href="#cryptography">Zero-Knowledge Cryptography & Enclave Vaults</a></li>
+      <li><a href="#compliance">Universal Compliance Archiving & Legal Journaling</a></li>
+      <li><a href="#ownership">Intellectual Property & Limited License</a></li>
+      <li><a href="#retention">Data Retention, Expiry & Account Deletion</a></li>
+      <li><a href="#third-parties">Third-Party Protocols & Connected Accounts</a></li>
+      <li><a href="#security-disclosure">Vulnerability Disclosure & Safe Harbor</a></li>
+      <li><a href="#disclaimers">Service Modifications & Warranty Disclaimers</a></li>
+      <li><a href="#liability">Limitation of Liability</a></li>
+      <li><a href="#indemnification">Indemnification</a></li>
+      <li><a href="#disputes">Governing Law, Severability & Dispute Resolution</a></li>
+      <li><a href="#contact">Contact Information & Legal Notices</a></li>
+    </ol>
+  </div>
+
+  <section id="acceptance">
+    <h2>1. Acceptance of Terms</h2>
+    <p>These Terms of Service ("Terms") constitute a legally binding agreement between you ("User", "you", or "your") and WoxMail ("WoxMail", "we", "us", or "our"), governing your access to and use of the WoxMail platform, including the websites located at <strong>mail.wox.world</strong> and <strong>wox.world</strong>, the Tor Hidden Service (.onion), associated APIs, webmail applications, browser extensions, and related communication infrastructure (collectively, the "Service").</p>
+    <p>By registering an account, accessing temporary inboxes, connecting third-party mailboxes, or otherwise using any part of the Service, you acknowledge that you have read, understood, and agree to be bound by these Terms and our accompanying <a href="/privacy" class="legal-link">Privacy Policy</a>. If you do not agree to these Terms in their entirety, you must immediately cease all access and use of the Service.</p>
   </section>
 
-  <section>
-    <h2>2. Service Description</h2>
-    <p>WoxMail provides temporary and permanent email services. Temp mail addresses expire automatically. Permanent accounts require an invitation.</p>
+  <section id="eligibility">
+    <h2>2. Account Eligibility & Registration</h2>
+    <p><strong>2.1 Minimum Age:</strong> You represent and warrant that you are at least sixteen (16) years of age, or the age of legal majority in your jurisdiction, whichever is greater. If you are using the Service on behalf of a corporation, partnership, or legal entity, you represent and warrant that you possess the requisite authority to bind that entity to these Terms.</p>
+    <p><strong>2.2 Permanent Accounts:</strong> Permanent sovereign mailboxes under the <code>@wox.world</code> domain are invitation-controlled or provisioned by authorized administrators. Users are strictly prohibited from forging invite tokens or circumventing registration quotas.</p>
+    <p><strong>2.3 Account Security:</strong> You are solely responsible for maintaining the confidentiality of your credentials, including master passwords, Argon2id authentication keys, two-factor authentication (TOTP) secrets, and cryptographic private keys. You agree to notify WoxMail immediately upon discovering any unauthorized access or security breach involving your account.</p>
   </section>
 
-  <section>
-    <h2>3. Acceptable Use</h2>
-    <p>You may not use WoxMail to:</p>
+  <section id="services">
+    <h2>3. Description of Services & Mailbox Tiers</h2>
+    <p>WoxMail provides high-performance, privacy-centric electronic mail routing, webmail interfaces, and cryptographic tooling across three distinct operating tiers:</p>
     <ul>
-      <li>Send spam or unsolicited bulk email</li>
-      <li>Distribute malware or phishing content</li>
-      <li>Harass, threaten, or harm others</li>
-      <li>Violate any applicable laws</li>
-      <li>Circumvent rate limits or abuse prevention measures</li>
+      <li><strong>Permanent Sovereign Accounts (<code>@wox.world</code>):</strong> Persistent mailboxes with dedicated IMAP, SMTP, and JMAP (RFC 8620/8621) protocol interfaces, custom alias management, and optional compliance journaling.</li>
+      <li><strong>Ephemeral & Disposable Inboxes (<code>@mail.wox.world</code>):</strong> Temporary public and personal mailboxes engineered with deterministic time-to-live (TTL) expiration schedules (ranging from 1 hour up to 60 days). Ephemeral addresses are subject to automatic purge upon expiry.</li>
+      <li><strong>Connected Third-Party Accounts (BYOM):</strong> Functionality allowing users to proxy and manage external accounts (e.g. Gmail, Google Workspace, ProtonMail, Microsoft Outlook) within the unified WoxMail client interface. External accounts remain governed by their respective third-party terms.</li>
     </ul>
   </section>
 
-  <section>
-    <h2>4. Account Termination</h2>
-    <p>We reserve the right to suspend or delete accounts that violate these terms without prior notice.</p>
+  <section id="acceptable-use">
+    <h2>4. Acceptable Use Policy (AUP) & Prohibited Conduct</h2>
+    <p>You agree to use the Service exclusively for lawful, ethical, and legitimate communications. You shall not engage in, facilitate, or assist others in any of the following prohibited activities:</p>
+    <ul>
+      <li><strong>Spam & Unsolicited Bulk Transmission:</strong> Sending unsolicited commercial or non-commercial email, bulk advertisements, chain letters, or multi-level marketing solicitations in violation of applicable laws (including CAN-SPAM, CASL, or the EU ePrivacy Directive).</li>
+      <li><strong>Malicious Code & Exploits:</strong> Transmitting, hosting, or linking to malware, ransomware, viruses, worms, Trojan horses, rootkits, spyware, or malicious attachments.</li>
+      <li><strong>Credential Harvesting & Phishing:</strong> Operating deceptive websites, spoofing sender identities, forging header fields, or deploying landing pages intended to mislead recipients into disclosing credentials, financial data, or sensitive personal information.</li>
+      <li><strong>Unlawful & Exploitative Content:</strong> Transmitting or storing child sexual abuse material (CSAM), non-consensual imagery, credible threats of violence, terrorist content, or material that incites imminent lawless action.</li>
+      <li><strong>System Abuse & Denial of Service:</strong> Attempting to disrupt, degrade, overload, or compromise server stability, launching Distributed Denial of Service (DDoS) attacks, or bypassing rate-limiting barriers and CAPTCHA mechanisms.</li>
+      <li><strong>Unauthorized Surveillance & Scraping:</strong> Accessing or attempting to access accounts, private keys, or communications belonging to other users without authorization.</li>
+    </ul>
+    <p class="legal-notice"><strong>Enforcement:</strong> WoxMail reserves the absolute right, without prior notice or liability, to investigate violations, suspend accounts, terminate access, discard malicious messages, and report unlawful activity to appropriate law enforcement authorities.</p>
   </section>
 
-  <section>
-    <h2>5. Limitation of Liability</h2>
-    <p>WoxMail is provided "as is" without warranties. We are not liable for data loss, service interruptions, or any damages arising from use of the service.</p>
+  <section id="campaigns">
+    <h2>5. Mailing Lists, Campaigns & Deliverability Standards</h2>
+    <p>Users who utilize WoxMail's marketing broadcast, drip sequence, or campaign delivery modules must adhere to strict deliverability and sender compliance benchmarks:</p>
+    <ul>
+      <li><strong>Verifiable Consent:</strong> You must maintain documented proof of affirmative, unambiguous consent (opt-in) from all recipients. The use of purchased, rented, scraped, or third-party email lists is strictly prohibited.</li>
+      <li><strong>Mandatory Unsubscribe Headers:</strong> All broadcast communications must include standard RFC 2369 list headers and RFC 8058 One-Click Unsubscribe headers (<code>List-Unsubscribe-Post: List-Unsubscribe=One-Click</code>) allowing instantaneous opt-out without authentication hurdles.</li>
+      <li><strong>Sender Identification:</strong> All commercial transmissions must clearly state the legitimate physical or postal address of the sender and provide accurate, non-misleading subject lines.</li>
+      <li><strong>Complaint Thresholds:</strong> Senders must maintain a spam complaint rate below 0.10% (one complaint per 1,000 deliveries) and an invalid address bounce rate below 3.0%. Accounts exceeding these thresholds may be throttled or suspended immediately to preserve domain reputation.</li>
+    </ul>
   </section>
 
-  <section>
-    <h2>6. Contact</h2>
-    <p>For questions, email <span class="mono">${process.env.SUPPORT_EMAIL || process.env.ADMIN_EMAIL || 'support@' + (process.env.DOMAIN_PERMANENT || 'wox.world')}</span>.</p>
+  <section id="cryptography">
+    <h2>6. Zero-Knowledge Cryptography & Enclave Vaults</h2>
+    <p><strong>6.1 Client-Side Encryption:</strong> WoxMail integrates client-side OpenPGP (RFC 4880 / RFC 9580) and Web Key Directory (RFC 9216) key management tooling. When you encrypt messages using PGP or store secrets inside client-side vaults, cryptographic encryption and decryption occur locally within your browser or client application.</p>
+    <p><strong>6.2 Zero-Knowledge Architecture:</strong> WoxMail does not possess, store, or have access to your private cryptographic passphrases. We cannot decrypt your client-encrypted communications, nor can we recover lost private keys or forgotten passphrases. You bear sole and exclusive responsibility for backing up your cryptographic credentials.</p>
+  </section>
+
+  <section id="compliance">
+    <h2>7. Universal Compliance Archiving & Legal Journaling</h2>
+    <p><strong>7.1 Enterprise Archiving:</strong> In accordance with regulatory standards and corporate compliance settings (<code>COMPLIANCE_ARCHIVE_ENABLED</code>), domain outbound and inbound traffic may be journaled to a centralized compliance archive (<code>archive@wox.world</code>) equipped with immutable SHA-256 non-repudiation hashing.</p>
+    <p><strong>7.2 Organizational Oversight:</strong> If your account is provisioned under a corporate, institutional, or enterprise domain, your domain administrators may inspect journaled communication logs for audit, compliance, and regulatory evidentiary purposes.</p>
+  </section>
+
+  <section id="ownership">
+    <h2>8. Intellectual Property & Limited License</h2>
+    <p><strong>8.1 User Content:</strong> You retain 100% full ownership, title, copyright, and intellectual property rights in and to all communications, texts, images, attachments, and data transmitted through or stored within your account ("User Content").</p>
+    <p><strong>8.2 Limited License to WoxMail:</strong> Solely for the operational purpose of transmitting, routing, storing, filtering (for spam, phishing, and malware), and delivering your communications, you grant WoxMail a limited, worldwide, non-exclusive, royalty-free license to process your User Content as directed by your account actions.</p>
+    <p><strong>8.3 WoxMail Property:</strong> All software, designs, algorithms, domain names, trademarks, logos, visual interfaces, documentation, and source code associated with WoxMail remain the exclusive proprietary property of WoxMail and its licensors.</p>
+  </section>
+
+  <section id="retention">
+    <h2>9. Data Retention, Expiry & Account Deletion</h2>
+    <p><strong>9.1 Disposable Inbox Expiration:</strong> Ephemeral addresses on <code>mail.wox.world</code> automatically expire based on their declared lifecycle. Upon expiration, all associated messages, headers, and attachments are permanently and irretrievably purged from our database.</p>
+    <p><strong>9.2 Permanent Account Termination:</strong> You may request the permanent deletion of your account at any time through the Settings panel. Upon account deletion, your credentials, preferences, and mailbox contents will be scheduled for permanent destruction within thirty (30) days, subject to mandatory legal compliance or active subpoena obligations.</p>
+    <p><strong>9.3 Data Portability:</strong> Users may export full mailbox archives in standard MBOX (RFC 4155) or JSON formats prior to account termination.</p>
+  </section>
+
+  <section id="third-parties">
+    <h2>10. Third-Party Protocols & Connected Accounts</h2>
+    <p>WoxMail integrates with external email providers (e.g. Gmail, Microsoft Exchange, Purelymail, ProtonMail) and cloud edge networks (Cloudflare). We are not responsible or liable for the uptime, operational policies, rate limits, or terms imposed by external service providers. When you connect third-party mail accounts, you authorize WoxMail to act as your agent in establishing IMAP/SMTP connections to those third-party services.</p>
+  </section>
+
+  <section id="security-disclosure">
+    <h2>11. Vulnerability Disclosure & Safe Harbor</h2>
+    <p>WoxMail supports coordinated vulnerability disclosure in compliance with RFC 9116. Security researchers operating in good faith who comply with our published guidelines at <a href="/.well-known/security.txt" class="legal-link">/.well-known/security.txt</a> and report issues through <a href="mailto:security@wox.world" class="legal-link">security@wox.world</a> will be afforded safe harbor protection and recognized in our <a href="/security/hall-of-fame" class="legal-link">Security Hall of Fame</a>.</p>
+  </section>
+
+  <section id="disclaimers">
+    <h2>12. Service Modifications & Warranty Disclaimers</h2>
+    <p>THE SERVICE IS PROVIDED ON AN "AS IS" AND "AS AVAILABLE" BASIS, WITHOUT WARRANTIES OF ANY KIND, WHETHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE. TO THE MAXIMUM EXTENT PERMITTED UNDER APPLICABLE LAW, WOXMAIL EXPRESSLY DISCLAIMS ALL WARRANTIES, INCLUDING BUT NOT LIMITED TO IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, QUIET ENJOYMENT, AND NON-INFRINGEMENT.</p>
+    <p>WOXMAIL DOES NOT WARRANT THAT THE SERVICE WILL BE UNINTERRUPTED, ERROR-FREE, TIMELY, OR SECURE, NOR DO WE WARRANT THAT COMMUNICATIONS WILL REACH RECIPIENTS WITHOUT LATENCY, DELAY, OR EXTERNAL SPAM FILTERING INTERFERENCE.</p>
+  </section>
+
+  <section id="liability">
+    <h2>13. Complete Limitation of Liability & Zero Financial Obligation</h2>
+    <p>WOXMAIL IS PROVIDED STRICTLY FREE OF CHARGE AS A NON-COMMERCIAL, COMMUNITY-DRIVEN SOVEREIGN PRIVACY PROJECT. WE DO NOT CHARGE SUBSCRIPTION FEES, PROCESS MONETARY TRANSACTIONS, SELL USER DATA, OR DERIVE COMMERCIAL REVENUE FROM THE OPERATION OF THIS PLATFORM.</p>
+    <p>TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL WOXMAIL, ITS CREATORS, OPERATORS, CONTRIBUTORS, AFFILIATES, OR VOLUNTEERS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES WHATSOEVER, INCLUDING BUT NOT LIMITED TO LOSS OF DATA, CORRUPTION OF MESSAGES, LOSS OF BUSINESS, LOSS OF PROFITS, SYSTEM DOWNTIME, OR REPUTATIONAL HARM, ARISING OUT OF OR IN CONNECTION WITH YOUR USE OF OR INABILITY TO USE THE SERVICE, REGARDLESS OF THE THEORY OF LIABILITY (CONTRACT, TORT, NEGLIGENCE, STRICT LIABILITY, OR OTHERWISE), EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.</p>
+    <p>BECAUSE THIS SERVICE IS PROVIDED ENTIRELY FREE OF CHARGE, WOXMAIL'S TOTAL AGGREGATE MONETARY LIABILITY TO YOU OR ANY THIRD PARTY FOR ANY AND ALL CLAIMS ARISING FROM OR RELATED TO THESE TERMS OR THE SERVICE IS STRICTLY CAPPED AT ZERO DOLLARS ($0.00 USD). YOUR SOLE AND EXCLUSIVE REMEDY FOR ANY DISSATISFACTION, DEFECT, DATA LOSS, OR GRIEVANCE WITH THE SERVICE IS TO DISCONTINUE USING WOXMAIL.</p>
+  </section>
+
+  <section id="indemnification">
+    <h2>14. Indemnification</h2>
+    <p>You agree to defend, indemnify, and hold harmless WoxMail, its directors, officers, contractors, agents, and employees from and against any claims, liabilities, damages, losses, costs, and expenses (including reasonable attorneys' fees) arising out of or in any way connected with: (a) your access to or use of the Service; (b) your violation of these Terms or the Acceptable Use Policy; (c) your User Content; or (d) your infringement or violation of any intellectual property, privacy, or legal rights of any third party.</p>
+  </section>
+
+  <section id="disputes">
+    <h2>15. Governing Law, Severability & Dispute Resolution</h2>
+    <p><strong>15.1 Governing Law:</strong> These Terms and any dispute arising out of or related to your use of the Service shall be governed by and construed in accordance with the laws of the jurisdiction of WoxMail's primary operational establishment, without regard to its conflict of law principles.</p>
+    <p><strong>15.2 Informal Resolution:</strong> Prior to initiating any formal legal proceeding, you agree to contact our legal department at <a href="mailto:legal@wox.world" class="legal-link">legal@wox.world</a> and make a good-faith effort to resolve the dispute informally for at least thirty (30) business days.</p>
+    <p><strong>15.3 Severability:</strong> If any provision of these Terms is determined by a court of competent jurisdiction to be invalid, unlawful, or unenforceable, that provision shall be enforced to the maximum extent permissible, and the remaining provisions shall continue in full force and effect.</p>
+    <p><strong>15.4 Entire Agreement:</strong> These Terms, together with our Privacy Policy and Acceptable Use guidelines, constitute the sole and entire agreement between you and WoxMail regarding the Service.</p>
+  </section>
+
+  <section id="contact">
+    <h2>16. Contact Information & Legal Notices</h2>
+    <p>For questions, formal notices, or legal inquiries concerning these Terms of Service, please contact our administrative and legal departments:</p>
+    <div class="legal-contact-grid">
+      <div class="contact-card">
+        <div class="card-label">LEGAL INQUIRIES & COMPLIANCE</div>
+        <div class="card-val"><a href="mailto:legal@wox.world" class="mono text-primary">legal@wox.world</a></div>
+      </div>
+      <div class="contact-card">
+        <div class="card-label">CUSTOMER SUPPORT DESK</div>
+        <div class="card-val"><a href="mailto:support@wox.world" class="mono text-primary">support@wox.world</a></div>
+      </div>
+      <div class="contact-card">
+        <div class="card-label">SYSTEM ROOT & ADMINISTRATOR</div>
+        <div class="card-val"><a href="mailto:admin@wox.world" class="mono text-primary">admin@wox.world</a></div>
+      </div>
+      <div class="contact-card">
+        <div class="card-label">SECURITY & RFC 9116 DISCLOSURE</div>
+        <div class="card-val"><a href="mailto:security@wox.world" class="mono text-primary">security@wox.world</a></div>
+      </div>
+    </div>
   </section>
 </div>
 ` }) %>
 
 <style>
-  .legal-page { max-width: 800px; padding: 3rem 1.5rem; }
-  .legal-page h1 { margin-bottom: 0.5rem; }
-  .legal-page h2 { margin-top: 2rem; margin-bottom: 0.75rem; font-size: 1.25rem; }
-  .legal-page p, .legal-page li { color: var(--color-text-secondary); line-height: 1.8; }
-  .legal-page ul { padding-left: 1.5rem; }
-  .legal-page section { margin-bottom: 1rem; }
+  .legal-page { max-width: 880px; padding: 3.5rem 1.5rem 5rem; margin: 0 auto; }
+  .legal-header { margin-bottom: 2.5rem; border-bottom: 1px solid var(--color-border); padding-bottom: 1.5rem; }
+  .legal-badge { display: inline-block; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em; color: var(--color-primary, #6366f1); background: rgba(99, 102, 241, 0.12); border: 1px solid rgba(99, 102, 241, 0.25); padding: 0.25rem 0.65rem; border-radius: 4px; margin-bottom: 0.75rem; }
+  .legal-page h1 { font-size: 2.25rem; font-weight: 800; color: var(--color-text-primary); margin-bottom: 0.5rem; letter-spacing: -0.02em; }
+  .legal-page h2 { margin-top: 2.5rem; margin-bottom: 1rem; font-size: 1.35rem; font-weight: 700; color: var(--color-text-primary); border-bottom: 1px solid var(--color-border); padding-bottom: 0.5rem; }
+  .legal-page p, .legal-page li { color: var(--color-text-secondary); line-height: 1.85; font-size: 0.98rem; }
+  .legal-page p { margin-bottom: 1rem; }
+  .legal-page ul, .legal-page ol { padding-left: 1.5rem; margin-bottom: 1.25rem; }
+  .legal-page li { margin-bottom: 0.5rem; }
+  .legal-page strong { color: var(--color-text-primary); font-weight: 600; }
+  .legal-link { color: var(--color-primary, #818cf8); text-decoration: underline; text-underline-offset: 3px; }
+  .legal-link:hover { color: #a5b4fc; }
+  
+  .legal-toc { background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: 8px; padding: 1.5rem 1.75rem; margin-bottom: 2.5rem; }
+  .toc-title { font-size: 0.95rem; font-weight: 700; color: var(--color-text-primary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.85rem; }
+  .legal-toc ol { margin-bottom: 0; padding-left: 1.25rem; }
+  .legal-toc li { margin-bottom: 0.35rem; font-size: 0.92rem; }
+  .legal-toc a { color: var(--color-text-secondary); text-decoration: none; transition: color 0.15s ease; }
+  .legal-toc a:hover { color: var(--color-primary, #818cf8); }
+
+  .legal-notice { background: rgba(239, 68, 68, 0.08); border-left: 4px solid #ef4444; padding: 1rem 1.25rem; border-radius: 0 6px 6px 0; color: #fca5a5 !important; margin: 1.25rem 0; }
+  .legal-notice strong { color: #fee2e2; }
+
+  .legal-contact-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin-top: 1.25rem; }
+  .contact-card { background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: 6px; padding: 1rem; }
+  .card-label { font-size: 0.75rem; font-weight: 700; color: var(--color-text-tertiary); letter-spacing: 0.05em; margin-bottom: 0.4rem; }
+  .card-val a { font-size: 0.95rem; text-decoration: none; color: var(--color-primary, #818cf8); }
+  .card-val a:hover { text-decoration: underline; }
+
+  @media (max-width: 640px) {
+    .legal-page { padding: 2rem 1rem 3rem; }
+    .legal-page h1 { font-size: 1.75rem; }
+    .legal-page h2 { font-size: 1.2rem; }
+  }
 </style>

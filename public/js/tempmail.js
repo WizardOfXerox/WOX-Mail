@@ -1,7 +1,7 @@
 /**
  * Modern Public Temp Mail Client Script
  * Robust, null-safe, with instant generation, query param synchronization,
- * IMAP inbox fetching, 30s auto-polling, SSE live streaming, duration picking, and public directory.
+ * IMAP inbox fetching, 3s auto-polling, SSE live streaming, duration picking, and public directory.
  */
 (function () {
   'use strict';
@@ -36,7 +36,27 @@
 
   // ─── Duration Selector ─────────────────────────────────
 
-  window.selectDuration = function (hours) {
+  window.toggleDurationBar = function (forceState) {
+    const bar = document.getElementById('duration-selector-bar');
+    const newBtn = document.getElementById('refresh-address-btn');
+    if (!bar) return;
+
+    const isCurrentlyOpen = bar.classList.contains('open') && bar.style.display !== 'none';
+    const shouldOpen = typeof forceState === 'boolean' ? forceState : !isCurrentlyOpen;
+
+    if (shouldOpen) {
+      bar.style.display = 'block';
+      bar.offsetHeight; // force reflow for smooth animation
+      bar.classList.add('open');
+      if (newBtn) newBtn.classList.add('active');
+    } else {
+      bar.classList.remove('open');
+      bar.style.display = 'none';
+      if (newBtn) newBtn.classList.remove('active');
+    }
+  };
+
+  window.selectDuration = async function (hours) {
     selectedExpiry = parseInt(hours, 10);
     document.querySelectorAll('.duration-btn, .expiry-btn').forEach((btn) => {
       if (parseInt(btn.dataset.hours, 10) === selectedExpiry) {
@@ -45,8 +65,17 @@
         btn.classList.remove('active');
       }
     });
-    // Generate fresh address with new duration
-    window.generateAddress(true);
+
+    // Close the duration drawer after selecting
+    window.toggleDurationBar(false);
+
+    // Generate fresh address with the chosen duration
+    await window.generateAddress(true);
+
+    if (window.WoxToast) {
+      const label = selectedExpiry === 72 ? '3 days' : `${selectedExpiry} hours`;
+      WoxToast.success(`Generating new email with ${label} lifetime`);
+    }
   };
 
   let selectedDomain = 'mail.wox.world';
@@ -800,11 +829,14 @@
 
       list.innerHTML = addresses.map((addr) => {
         const msgCount = typeof addr.messageCount === 'number' ? addr.messageCount : 0;
+        const isStandby = addr.status === 'available';
         return `
           <div class="recent-item" onclick="openPublicAddress('${escapeHtml(addr.address)}', '${escapeHtml(addr.expiresAt || '')}')">
             <span class="recent-address mono">${escapeHtml(addr.address)}</span>
             <div class="recent-meta" style="display:flex;align-items:center;gap:0.4rem;">
-              <span class="badge ${msgCount > 0 ? 'badge-green' : 'badge-purple'}" style="font-size:0.75rem;font-weight:600;">${msgCount} msg</span>
+              <span class="badge ${msgCount > 0 ? 'badge-green' : (isStandby ? 'badge-blue' : 'badge-purple')}" style="font-size:0.75rem;font-weight:600;">
+                ${isStandby ? 'Standby' : `${msgCount} msg`}
+              </span>
               <button type="button" class="btn btn-ghost btn-xs" style="padding:0.25rem 0.5rem;display:inline-flex;align-items:center;justify-content:center;" title="Copy address" onclick="event.stopPropagation(); copyRecentAddress('${escapeHtml(addr.address)}')">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
               </button>
@@ -964,10 +996,10 @@
     }
     
     window.loadRecentAddresses();
-    recentInterval = setInterval(window.loadRecentAddresses, 30000);
+    recentInterval = setInterval(window.loadRecentAddresses, 3000);
     autoRefreshInterval = setInterval(() => {
       if (currentAddress) window.refreshInbox(false);
-    }, 30000);
+    }, 3000);
 
     // Start next purge cycle countdown ticker
     startPurgeCycleTimer();
@@ -1004,10 +1036,15 @@
     const activeEl = document.activeElement;
     const isInput = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable);
 
-    // Escape: close viewer, close modal, or blur active input
+    // Escape: close viewer, close modal, close duration drawer, or blur active input
     if (e.key === 'Escape') {
       if (isInput) {
         activeEl.blur();
+        return;
+      }
+      const durationBar = document.getElementById('duration-selector-bar');
+      if (durationBar && durationBar.style.display !== 'none') {
+        window.toggleDurationBar(false);
         return;
       }
       const qrModal = document.getElementById('qr-modal');
@@ -1041,10 +1078,10 @@
       return;
     }
 
-    // 'n' or 'N' for new address
+    // 'n' or 'N' to toggle duration options for new address
     if (e.key === 'n' || e.key === 'N') {
       e.preventDefault();
-      window.generateAddress(true);
+      window.toggleDurationBar();
       return;
     }
 
@@ -1098,6 +1135,16 @@
         e.preventDefault();
         window.openMessage(selectedItem.dataset.uid);
       }
+    }
+  });
+
+  // Close duration drawer when clicking anywhere outside
+  document.addEventListener('click', (e) => {
+    const bar = document.getElementById('duration-selector-bar');
+    const newBtn = document.getElementById('refresh-address-btn');
+    if (!bar || bar.style.display === 'none') return;
+    if (!bar.contains(e.target) && !newBtn.contains(e.target)) {
+      window.toggleDurationBar(false);
     }
   });
 

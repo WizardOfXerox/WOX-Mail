@@ -62,6 +62,7 @@ export async function createSecureMessage({
   content,
   passcode,
   pin,
+  maxViews = 1,
   expirationHours = 24,
   destroyAfterRead = false,
   burnAfterRead = false,
@@ -178,9 +179,10 @@ export async function createSecureMessage({
         logger.info({ id: row.id, recipientEmail }, 'Dispatched secure locked email notification');
 
         // Append copy to sender's Sent folder
+        let imapClient;
         try {
           const { createConnection } = await import('./imap.js');
-          const imapClient = await createConnection(senderEmail, pass);
+          imapClient = await createConnection(senderEmail, pass);
           if (imapClient) {
             await saveSentMessage(imapClient, {
               from: senderEmail,
@@ -190,10 +192,11 @@ export async function createSecureMessage({
               messageId: sendResult.messageId,
               date: new Date(),
             });
-            await imapClient.logout();
           }
         } catch (sentErr) {
           logger.warn({ err: sentErr.message }, 'Failed to append secure locked message to Sent folder');
+        } finally {
+          if (imapClient) await imapClient.logout().catch(() => {});
         }
       }
     } catch (err) {

@@ -20,6 +20,9 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
   const [isCustomFrom, setIsCustomFrom] = useState(false);
   const [customFromInput, setCustomFromInput] = useState('');
   const [trackOpens, setTrackOpens] = useState(true);
+  const [pgpEncrypt, setPgpEncrypt] = useState(false);
+  const [pgpPassphrase, setPgpPassphrase] = useState('');
+  const [showPgpModal, setShowPgpModal] = useState(false);
   const toRef = useRef(null);
   const fileInputRef = useRef(null);
   const editorRef = useRef(null);
@@ -79,9 +82,11 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
   // Privacy Auto-Guard: Check if original message was addressed to one of user's active aliases
   useEffect(() => {
     if (!originalMessage || !aliases.length) return;
+    const toList = Array.isArray(originalMessage.to) ? originalMessage.to : (originalMessage.to ? [originalMessage.to] : []);
+    const ccList = Array.isArray(originalMessage.cc) ? originalMessage.cc : (originalMessage.cc ? [originalMessage.cc] : []);
     const incomingAddrs = [
-      ...(originalMessage.to || []),
-      ...(originalMessage.cc || []),
+      ...toList,
+      ...ccList,
     ].map((r) => (typeof r === 'object' ? (r.address || r.email || '') : String(r || '')).toLowerCase());
 
     const matchedAlias = aliases.find((a) => {
@@ -125,9 +130,11 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
 
       if (replyData?.replyAll) {
         const userEmail = (activeAccount?.email || user?.email || '').toLowerCase();
+        const toList = Array.isArray(originalMessage.to) ? originalMessage.to : (originalMessage.to ? [originalMessage.to] : []);
+        const ccList = Array.isArray(originalMessage.cc) ? originalMessage.cc : (originalMessage.cc ? [originalMessage.cc] : []);
         const allRecipients = [
-          ...(originalMessage.to || []),
-          ...(originalMessage.cc || []),
+          ...toList,
+          ...ccList,
         ]
           .map((r) => (typeof r === 'object' ? (r.address || r.email || '') : String(r || '')))
           .filter((a) => a && a.toLowerCase() !== userEmail && a.toLowerCase() !== replyTo.toLowerCase());
@@ -193,6 +200,7 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
   const [deliverabilityResult, setDeliverabilityResult] = useState(null);
   const [checkingDeliverability, setCheckingDeliverability] = useState(false);
   const [activeAttachmentPopoverIdx, setActiveAttachmentPopoverIdx] = useState(null);
+  const [showAdvancedTray, setShowAdvancedTray] = useState(false);
 
   // Snippets & Slash Macros
   const [availableSnippets, setAvailableSnippets] = useState([]);
@@ -352,6 +360,27 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
       } else {
         effectiveBody = `${rawEffectiveBody}<br><br><div class="gmail_quote" style="margin-top: 1.5rem; padding-left: 0.75rem; border-left: 2px solid #7c3aed; color: #888;"><div dir="ltr" class="gmail_attr" style="margin-bottom: 0.5rem; color: #888;">${quotedInfo.header}</div><blockquote style="margin: 0; padding: 0;">${quotedInfo.html}</blockquote></div>`;
         plainText = `${rawPlainText}\n\n${quotedInfo.header}\n> ${(quotedInfo.text || '').split('\n').join('\n> ')}`;
+      }
+    }
+
+    if (pgpEncrypt) {
+      if (!pgpPassphrase) {
+        setShowPgpModal(true);
+        return;
+      }
+      try {
+        const openpgp = await import('openpgp');
+        const msgToEncrypt = await openpgp.createMessage({ text: plainText || effectiveBody });
+        const armoredCiphertext = await openpgp.encrypt({
+          message: msgToEncrypt,
+          passwords: [pgpPassphrase],
+          format: 'armored'
+        });
+        effectiveBody = `<pre style="font-family: monospace; white-space: pre-wrap; color: #a78bfa;">${armoredCiphertext}</pre>`;
+        plainText = armoredCiphertext;
+      } catch (pgpErr) {
+        setError('PGP Encryption error: ' + pgpErr.message);
+        return;
       }
     }
 
@@ -1132,18 +1161,23 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
             onChange={handleFileSelect}
           />
 
-          {/* Compose Footer */}
-          <div className="compose-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.6rem' }}>
-            <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => fileInputRef.current?.click()}
-                title="Attach files (supports view & download caps)"
-              >
-                Attach Files
-              </button>
-
+          {/* Collapsible Delivery & Security Options Drawer */}
+          {showAdvancedTray && (
+            <div
+              className="animate-fade-in"
+              style={{
+                padding: '0.65rem 0.85rem',
+                borderTop: '1px solid var(--color-border-subtle)',
+                background: 'rgba(0, 0, 0, 0.28)',
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                gap: '0.75rem',
+                borderRadius: '8px',
+                margin: '0.25rem 0.75rem 0.5rem',
+              }}
+            >
+              {/* Track Opens & Clicks */}
               <label
                 style={{
                   display: 'inline-flex',
@@ -1211,7 +1245,74 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
                 title="Inspect draft for spam trigger words and deliverability issues"
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                <span>{checkingDeliverability ? 'Inspecting...' : 'Pre-Flight Check'}</span>
+                <span>{checkingDeliverability ? 'Inspecting...' : 'Pre-Flight Spam Check'}</span>
+              </button>
+
+              {/* 1-Click PGP Encrypt Toggle */}
+              <button
+                type="button"
+                className={`btn btn-xs ${pgpEncrypt ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => {
+                  const nextState = !pgpEncrypt;
+                  setPgpEncrypt(nextState);
+                  if (nextState && !pgpPassphrase) {
+                    setShowPgpModal(true);
+                  }
+                }}
+                style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                title="Encrypt outbound message payload with OpenPGP"
+              >
+                <span>{pgpEncrypt ? '🔒 [PGP: ENCRYPTED]' : '🔓 [PGP Encrypt]'}</span>
+              </button>
+            </div>
+          )}
+
+          {/* Compose Footer */}
+          <div className="compose-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.6rem' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => fileInputRef.current?.click()}
+                title="Attach files (supports view & download caps)"
+              >
+                Attach Files
+              </button>
+
+              {/* Expandable Delivery & Security Options Pill */}
+              <button
+                type="button"
+                className={`btn btn-xs ${showAdvancedTray || (trackOpens || remindIfNoReply || pgpEncrypt) ? 'btn-secondary' : 'btn-ghost'}`}
+                onClick={() => setShowAdvancedTray(!showAdvancedTray)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  fontSize: '0.75rem',
+                  padding: '0.35rem 0.65rem',
+                  borderRadius: 'var(--radius-pill)',
+                  border: (trackOpens || remindIfNoReply || pgpEncrypt) ? '1px solid rgba(124, 58, 237, 0.4)' : undefined,
+                  color: (trackOpens || remindIfNoReply || pgpEncrypt) ? 'var(--color-primary-light)' : 'var(--color-text-secondary)',
+                }}
+                title="Toggle tracking, auto-reminders, deliverability check, and PGP encryption"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                <span>Delivery & Security</span>
+                {((trackOpens ? 1 : 0) + (remindIfNoReply ? 1 : 0) + (pgpEncrypt ? 1 : 0)) > 0 && (
+                  <span
+                    style={{
+                      background: 'var(--color-primary)',
+                      color: '#fff',
+                      fontSize: '0.65rem',
+                      fontWeight: 700,
+                      padding: '1px 5px',
+                      borderRadius: '8px',
+                    }}
+                  >
+                    {(trackOpens ? 1 : 0) + (remindIfNoReply ? 1 : 0) + (pgpEncrypt ? 1 : 0)}
+                  </span>
+                )}
+                <span style={{ fontSize: '0.65rem', marginLeft: '2px' }}>{showAdvancedTray ? '▲' : '▼'}</span>
               </button>
             </div>
 
@@ -1317,6 +1418,47 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
               <button type="button" className="btn btn-primary btn-sm" style={{ width: '100%' }} onClick={() => setShowDeliverabilityModal(false)}>
                 Done
               </button>
+            </div>
+          </div>
+        )}
+        {/* OpenPGP Passphrase Input Modal */}
+        {showPgpModal && (
+          <div className="modal-backdrop" onClick={() => setShowPgpModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999 }}>
+            <div className="card" onClick={(e) => e.stopPropagation()} style={{ width: '90%', maxWidth: '420px' }}>
+              <h3 style={{ margin: '0 0 1rem' }}>OpenPGP Message Encryption</h3>
+              <p className="text-secondary" style={{ fontSize: '0.8rem', marginBottom: '1rem' }}>
+                Enter a symmetric passphrase or recipient key to encrypt this outbound message payload.
+              </p>
+              <div style={{ marginBottom: '1.25rem' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '4px' }}>PASSPHRASE</label>
+                <input
+                  className="input"
+                  type="password"
+                  placeholder="Enter secret passphrase"
+                  value={pgpPassphrase}
+                  onChange={(e) => setPgpPassphrase(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowPgpModal(false)}>
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => {
+                    if (!pgpPassphrase) {
+                      alert('Passphrase required to encrypt');
+                      return;
+                    }
+                    setPgpEncrypt(true);
+                    setShowPgpModal(false);
+                  }}
+                >
+                  Set Passphrase
+                </button>
+              </div>
             </div>
           </div>
         )}

@@ -19,6 +19,7 @@ import TemplatePickerModal from './components/TemplatePickerModal.jsx';
 import ThemeCustomizerModal from './components/ThemeCustomizerModal.jsx';
 import BackgroundCanvas from './components/BackgroundCanvas.jsx';
 import ProtonUnlockModal from './components/ProtonUnlockModal.jsx';
+import GlobalAnnouncements from './components/GlobalAnnouncements.jsx';
 import { protonClient } from '../services/protonAPI.js';
 import { protonCrypto } from '../services/protonCrypto.js';
 import { ProtonSessionStore } from '../services/protonSessionStore.js';
@@ -62,6 +63,43 @@ export default function App() {
   const [showProtonUnlock, setShowProtonUnlock] = useState(false);
   const [isProtonUnlocked, setIsProtonUnlocked] = useState(false);
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 768);
+  const [announcements, setAnnouncements] = useState([]);
+  const [dismissedAnnouncements, setDismissedAnnouncements] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('woxmail_dismissed_announcements') || '[]');
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    fetch('/api/announcements')
+      .then((res) => (res.ok ? res.json() : { announcements: [] }))
+      .then((data) => {
+        if (Array.isArray(data.announcements)) {
+          setAnnouncements(data.announcements);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleDismissAnnouncement = (id) => {
+    const next = [...dismissedAnnouncements, id];
+    setDismissedAnnouncements(next);
+    try {
+      localStorage.setItem('woxmail_dismissed_announcements', JSON.stringify(next));
+    } catch {}
+  };
+
+  const handleDismissAllAnnouncements = (ids) => {
+    const next = Array.from(new Set([...dismissedAnnouncements, ...ids]));
+    setDismissedAnnouncements(next);
+    try {
+      localStorage.setItem('woxmail_dismissed_announcements', JSON.stringify(next));
+    } catch {}
+  };
+
+  const visibleAnnouncements = announcements.filter((a) => !dismissedAnnouncements.includes(a.id));
 
   useEffect(() => {
     // Restore persistent Proton session on load if available
@@ -70,14 +108,22 @@ export default function App() {
     }
   }, []);
 
-  // Listen for Proton session lock events from failed requests
+  // Listen for Proton session lock & unlock events
   useEffect(() => {
     const handleLocked = () => {
       setIsProtonUnlocked(false);
       setShowProtonUnlock(true);
     };
+    const handleUnlocked = () => {
+      setIsProtonUnlocked(true);
+      setShowProtonUnlock(false);
+    };
     window.addEventListener('woxmail:proton-locked', handleLocked);
-    return () => window.removeEventListener('woxmail:proton-locked', handleLocked);
+    window.addEventListener('woxmail:proton-unlocked', handleUnlocked);
+    return () => {
+      window.removeEventListener('woxmail:proton-locked', handleLocked);
+      window.removeEventListener('woxmail:proton-unlocked', handleUnlocked);
+    };
   }, []);
 
   // Automatically detect if user logged in with a Proton email and check server session status
@@ -94,12 +140,21 @@ export default function App() {
       fetch(`/api/proton/sync/status?email=${encodeURIComponent(user.email)}`)
         .then((res) => res.json())
         .then((data) => {
-          if (data && !data.active) {
-            setIsProtonUnlocked(false);
-            setShowProtonUnlock(true);
-          } else if (data && data.active) {
+          if (data && data.active) {
             setIsProtonUnlocked(true);
             setShowProtonUnlock(false);
+            ProtonSessionStore.saveSession({
+              email: user.email,
+              uid: user.email,
+              accessToken: 'server-session',
+              user: { Email: user.email, Name: user.display_name || user.email },
+            });
+            protonClient.restoreSession();
+            refetchMessages();
+            refetchFolders();
+          } else {
+            setIsProtonUnlocked(false);
+            setShowProtonUnlock(true);
           }
         })
         .catch(() => {
@@ -119,10 +174,13 @@ export default function App() {
   const knownMsgUidsRef = React.useRef(new Set());
   const initialLoadDoneRef = React.useRef(false);
   const previousFolderRef = React.useRef(activeFolder);
+  const previousAccountRef = React.useRef(null);
 
-  // Request notifications on load & register global error audio debugger
+  // Request notifications safely on load & register global error audio debugger
   useEffect(() => {
-    NotificationService.requestPermission();
+    try {
+      NotificationService.requestPermission().catch(() => {});
+    } catch {}
 
     const handleError = (e) => {
       console.error('[WoxMail App Error]', e.message, e.error);
@@ -153,10 +211,13 @@ export default function App() {
   useEffect(() => {
     if (!messages || messages.length === 0) return;
 
-    if (!initialLoadDoneRef.current || previousFolderRef.current !== activeFolder) {
-      // First load or folder changed: seed existing messages without playing chime
+    const accountKey = activeAccount?.id || activeAccount?.email || 'primary';
+
+    if (!initialLoadDoneRef.current || previousFolderRef.current !== activeFolder || previousAccountRef.current !== accountKey) {
+      // First load or folder/account changed: seed existing messages without playing chime
       previousFolderRef.current = activeFolder;
-      knownMsgUidsRef.current = new Set(messages.map((m) => m.uid));
+      previousAccountRef.current = accountKey;
+      knownMsgUidsRef.current = new Set((messages || []).map((m) => m.uid));
       initialLoadDoneRef.current = true;
       return;
     }
@@ -178,7 +239,7 @@ export default function App() {
 
     // Update known set
     messages.forEach((m) => knownMsgUidsRef.current.add(m.uid));
-  }, [messages, activeFolder]);
+  }, [messages, activeFolder, activeAccount]);
 
   const handleProtonUnlocked = () => {
     setIsProtonUnlocked(true);
@@ -284,12 +345,39 @@ export default function App() {
   }, [messages, layoutMode, activeFolder, isMobile, msgsLoading, selectedUid]);
 
   const handleFolderChange = (folder) => {
+    setShowKanban(false);
     if (folder === activeFolder) return;
     setActiveFolder(folder);
     setSelectedUid(null);
     setPage(1);
     setSidebarOpen(false);
     setActiveFilterLabel('');
+  };
+
+  const handleSelectApp = (appId) => {
+    setSidebarOpen(false);
+    if (appId === 'mail') {
+      setShowKanban(false);
+      handleFolderChange('INBOX');
+    } else if (appId === 'gatekeeper') {
+      setShowKanban(false);
+      handleFolderChange('__gatekeeper');
+    } else if (appId === 'campaigns') {
+      setShowKanban(false);
+      handleFolderChange('__campaigns');
+    } else if (appId === 'kanban') {
+      setShowKanban(true);
+    } else if (appId === 'support') {
+      setShowSupportModal(true);
+    } else if (appId === 'tempmail') {
+      window.location.href = '/tempmail';
+    } else if (appId === 'futureme') {
+      window.location.href = '/futureme';
+    } else if (appId === 'developer') {
+      window.location.href = '/settings#developer';
+    } else if (appId === 'settings') {
+      window.location.href = '/settings';
+    }
   };
 
   // ─── Actions & Batch Handlers ───────────────────────────
@@ -514,17 +602,25 @@ export default function App() {
   };
 
   const handleSend = async (data) => {
-    const fromAddr = String(data.from || '').trim().toLowerCase();
-    const isProtonSender = fromAddr.endsWith('@proton.me') || fromAddr.endsWith('@pm.me') || fromAddr.endsWith('@protonmail.com') || fromAddr.endsWith('@protonmail.ch') || fromAddr === (activeAccount?.email || '').toLowerCase() || fromAddr === (user?.email || '').toLowerCase();
+    const rawFrom = String(data.from || '').trim().toLowerCase();
+    const fromAddr = rawFrom.includes('<') ? rawFrom.replace(/.*<([^>]+)>.*/, '$1').trim() : rawFrom;
+    const isProtonSender = fromAddr.endsWith('@proton.me') ||
+      fromAddr.endsWith('@pm.me') ||
+      fromAddr.endsWith('@protonmail.com') ||
+      fromAddr.endsWith('@protonmail.ch') ||
+      activeAccount?.provider === 'proton' ||
+      (activeAccount?.email && (activeAccount.email.toLowerCase().endsWith('@proton.me') || activeAccount.email.toLowerCase().endsWith('@pm.me'))) ||
+      (user?.email && (user.email.toLowerCase().endsWith('@proton.me') || user.email.toLowerCase().endsWith('@pm.me')));
 
-    if ((activeAccount?.provider === 'proton' || user?.provider === 'proton') && isProtonSender) {
+    if (isProtonSender) {
       try {
+        const targetProtonEmail = fromAddr || activeAccount?.email || user?.email;
         await sendProtonMessage({
           ...data,
-          from: data.from || activeAccount?.email || user?.email,
-          email: activeAccount?.email || user?.email,
+          from: data.from || targetProtonEmail,
+          email: targetProtonEmail,
         });
-        if (window.WoxToast) window.WoxToast.success(`Email dispatched securely from ${data.from || activeAccount?.email || user?.email}!`);
+        if (window.WoxToast) window.WoxToast.success(`Email dispatched securely from ${data.from || targetProtonEmail}!`);
         setComposing(false);
         setReplyData(null);
         setTimeout(() => {
@@ -731,11 +827,22 @@ export default function App() {
         onOpenTheme={() => setShowThemeModal(true)}
         onCompose={() => { setReplyData(null); setComposing(true); setSidebarOpen(false); }}
         onUnlockProton={() => setShowProtonUnlock(true)}
+        onSelectApp={handleSelectApp}
       />
 
       {/* Main Content Area */}
-      <div className="dashboard-main-content" style={{ display: 'flex', flex: 1, height: '100vh', overflow: 'hidden' }}>
-        {/* Special Views (Gatekeeper / Campaigns / Kanban) */}
+      <div className="dashboard-main-content" style={{ display: 'flex', flexDirection: 'column', flex: 1, height: '100vh', overflow: 'hidden' }}>
+        {/* Global System Announcement Banner (Anti-Spam Consolidated with 5s Auto-Dismiss) */}
+        <GlobalAnnouncements
+          announcements={announcements}
+          dismissedIds={dismissedAnnouncements}
+          onDismiss={handleDismissAnnouncement}
+          onDismissAll={handleDismissAllAnnouncements}
+        />
+
+        {/* Inner Workspace Container */}
+        <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+          {/* Special Views (Gatekeeper / Campaigns / Kanban) */}
         {activeFolder === '__gatekeeper' ? (
           <GatekeeperView onBack={() => handleFolderChange('INBOX')} />
         ) : activeFolder === '__campaigns' ? (
@@ -1042,6 +1149,7 @@ export default function App() {
             />
           </>
         )}
+        </div>
       </div>
 
       {/* Compose Modal */}

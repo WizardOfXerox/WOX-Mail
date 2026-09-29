@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>WoxCrypt Dashboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 340px;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f0f1a;
+      color: #f0f0f5;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+      border-bottom: 1px solid #2a2a4a;
+      padding-bottom: 10px;
+    }
+    .title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #c084fc;
+    }
+    .badge {
+      font-size: 11px;
+      font-weight: 600;
+      background: rgba(124, 58, 237, 0.2);
+      color: #a78bfa;
+      padding: 2px 6px;
+      border-radius: 9999px;
+    }
+    .tabs {
+      display: flex;
+      gap: 4px;
+      background: #16162b;
+      padding: 3px;
+      border-radius: 8px;
+      margin-bottom: 12px;
+      border: 1px solid #2a2a4a;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 5px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      border: none;
+      background: none;
+      color: #888;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .tab-btn.active {
+      background: #7c3aed;
+      color: #ffffff;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
+    .section {
+      margin-bottom: 14px;
+    }
+    .section-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: #888;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .btn {
+      width: 100%;
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: none;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .btn-primary {
+      background: #7c3aed;
+      color: white;
+    }
+    .btn-secondary {
+      background: #1a1a2e;
+      color: #f0f0f5;
+      border: 1px solid #2a2a4a;
+      margin-top: 6px;
+    }
+    .input {
+      width: 100%;
+      background: #16162b;
+      border: 1px solid #2a2a4a;
+      border-radius: 6px;
+      padding: 6px 8px;
+      color: #f0f0f5;
+      font-size: 12px;
+      margin-bottom: 8px;
+      outline: none;
+    }
+    .address-card {
+      background: #16162b;
+      border: 1px solid #2a2a4a;
+      border-radius: 6px;
+      padding: 6px 10px;
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+    }
+    .address-card .email {
+      font-family: monospace;
+      color: #a78bfa;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 220px;
+    }
+    .copy-btn {
+      background: none;
+      border: none;
+      color: #aaa;
+      cursor: pointer;
+      font-size: 11px;
+    }
+    .copy-btn:hover { color: white; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="title">WoxCrypt</div>
+    <div class="badge">[SOVEREIGN]</div>
+  </div>
+
+  <div class="tabs">
+    <button type="button" class="tab-btn active" data-tab="tab-mail">Temp Mail</button>
+    <button type="button" class="tab-btn" data-tab="tab-pgp">OpenPGP</button>
+    <button type="button" class="tab-btn" data-tab="tab-settings">Settings</button>
+  </div>
+
+  <!-- Tab 1: Temp Mail -->
+  <div id="tab-mail" class="tab-content active">
+    <div class="section">
+      <button type="button" id="btn-generate" class="btn btn-primary">
+        Generate Disposable Mail
+      </button>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Recent Temp Addresses</div>
+      <div id="recent-list">
+        <div style="font-size: 12px; color: #666; text-align: center; padding: 10px 0;">No temp mail generated yet.</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <button type="button" id="btn-open-webmail" class="btn btn-secondary">
+        Open WoxMail Inbox
+      </button>
+    </div>
+  </div>
+
+  <!-- Tab 2: OpenPGP Decryptor -->
+  <div id="tab-pgp" class="tab-content">
+    <div class="section">
+      <div class="section-title">Decrypt Armored Message</div>
+      <textarea id="pgp-cipher-input" class="input" rows="4" placeholder="Paste -----BEGIN PGP MESSAGE----- here..." style="font-family: monospace; resize: vertical;"></textarea>
+      <input type="password" id="pgp-passphrase-input" class="input" placeholder="Secret passphrase..." />
+      <button type="button" id="btn-decrypt-pgp" class="btn btn-primary">
+        Decrypt Ciphertext
+      </button>
+      <div id="pgp-decrypt-output" style="display: none; margin-top: 8px; padding: 8px; background: #16162b; border: 1px solid #22c55e; border-radius: 6px; font-size: 12px; white-space: pre-wrap; word-break: break-word;"></div>
+    </div>
+  </div>
+
+  <!-- Tab 3: Settings -->
+  <div id="tab-settings" class="tab-content">
+    <div class="section">
+      <div class="section-title">Server API Endpoint</div>
+      <input type="text" id="setting-api-base" class="input" placeholder="http://localhost:3001 or https://mail.wox.world" />
+      <button type="button" id="btn-save-settings" class="btn btn-primary">
+        Save Endpoint
+      </button>
+      <div id="settings-status" style="font-size: 11px; color: #22c55e; margin-top: 6px; display: none;">Saved!</div>
+    </div>
+  </div>
+
+  <script src="../lib/openpgp.min.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

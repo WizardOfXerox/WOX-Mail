@@ -118,11 +118,16 @@ router.post('/exec', async (req, res) => {
         if (subCmd === 'list') {
           const folder = args[1] || 'INBOX';
           const pass = user.purelymail_password || process.env.ADMIN_PASSWORD;
-          const client = await createConnection(user.email, pass);
-          const result = await fetchMessages(client, folder, { page: 1, limit: 15 });
-          await client.logout().catch(() => {});
+          let client;
+          let result;
+          try {
+            client = await createConnection(user.email, pass);
+            result = await fetchMessages(client, folder, { page: 1, limit: 15 });
+          } finally {
+            if (client) await client.logout().catch(() => {});
+          }
 
-          if (!result.messages || result.messages.length === 0) {
+          if (!result?.messages || result.messages.length === 0) {
             output = `Folder "${folder}" is empty.`;
           } else {
             const lines = [`MESSAGES IN ${folder.toUpperCase()} (${result.messages.length}):`];
@@ -145,9 +150,14 @@ router.post('/exec', async (req, res) => {
             break;
           }
           const pass = user.purelymail_password || process.env.ADMIN_PASSWORD;
-          const client = await createConnection(user.email, pass);
-          const msg = await fetchMessage(client, 'INBOX', uid);
-          await client.logout().catch(() => {});
+          let client;
+          let msg;
+          try {
+            client = await createConnection(user.email, pass);
+            msg = await fetchMessage(client, 'INBOX', uid);
+          } finally {
+            if (client) await client.logout().catch(() => {});
+          }
 
           if (!msg) {
             output = `Message UID ${uid} not found.`;
@@ -235,9 +245,14 @@ router.post('/exec', async (req, res) => {
           if (resDb.rows.length === 0) {
             output = `Address ${addr} not found or expired.`;
           } else {
-            const client = await createConnection(addr, resDb.rows[0].imap_password);
-            const r = await fetchMessages(client, 'INBOX', { page: 1, limit: 10 });
-            await client.logout().catch(() => {});
+            let client;
+            let r;
+            try {
+              client = await createConnection(addr, resDb.rows[0].imap_password);
+              r = await fetchMessages(client, 'INBOX', { page: 1, limit: 10 });
+            } finally {
+              if (client) await client.logout().catch(() => {});
+            }
             if (!r.messages || r.messages.length === 0) {
               output = `No messages currently in inbox for ${addr}.`;
             } else {
@@ -554,9 +569,14 @@ router.get('/temp/:address', async (req, res) => {
       return res.status(404).send(`Address "${address}" not found or expired.\n`);
     }
 
-    const client = await createConnection(address, result.rows[0].imap_password);
-    const data = await fetchMessages(client, 'INBOX', { page: 1, limit: 15 });
-    await client.logout().catch(() => {});
+    let client;
+    let data;
+    try {
+      client = await createConnection(address, result.rows[0].imap_password);
+      data = await fetchMessages(client, 'INBOX', { page: 1, limit: 15 });
+    } finally {
+      if (client) await client.logout().catch(() => {});
+    }
 
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     if (!data.messages || data.messages.length === 0) {

@@ -149,29 +149,3 @@ export function isPurelymailWelcomeEmail(msg) {
     (fromAddr.includes('support@purelymail.com') && subject.includes('welcome'))
   );
 }
-
-/**
- * Safely parse integer from string, URL param, or query with bounds.
- * @param {any} val
- * @param {number} defaultVal
- * @param {number|null} min
- * @param {number|null} max
- * @returns {number}
- */
-export function safeParseInt(val, defaultVal = 0, min = null, max = null) {
-  let num = parseInt(val, 10);
-  if (isNaN(num)) num = defaultVal;
-  if (min !== null && num < min) num = min;
-  if (max !== null && num > max) num = max;
-  return num;
-}
-
-/**
- * Escape special wildcard characters for SQL LIKE / ILIKE queries (%, _, \).
- * @param {string} str
- * @returns {string}
- */
-export function escapeSqlLike(str) {
-  if (typeof str !== 'string') return '';
-  return str.replace(/[%_\\]/g, '\\$&');
-}

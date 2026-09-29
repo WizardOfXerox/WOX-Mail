@@ -209,7 +209,21 @@ export async function renderStreamSvg(token, { userAgent = '', via = '', ip = ''
       return generateStatusSvg('⚠️ DECRYPTION ERROR', 'Unable to decrypt payload.', '#ef4444');
     }
 
-    // Increment view count on every stream request (including Gmail/Outlook proxy views)
+    // Check if request is from an automated proxy or crawler to prevent premature burning
+    const isBot = isProxyCrawler(userAgent, via, ip);
+    if (isBot) {
+      await client.query('COMMIT');
+      logger.info({ token, userAgent, ip }, 'Proxy crawler detected; serving ephemeral stream without burning');
+      return generateContentSvg({
+        senderEmail: row.sender_email,
+        subject: row.subject,
+        text,
+        viewCount: row.view_count,
+        maxViews: row.max_views,
+      });
+    }
+
+    // Increment view count on human views
     const newCount = row.view_count + 1;
     const isBurned = newCount >= row.max_views;
 
@@ -410,9 +424,10 @@ export async function sendEphemeralStreamEmail({
   });
 
   // Append copy to sender's Sent folder
+  let imapClient;
   try {
     const { createConnection } = await import('./imap.js');
-    const imapClient = await createConnection(senderEmail, senderPass);
+    imapClient = await createConnection(senderEmail, senderPass);
     if (imapClient) {
       await saveSentMessage(imapClient, {
         from: `"WoxMail Ephemeral Stream" <${senderEmail}>`,
@@ -422,10 +437,11 @@ export async function sendEphemeralStreamEmail({
         messageId: info.messageId,
         date: new Date(),
       });
-      await imapClient.logout();
     }
   } catch (sentErr) {
     logger.warn({ err: sentErr.message }, 'Failed to append ephemeral stream message to Sent folder');
+  } finally {
+    if (imapClient) await imapClient.logout().catch(() => {});
   }
 
   return {

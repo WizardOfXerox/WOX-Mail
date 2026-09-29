@@ -95,20 +95,27 @@ server_debug.log
 service.log
 
 # ------------------------------------------------------------------------------
-# 6. Test Reports, Coverage & Playwright
+# 6. Test Suites, Directories & Test Reports
 # ------------------------------------------------------------------------------
+tests/
+server/tests/
+*.test.js
+*.test.mjs
+*.test.cjs
+*.spec.js
 coverage/
 .nyc_output/
 test-results/
 playwright-report/
 blob-report/
 playwright/.cache/
-tests/screenshots/
 .tempmediaStorage/
 .user_uploaded/
+*report.json
+*-report.json
 
 # ------------------------------------------------------------------------------
-# 7. Temporary, Scratch & Local Debugging Scripts
+# 7. Temporary, Scratch & Local Debugging/Test Scripts
 # ------------------------------------------------------------------------------
 scratch/
 scratch_*
@@ -117,6 +124,12 @@ temp/
 .temp/
 *.tmp
 *.bak
+server/scripts/test_*
+server/scripts/audit_*
+server/scripts/find_*
+server/scripts/verify_*
+server/scripts/security_*
+server/scripts/create_*
 
 # ------------------------------------------------------------------------------
 # 8. Operating System & IDE Files

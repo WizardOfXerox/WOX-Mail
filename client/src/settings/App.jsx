@@ -9,12 +9,60 @@ import TemplatesSection from './components/TemplatesSection.jsx';
 import IntegrationsSection from './components/IntegrationsSection.jsx';
 import AnalyticsSection from './components/AnalyticsSection.jsx';
 import DeveloperSection from './components/DeveloperSection.jsx';
+import LanguageSection from './components/LanguageSection.jsx';
+import MigrationSection from './components/MigrationSection.jsx';
 import ThemeCustomizerModal from '../dashboard/components/ThemeCustomizerModal.jsx';
 import BackgroundCanvas from '../dashboard/components/BackgroundCanvas.jsx';
+import { useExperienceMode, EXPERIENCE_MODES } from '../shared/hooks/useExperienceMode.js';
 import '../shared/styles/globals.css';
 
+export const SETTINGS_HUBS = [
+  {
+    id: 'general',
+    title: 'General & Experience',
+    shortTitle: 'General',
+    icon: '✨',
+    desc: 'Personas, identity, aesthetics, and localization',
+    sections: ['experience', 'profile', 'appearance', 'language'],
+  },
+  {
+    id: 'mailbox',
+    title: 'Mailbox & Protocols',
+    shortTitle: 'Mailbox',
+    icon: '📬',
+    desc: 'Accounts, signatures, auto-responders, and device setups',
+    sections: ['accounts', 'signature', 'vacation', 'forwarding', 'autoconfig'],
+  },
+  {
+    id: 'security',
+    title: 'Security, Privacy & Aliases',
+    shortTitle: 'Security',
+    icon: '🛡️',
+    desc: 'Encryption, screener firewall, masks, sessions, and recovery',
+    sections: ['security', 'pgp', 'screener', 'aliases', 'reverse', 'deadman', 'sessions', 'danger'],
+  },
+  {
+    id: 'campaigns',
+    title: 'Campaigns, CRM & Automations',
+    shortTitle: 'Campaigns',
+    icon: '🚀',
+    desc: 'Marketing broadcasts, contact dossiers, templates, and rules',
+    sections: ['templates', 'rss', 'contacts', 'analytics', 'filters', 'history'],
+  },
+  {
+    id: 'developer',
+    title: 'Developer & Infrastructure',
+    shortTitle: 'Developer',
+    icon: '⚡',
+    desc: 'API keys, webhooks, IMAP migration, chat relays, and AI',
+    sections: ['developer', 'webhooks', 'migration', 'integrations_chat', 'ai'],
+  },
+];
+
 const VALID_SECTIONS = [
+  'experience',
   'accounts', 'appearance', 'ai', 'templates', 'integrations_chat', 'analytics', 'developer',
+  'language', 'migration',
   'profile', 'security', 'autoconfig', 'deadman', 'rss', 'pgp', 'screener',
   'webhooks', 'aliases', 'reverse', 'vacation', 'forwarding',
   'signature', 'filters', 'sessions', 'contacts', 'history', 'danger',
@@ -22,10 +70,17 @@ const VALID_SECTIONS = [
 
 export default function App() {
   const { user, loading, refetch: refetchUser } = useUser();
+  const { mode, setMode, metadata, allModes } = useExperienceMode();
   const [activeSection, setActiveSection] = useState(() => {
     const hash = window.location.hash.replace('#', '');
     return VALID_SECTIONS.includes(hash) ? hash : null;
   });
+  const [selectedHub, setSelectedHub] = useState(() => {
+    const hash = window.location.hash.replace('#', '');
+    const found = SETTINGS_HUBS.find(h => h.sections.includes(hash));
+    return found ? found.id : 'all';
+  });
+  const [searchQuery, setSearchQuery] = useState('');
   const [themeModalOpen, setThemeModalOpen] = useState(false);
 
   useEffect(() => {
@@ -42,7 +97,12 @@ export default function App() {
   useEffect(() => {
     const handleHash = () => {
       const hash = window.location.hash.replace('#', '');
-      setActiveSection(VALID_SECTIONS.includes(hash) ? hash : null);
+      const valid = VALID_SECTIONS.includes(hash) ? hash : null;
+      setActiveSection(valid);
+      if (valid) {
+        const found = SETTINGS_HUBS.find(h => h.sections.includes(valid));
+        if (found) setSelectedHub(found.id);
+      }
     };
     window.addEventListener('hashchange', handleHash);
     return () => window.removeEventListener('hashchange', handleHash);
@@ -52,6 +112,8 @@ export default function App() {
     setActiveSection(id);
     if (id) {
       window.location.hash = id;
+      const found = SETTINGS_HUBS.find(h => h.sections.includes(id));
+      if (found) setSelectedHub(found.id);
     } else {
       history.pushState('', document.title, window.location.pathname + window.location.search);
     }
@@ -60,8 +122,86 @@ export default function App() {
 
   if (loading) return null;
 
+  const getSettingStyle = (id) => {
+    switch (id) {
+      case 'experience':
+      case 'appearance':
+      case 'profile':
+      case 'language':
+        return {
+          badgeBg: 'linear-gradient(135deg, rgba(124, 58, 237, 0.25), rgba(168, 85, 247, 0.1))',
+          badgeBorder: '1px solid rgba(168, 85, 247, 0.35)',
+          iconColor: '#c084fc',
+          category: 'General',
+        };
+      case 'accounts':
+      case 'signature':
+      case 'vacation':
+      case 'forwarding':
+      case 'autoconfig':
+        return {
+          badgeBg: 'linear-gradient(135deg, rgba(59, 130, 246, 0.25), rgba(96, 165, 250, 0.1))',
+          badgeBorder: '1px solid rgba(96, 165, 250, 0.35)',
+          iconColor: '#60a5fa',
+          category: 'Mailbox',
+        };
+      case 'security':
+      case 'pgp':
+      case 'screener':
+      case 'aliases':
+      case 'reverse':
+      case 'deadman':
+      case 'sessions':
+        return {
+          badgeBg: 'linear-gradient(135deg, rgba(16, 185, 129, 0.25), rgba(52, 211, 153, 0.1))',
+          badgeBorder: '1px solid rgba(52, 211, 153, 0.35)',
+          iconColor: '#34d399',
+          category: 'Security',
+        };
+      case 'templates':
+      case 'rss':
+      case 'contacts':
+      case 'analytics':
+      case 'filters':
+      case 'history':
+        return {
+          badgeBg: 'linear-gradient(135deg, rgba(245, 158, 11, 0.25), rgba(251, 191, 36, 0.1))',
+          badgeBorder: '1px solid rgba(251, 191, 36, 0.35)',
+          iconColor: '#fbbf24',
+          category: 'Campaigns',
+        };
+      case 'developer':
+      case 'webhooks':
+      case 'migration':
+      case 'integrations_chat':
+      case 'ai':
+        return {
+          badgeBg: 'linear-gradient(135deg, rgba(6, 182, 212, 0.25), rgba(99, 102, 241, 0.1))',
+          badgeBorder: '1px solid rgba(6, 182, 212, 0.35)',
+          iconColor: '#22d3ee',
+          category: 'Developer',
+        };
+      case 'danger':
+        return {
+          badgeBg: 'linear-gradient(135deg, rgba(239, 68, 68, 0.25), rgba(244, 63, 94, 0.1))',
+          badgeBorder: '1px solid rgba(239, 68, 68, 0.4)',
+          iconColor: '#f87171',
+          category: 'Danger',
+        };
+      default:
+        return {
+          badgeBg: 'linear-gradient(135deg, rgba(124, 58, 237, 0.2), rgba(168, 85, 247, 0.1))',
+          badgeBorder: '1px solid var(--color-border)',
+          iconColor: 'var(--color-primary-light)',
+          category: 'Settings',
+        };
+    }
+  };
+
   const getSettingIcon = (id) => {
     switch (id) {
+      case 'experience':
+        return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/></svg>;
       case 'accounts':
         return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
       case 'appearance':
@@ -76,6 +216,10 @@ export default function App() {
         return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>;
       case 'developer':
         return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>;
+      case 'language':
+        return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>;
+      case 'migration':
+        return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>;
       case 'profile':
         return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>;
       case 'security':
@@ -114,6 +258,7 @@ export default function App() {
   };
 
   const cards = [
+    { id: 'experience', title: 'Experience Mode & Personas', desc: 'Zen Minimalist, Power Pro, or Business & Developer' },
     { id: 'accounts', title: 'Connected Accounts', desc: 'Connect Gmail, Outlook, Yahoo, Custom IMAP/SMTP' },
     { id: 'appearance', title: 'Appearance & Themes', desc: '7 color accents, 6 interactive shaders, density, fonts' },
     { id: 'ai', title: 'AI Copilot & Writing', desc: 'Ollama local ($0), Gemini, tone adjuster, smart replies' },
@@ -121,6 +266,8 @@ export default function App() {
     { id: 'integrations_chat', title: 'Chat Forwarding', desc: 'Forward emails to Telegram bots, Discord, Slack' },
     { id: 'analytics', title: 'Mailbox Analytics', desc: 'Open tracking, response times, activity trends' },
     { id: 'developer', title: 'Developer & API Keys', desc: 'Scoped personal API keys for automation' },
+    { id: 'language', title: 'Language & Locale', desc: 'Interface language, regional date formats, and layout direction' },
+    { id: 'migration', title: 'Mailbox Migration', desc: 'Migrate folders and messages from external IMAP servers' },
     { id: 'profile', title: 'Profile', desc: 'Display name, avatar, recovery email' },
     { id: 'security', title: 'Security', desc: 'Password, Two-factor auth, Recovery keys' },
     { id: 'autoconfig', title: 'Mobile & Mail App Setup', desc: 'Auto-configure iOS, Android, Outlook, Thunderbird' },
@@ -139,58 +286,305 @@ export default function App() {
     { id: 'danger', title: 'Danger Zone / Deletion', desc: 'Schedule permanent self-deletion with 14-day recovery grace period' },
   ];
 
+  const cleanQuery = searchQuery.trim().toLowerCase();
+  const filteredCards = cards.filter((card) => {
+    const matchesSearch = !cleanQuery || card.title.toLowerCase().includes(cleanQuery) || card.desc.toLowerCase().includes(cleanQuery);
+    if (!matchesSearch) return false;
+    if (selectedHub === 'all' || cleanQuery) return true;
+    const hub = SETTINGS_HUBS.find((h) => h.id === selectedHub);
+    return hub ? hub.sections.includes(card.id) : true;
+  });
+
   return (
     <div className="settings-page">
-      <header className="settings-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
-          <a href="/dashboard" className="btn btn-ghost btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-            <span>Inbox</span>
-          </a>
-          <h1 style={{ margin: 0, fontSize: '1.65rem' }}>
-            <span>Settings</span>
-            {activeSection && (
-              <span style={{ color: 'var(--color-primary-light)', fontWeight: 600, fontSize: '1.25rem' }}>
-                {' '}/ {cards.find(c => c.id === activeSection)?.title || activeSection}
+      {/* Polished Settings Header */}
+      <header className="settings-header-top">
+        <div className="settings-title-group">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+            <a href="/dashboard" className="settings-back-btn" title="Return to your inbox">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+              <span>Inbox</span>
+            </a>
+            <h1>
+              <span
+                style={{ cursor: activeSection ? 'pointer' : 'default', color: activeSection ? 'var(--color-text-secondary)' : 'inherit', transition: 'color 0.2s' }}
+                onClick={() => selectSection(null)}
+                title={activeSection ? "Back to All Settings Hubs" : undefined}
+              >
+                Settings
               </span>
-            )}
-          </h1>
+              {activeSection && (
+                <>
+                  <span style={{ color: 'var(--color-text-tertiary)', opacity: 0.5, fontSize: '1.2rem', margin: '0 0.25rem' }}>/</span>
+                  <span
+                    style={{ color: 'var(--color-text-secondary)', fontSize: '1.15rem', cursor: 'pointer', fontWeight: 600, transition: 'color 0.2s' }}
+                    onClick={() => {
+                      const parentHub = SETTINGS_HUBS.find(h => h.sections.includes(activeSection));
+                      if (parentHub) setSelectedHub(parentHub.id);
+                      selectSection(null);
+                    }}
+                    title="View parent hub"
+                  >
+                    {SETTINGS_HUBS.find(h => h.sections.includes(activeSection))?.title || 'General'}
+                  </span>
+                  <span style={{ color: 'var(--color-text-tertiary)', opacity: 0.5, fontSize: '1.2rem', margin: '0 0.25rem' }}>/</span>
+                  <span style={{ color: 'var(--color-primary-light)', fontWeight: 700, fontSize: '1.25rem' }}>
+                    {cards.find(c => c.id === activeSection)?.title || activeSection}
+                  </span>
+                </>
+              )}
+            </h1>
+          </div>
+          {!activeSection && (
+            <p>Configure personal inbox experience, security safeguards, identities, and developer infrastructure</p>
+          )}
         </div>
         <button
           type="button"
           className="btn btn-secondary btn-sm"
           onClick={() => setThemeModalOpen(true)}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem' }}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', padding: '0.45rem 0.95rem', borderRadius: 'var(--radius-pill)', fontWeight: 600 }}
           title="Themes, Accents & Interactive Shaders (Key: T)"
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 0 20z"/></svg>
           <span>Theme & Shaders</span>
+          <kbd style={{ fontSize: '0.68rem', padding: '1px 5px', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', color: 'var(--color-text-tertiary)' }}>T</kbd>
         </button>
       </header>
 
       {!activeSection ? (
-        <div className="settings-grid">
-          {cards.map((card) => (
-            <div key={card.id} className="card settings-card" onClick={() => selectSection(card.id)}>
-              <span className="settings-card-icon" style={{ display: 'inline-flex', color: card.id === 'danger' ? 'var(--color-error)' : 'var(--color-primary-light)' }}>
-                {getSettingIcon(card.id)}
-              </span>
-              <h3 style={{ color: card.id === 'danger' ? 'var(--color-error)' : undefined }}>{card.title}</h3>
-              <p className="text-secondary">{card.desc}</p>
+        <div>
+          {/* Navigation Bar & Live Filter */}
+          <div className="settings-nav-wrapper">
+            <div className="settings-nav-scroll">
+              <button
+                type="button"
+                className={`settings-tab-btn ${selectedHub === 'all' && !cleanQuery ? 'active' : ''}`}
+                onClick={() => { setSelectedHub('all'); setSearchQuery(''); }}
+              >
+                <span>All Hubs</span>
+                <span className="settings-tab-badge">{cards.length}</span>
+              </button>
+              {SETTINGS_HUBS.map((hub) => {
+                const count = cards.filter(c => hub.sections.includes(c.id)).length;
+                const isSelected = selectedHub === hub.id && !cleanQuery;
+                return (
+                  <button
+                    key={hub.id}
+                    type="button"
+                    className={`settings-tab-btn ${isSelected ? 'active' : ''}`}
+                    onClick={() => { setSelectedHub(hub.id); setSearchQuery(''); }}
+                  >
+                    <span>{hub.icon}</span>
+                    <span>{hub.shortTitle || hub.title}</span>
+                    <span className="settings-tab-badge">{count}</span>
+                  </button>
+                );
+              })}
             </div>
-          ))}
+
+            <div className="settings-search-wrapper">
+              <svg className="settings-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input
+                type="text"
+                className="settings-search-input"
+                placeholder="Filter settings..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  style={{ position: 'absolute', right: '0.65rem', background: 'transparent', border: 'none', color: 'var(--color-text-tertiary)', cursor: 'pointer', padding: 0, fontSize: '0.85rem' }}
+                  title="Clear filter"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Quick Experience Mode Card (prominent in 'all' or 'general' when not searching) */}
+          {!cleanQuery && (selectedHub === 'all' || selectedHub === 'general') && (
+            <div
+              className="card"
+              style={{
+                marginBottom: '1.5rem',
+                padding: '1.25rem 1.4rem',
+                background: 'linear-gradient(135deg, rgba(124, 58, 237, 0.15), rgba(168, 85, 247, 0.05))',
+                border: '1px solid rgba(124, 58, 237, 0.35)',
+                boxShadow: '0 8px 24px rgba(124, 58, 237, 0.12)',
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '1rem',
+                borderRadius: '16px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.9rem', flex: '1 1 320px' }}>
+                <div
+                  style={{
+                    width: '46px',
+                    height: '46px',
+                    borderRadius: '14px',
+                    background: 'linear-gradient(135deg, rgba(124, 58, 237, 0.3), rgba(168, 85, 247, 0.15))',
+                    border: '1px solid rgba(168, 85, 247, 0.4)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '1.5rem',
+                    flexShrink: 0,
+                  }}
+                >
+                  {metadata.icon}
+                </div>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem' }}>
+                    <strong style={{ fontSize: '1.025rem', color: 'var(--color-text-primary)' }}>Active Persona: {metadata.label}</strong>
+                    <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: '10px', background: 'rgba(124, 58, 237, 0.28)', color: 'var(--color-primary-light)', border: '1px solid rgba(124, 58, 237, 0.45)' }}>
+                      Active
+                    </span>
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.84rem', color: 'var(--color-text-secondary)', lineHeight: 1.4 }}>
+                    {metadata.tagline}
+                  </p>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                {allModes.map((m) => {
+                  const isCurrent = mode === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setMode(m.id)}
+                      className={`btn btn-xs ${isCurrent ? 'btn-primary' : 'btn-secondary'}`}
+                      style={{
+                        fontWeight: isCurrent ? 700 : 500,
+                        borderRadius: 'var(--radius-pill)',
+                        padding: '0.38rem 0.85rem',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        boxShadow: isCurrent ? '0 4px 14px var(--color-primary-glow)' : 'none',
+                        transition: 'all 0.2s',
+                      }}
+                    >
+                      <span>{m.icon}</span>
+                      <span>{m.badge}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Active Hub Header (when filtered to a specific hub) */}
+          {!cleanQuery && selectedHub !== 'all' && (
+            <div style={{ marginBottom: '1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.65rem 1rem', borderRadius: '12px', background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--color-border-subtle)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <span style={{ fontSize: '1.2rem' }}>{SETTINGS_HUBS.find(h => h.id === selectedHub)?.icon}</span>
+                <div>
+                  <strong style={{ fontSize: '0.92rem', color: 'var(--color-text-primary)' }}>{SETTINGS_HUBS.find(h => h.id === selectedHub)?.title}</strong>
+                  <span style={{ margin: '0 0.5rem', color: 'var(--color-text-tertiary)', fontSize: '0.8rem' }}>•</span>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>{SETTINGS_HUBS.find(h => h.id === selectedHub)?.desc}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-xs"
+                onClick={() => setSelectedHub('all')}
+                style={{ color: 'var(--color-primary-light)', fontWeight: 600 }}
+              >
+                All Hubs →
+              </button>
+            </div>
+          )}
+
+          {/* Search Result Feedback */}
+          {cleanQuery && (
+            <div style={{ marginBottom: '1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.65rem 1rem', borderRadius: '12px', background: 'rgba(124, 58, 237, 0.08)', border: '1px solid rgba(124, 58, 237, 0.25)' }}>
+              <span style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>
+                Showing <strong>{filteredCards.length}</strong> setting{filteredCards.length === 1 ? '' : 's'} matching "<strong>{searchQuery}</strong>"
+              </span>
+              <button
+                type="button"
+                className="btn btn-ghost btn-xs"
+                onClick={() => setSearchQuery('')}
+                style={{ color: 'var(--color-primary-light)', fontWeight: 600 }}
+              >
+                Clear filter
+              </button>
+            </div>
+          )}
+
+          {/* Empty Search Result */}
+          {filteredCards.length === 0 ? (
+            <div className="card" style={{ padding: '3rem 2rem', textAlign: 'center' }}>
+              <span style={{ fontSize: '2.5rem', display: 'block', marginBottom: '0.75rem' }}>🔍</span>
+              <h3 style={{ fontSize: '1.15rem', marginBottom: '0.5rem' }}>No settings found</h3>
+              <p className="text-secondary" style={{ maxWidth: 400, margin: '0 auto 1.25rem' }}>
+                We couldn't find any settings matching "{searchQuery}". Try a different keyword or browse all hubs.
+              </p>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => { setSearchQuery(''); setSelectedHub('all'); }}
+              >
+                Reset Filter
+              </button>
+            </div>
+          ) : (
+            /* Categorized Cards Grid */
+            <div className="settings-grid">
+              {filteredCards.map((card) => {
+                const cardStyle = getSettingStyle(card.id);
+                return (
+                  <div key={card.id} className="card settings-card" onClick={() => selectSection(card.id)}>
+                    <div className="settings-card-header">
+                      <div
+                        className="settings-icon-badge"
+                        style={{
+                          background: cardStyle.badgeBg,
+                          border: cardStyle.badgeBorder,
+                          color: cardStyle.iconColor,
+                        }}
+                      >
+                        {getSettingIcon(card.id)}
+                      </div>
+                      <span className="settings-card-arrow">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                      </span>
+                    </div>
+                    <h3 style={{ color: card.id === 'danger' ? 'var(--color-error)' : undefined }}>{card.title}</h3>
+                    <p>{card.desc}</p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       ) : (
         <div>
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={() => selectSection(null)}
-            style={{ marginBottom: '1.25rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 600 }}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
-            <span>Back to All Settings</span>
-          </button>
+          <div style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+            <button
+              type="button"
+              className="settings-back-btn"
+              onClick={() => selectSection(null)}
+              style={{ cursor: 'pointer' }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+              <span>Back to Hub Overview</span>
+            </button>
+            <span style={{ fontSize: '0.82rem', color: 'var(--color-text-tertiary)' }}>
+              Category: <strong style={{ color: 'var(--color-text-secondary)' }}>{SETTINGS_HUBS.find(h => h.sections.includes(activeSection))?.title || 'General'}</strong>
+            </span>
+          </div>
+          {activeSection === 'experience' && <ExperienceSection />}
           {activeSection === 'accounts' && <AccountsSection />}
           {activeSection === 'appearance' && <AppearanceSection />}
           {activeSection === 'ai' && <IntelligenceSection />}
@@ -198,6 +592,8 @@ export default function App() {
           {activeSection === 'integrations_chat' && <IntegrationsSection />}
           {activeSection === 'analytics' && <AnalyticsSection />}
           {activeSection === 'developer' && <DeveloperSection />}
+          {activeSection === 'language' && <LanguageSection />}
+          {activeSection === 'migration' && <MigrationSection />}
           {activeSection === 'profile' && <ProfileSection user={user} onUpdate={refetchUser} />}
           {activeSection === 'security' && <SecuritySection user={user} onUpdate={refetchUser} />}
           {activeSection === 'autoconfig' && <DeviceSetupSection user={user} />}
@@ -228,6 +624,106 @@ export default function App() {
 
       {/* Interactive Background Canvas */}
       <BackgroundCanvas />
+    </div>
+  );
+}
+
+// ─── Experience Section ────────────────────────
+function ExperienceSection() {
+  const { mode, setMode, allModes } = useExperienceMode();
+  return (
+    <div className="card" style={{ padding: '1.75rem', maxWidth: 860, margin: '0 auto' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', marginBottom: '0.6rem' }}>
+        <span style={{ fontSize: '1.6rem' }}>✨</span>
+        <h2 style={{ fontSize: '1.4rem', fontWeight: 800, margin: 0 }}>Experience Mode & Personas</h2>
+      </div>
+      <p style={{ color: 'var(--color-text-secondary)', marginBottom: '1.75rem', fontSize: '0.92rem', lineHeight: 1.55 }}>
+        Progressive disclosure adapts the interface complexity to your specific needs. Choose your preferred persona below. Changes apply instantly across all open tabs and components.
+      </p>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.15rem', marginBottom: '1.75rem' }}>
+        {allModes.map((m) => {
+          const isActive = mode === m.id;
+          return (
+            <div
+              key={m.id}
+              onClick={() => setMode(m.id)}
+              style={{
+                cursor: 'pointer',
+                borderRadius: '14px',
+                padding: '1.35rem',
+                border: isActive ? '2px solid var(--color-primary, #7c3aed)' : '1px solid var(--color-border)',
+                background: isActive ? 'rgba(124, 58, 237, 0.09)' : 'var(--color-surface, rgba(255, 255, 255, 0.02))',
+                boxShadow: isActive ? '0 10px 28px rgba(124, 58, 237, 0.22)' : 'none',
+                transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+              }}
+            >
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.85rem' }}>
+                  <span style={{ fontSize: '1.75rem' }}>{m.icon}</span>
+                  {isActive && (
+                    <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 9px', borderRadius: '12px', background: 'var(--color-primary, #7c3aed)', color: '#fff' }}>
+                      Active
+                    </span>
+                  )}
+                </div>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: '0 0 0.4rem' }}>{m.label}</h3>
+                <p style={{ fontSize: '0.84rem', color: 'var(--color-text-secondary)', margin: '0 0 1rem', lineHeight: 1.45 }}>
+                  {m.tagline}
+                </p>
+
+                <ul style={{ margin: 0, paddingLeft: '1.1rem', fontSize: '0.78rem', color: 'var(--color-text-tertiary)', lineHeight: 1.6 }}>
+                  {m.id === 'zen' && (
+                    <>
+                      <li>Essential personal folders only</li>
+                      <li>Clean minimal compose & reader</li>
+                      <li>Hidden marketing & screening rails</li>
+                      <li>Tools available via 9-dot launcher</li>
+                    </>
+                  )}
+                  {m.id === 'power' && (
+                    <>
+                      <li>The Gatekeeper cold screener</li>
+                      <li>Split-pane reading & J/K shortcuts</li>
+                      <li>Custom folders & snoozing</li>
+                      <li>Pre-flight spam inspector</li>
+                    </>
+                  )}
+                  {m.id === 'business' && (
+                    <>
+                      <li>Broadcast campaigns & drips</li>
+                      <li>CRM deal pipeline & dossiers</li>
+                      <li>REST API keys & webhooks</li>
+                      <li>Advanced automations & JMAP</li>
+                    </>
+                  )}
+                </ul>
+              </div>
+
+              <div style={{ marginTop: '1.5rem', paddingTop: '0.85rem', borderTop: '1px solid var(--color-border-subtle)' }}>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${isActive ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ width: '100%', justifyContent: 'center', fontWeight: 600 }}
+                  onClick={(e) => { e.stopPropagation(); setMode(m.id); }}
+                >
+                  {isActive ? 'Current Persona' : `Switch to ${m.badge}`}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ padding: '1rem 1.15rem', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--color-border-subtle)', fontSize: '0.84rem', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+        <span style={{ fontSize: '1.1rem' }}>💡</span>
+        <span>
+          You can toggle personas on the fly anywhere using the <strong>9-dot WoxApp launcher</strong> in the sidebar header or pressing <kbd style={{ padding: '2px 5px', background: 'rgba(255,255,255,0.1)', borderRadius: '4px' }}>Ctrl+.</kbd>.
+        </span>
+      </div>
     </div>
   );
 }

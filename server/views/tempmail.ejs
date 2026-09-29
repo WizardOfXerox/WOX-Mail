@@ -50,13 +50,13 @@
             <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
             <span>Copy</span>
           </button>
-          <button type="button" class="btn btn-secondary" onclick="generateAddress(true)" id="refresh-address-btn" title="Generate fresh address (Key: N)">
+          <button type="button" class="btn btn-secondary" onclick="toggleDurationBar()" id="refresh-address-btn" title="Generate fresh address with selected duration (Key: N)">
             <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
             <span>New</span>
+            <svg class="chevron-icon" style="width:11px;height:11px;margin-left:2px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
           </button>
-          <select id="temp-domain-select" class="btn btn-secondary" style="padding: 0.4rem 0.6rem; font-size: 0.8125rem; font-family: var(--font-mono); cursor: pointer;" onchange="changeDomain(this.value)" title="Choose domain">
-            <option value="mail.wox.world">@mail.wox.world</option>
-            <option value="wox.world">@wox.world</option>
+          <select id="temp-domain-select" class="btn btn-secondary" style="padding: 0.4rem 0.6rem; font-size: 0.8125rem; font-family: var(--font-mono); cursor: default;" title="Disposable domain: @mail.wox.world">
+            <option value="mail.wox.world" selected>@mail.wox.world</option>
           </select>
           <button type="button" class="btn btn-secondary" onclick="promptCustomAddress()" title="Choose a custom username prefix">
             <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
@@ -73,14 +73,22 @@
         </div>
       </div>
 
-      <!-- Duration Selector Tabs -->
-      <div class="duration-selector-bar">
-        <span class="duration-label text-secondary">Duration:</span>
-        <div class="duration-pills">
-          <button type="button" class="duration-btn expiry-btn" data-hours="1" onclick="selectDuration(1)">1 Hour</button>
-          <button type="button" class="duration-btn expiry-btn" data-hours="6" onclick="selectDuration(6)">6 Hours</button>
-          <button type="button" class="duration-btn expiry-btn active" data-hours="24" onclick="selectDuration(24)">24 Hours</button>
-          <button type="button" class="duration-btn expiry-btn" data-hours="72" onclick="selectDuration(72)">3 Days</button>
+      <!-- Duration Selector Drawer (Appears when 'New' is clicked) -->
+      <div class="duration-selector-bar" id="duration-selector-bar" style="display: none;">
+        <div class="duration-bar-content">
+          <div class="duration-bar-label-wrap">
+            <svg class="icon-svg text-purple" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <span class="duration-label text-secondary">Select duration for new email:</span>
+          </div>
+          <div class="duration-pills">
+            <button type="button" class="duration-btn expiry-btn" data-hours="1" onclick="selectDuration(1)" title="Generate 1-hour email">1 Hour</button>
+            <button type="button" class="duration-btn expiry-btn" data-hours="6" onclick="selectDuration(6)" title="Generate 6-hour email">6 Hours</button>
+            <button type="button" class="duration-btn expiry-btn active" data-hours="24" onclick="selectDuration(24)" title="Generate 24-hour email (Standard)">24 Hours</button>
+            <button type="button" class="duration-btn expiry-btn" data-hours="72" onclick="selectDuration(72)" title="Generate 3-day email">3 Days</button>
+          </div>
+          <button type="button" class="btn btn-ghost btn-xs duration-close-btn" onclick="toggleDurationBar(false)" title="Cancel">
+            <svg class="icon-svg" style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>
         </div>
       </div>
     </div>
@@ -110,7 +118,7 @@
             <svg id="refresh-spinner-icon" class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
             <span>Refresh</span>
           </button>
-          <span class="live-indicator"><span class="pulse-dot"></span> Auto-sync (30s)</span>
+          <span class="live-indicator"><span class="pulse-dot"></span> Auto-sync (3s)</span>
         </div>
       </div>
 
@@ -187,7 +195,7 @@
             <svg class="icon-svg text-purple" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
             Public Temp Mail Directory
           </h3>
-          <p class="text-secondary" style="font-size: 0.875rem;">Recently active community disposable addresses.</p>
+          <p class="text-secondary" style="font-size: 0.875rem;">Community disposable addresses and active standby pool ready for instant use.</p>
         </div>
         <div style="display:flex;gap:0.5rem;align-items:center;">
           <button type="button" class="btn btn-ghost btn-sm" id="recent-refresh-btn" onclick="refreshAll()" title="Refresh recent list & inboxes">
@@ -385,14 +393,60 @@
     flex-wrap: wrap;
   }
 
-  /* Duration Selector Bar */
+  /* Duration Selector Drawer (Appears when 'New' is clicked) */
   .duration-selector-bar {
+    display: none;
+    align-items: center;
+    padding-top: 1rem;
+    margin-top: 0.85rem;
+    border-top: 1px dashed var(--color-border);
+    animation: durationSlideDown 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .duration-selector-bar.open {
+    display: block;
+  }
+  @keyframes durationSlideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  .duration-bar-content {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    padding-top: 1.25rem;
-    border-top: 1px solid var(--color-border);
+    justify-content: space-between;
+    gap: 0.75rem;
+    width: 100%;
     flex-wrap: wrap;
+  }
+  .duration-bar-label-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .duration-close-btn {
+    padding: 0.25rem;
+    border-radius: var(--radius-sm);
+    color: var(--color-text-tertiary);
+    cursor: pointer;
+  }
+  .duration-close-btn:hover {
+    color: var(--color-text-primary);
+  }
+  #refresh-address-btn.active {
+    background: var(--color-primary);
+    color: #ffffff;
+    border-color: var(--color-primary);
+  }
+  #refresh-address-btn.active .chevron-icon {
+    transform: rotate(180deg);
+  }
+  .chevron-icon {
+    transition: transform var(--transition-fast);
   }
   .duration-label {
     font-size: 0.8125rem;
@@ -951,12 +1005,15 @@
     .mailbox-card { padding: 1rem 0.85rem; border-radius: var(--radius-lg); }
     .address-input-group { min-width: 100%; padding: 0.55rem 0.75rem; border-radius: var(--radius-md); }
     .address-input-field { font-size: 0.9rem; }
-    .address-actions-grid { width: 100%; display: grid; grid-template-columns: repeat(4, 1fr) auto; gap: 0.3rem; align-items: center; }
+    .address-actions-grid { width: 100%; display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.35rem; align-items: center; }
     .address-actions-grid .btn { justify-content: center; width: 100%; font-size: 0.75rem; padding: 0.45rem 0.25rem; min-height: 40px; gap: 0.2rem; }
-    .duration-selector-bar { display: flex; flex-direction: row; justify-content: space-between; align-items: center; gap: 0.4rem; padding-top: 0.75rem; }
-    .duration-label { font-size: 0.75rem; }
+    .address-actions-grid select { width: 100%; font-size: 0.7rem; min-height: 40px; }
+    .duration-selector-bar { display: none; padding-top: 0.75rem; margin-top: 0.65rem; }
+    .duration-selector-bar.open { display: block; }
+    .duration-bar-content { flex-direction: row; justify-content: space-between; align-items: center; gap: 0.35rem; width: 100%; }
+    .duration-label { font-size: 0.72rem; }
     .duration-pills { display: inline-flex; gap: 0.25rem; flex-wrap: nowrap; }
-    .duration-btn { padding: 0.3rem 0.5rem; font-size: 0.7rem; text-align: center; white-space: nowrap; }
+    .duration-btn { padding: 0.3rem 0.45rem; font-size: 0.7rem; text-align: center; white-space: nowrap; }
     
     .inbox-card { padding: 1rem 0.85rem; border-radius: var(--radius-lg); }
     .inbox-card-header { gap: 0.6rem; margin-bottom: 0.85rem; }

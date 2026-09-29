@@ -10,8 +10,7 @@ import { authenticate, requireAuth } from '../middleware/auth.js';
 import { loginLimiter } from '../middleware/rateLimit.js';
 import { validate } from '../middleware/validate.js';
 import { JWT_COOKIE_NAME } from '../config/constants.js';
-import { authenticator } from 'otplib';
-import QRCode from 'qrcode';
+import * as otpService from '../services/otp.js';
 import { createUser } from '../services/purelymail.js';
 import { sendWoxWelcomeEmail } from '../services/welcomeService.js';
 import { testConnection, connectAccount, PROVIDER_PRESETS } from '../services/accountService.js';
@@ -23,13 +22,20 @@ const router = Router();
 /**
  * Issue a JWT access token and set it as an HTTP-only cookie.
  * Also creates a session record in the database.
+ * @param {Response} res
+ * @param {Object} user
+ * @param {Request} req
+ * @param {boolean} remember - Whether "Remember me on this device" is enabled
  */
-async function issueToken(res, user, req) {
+async function issueToken(res, user, req, remember = true) {
   const jti = uuidv4();
-  const expiresIn = process.env.JWT_EXPIRES_IN || '7d';
+  // Persistent 30-day session if remember=true, or 24-hour temporary session if remember=false
+  const expiresIn = remember
+    ? (process.env.JWT_REMEMBER_EXPIRES_IN || '30d')
+    : (process.env.JWT_SESSION_EXPIRES_IN || '24h');
 
   const token = jwt.sign(
-    { userId: user.id, type: 'access', jti },
+    { userId: user.id, type: 'access', jti, remember: !!remember },
     process.env.JWT_SECRET,
     { expiresIn }
   );
@@ -45,14 +51,20 @@ async function issueToken(res, user, req) {
     [jti, user.id, req.ip, req.headers['user-agent']?.slice(0, 256), expiresAt]
   );
 
-  // Set HTTP-only cookie
-  res.cookie(JWT_COOKIE_NAME, token, {
+  // Set HTTP-only cookie:
+  // If remember=true: explicit Max-Age (30 days) to persist across browser restarts
+  // If remember=false: session cookie (no maxAge), automatically cleared when browser terminates
+  const cookieOptions = {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
-    maxAge: expiresAt - Date.now(),
     path: '/',
-  });
+  };
+  if (remember) {
+    cookieOptions.maxAge = expiresAt.getTime() - Date.now();
+  }
+
+  res.cookie(JWT_COOKIE_NAME, token, cookieOptions);
 
   // If user was scheduled for deletion and is logging in within 14 days, auto-cancel deletion!
   const cancelResult = await query(
@@ -102,6 +114,42 @@ async function logAuthEvent(userId, success, req, reason = null) {
   );
 }
 
+// ─── GET /api/auth/validate-invite/:code ───────────────────
+
+/**
+ * Validate an invite code in real-time (existence, format, is_used, expiration).
+ */
+router.get('/validate-invite/:code', async (req, res) => {
+  try {
+    const rawCode = (req.params.code || '').trim();
+    if (!rawCode || !isValidInviteCode(rawCode)) {
+      return res.json({ valid: false, reason: 'Invalid invite code format' });
+    }
+
+    const result = await query(
+      'SELECT id, code, is_used, expires_at FROM invite_codes WHERE UPPER(code) = UPPER($1)',
+      [rawCode]
+    );
+
+    if (result.rows.length === 0) {
+      return res.json({ valid: false, reason: 'Invite code does not exist' });
+    }
+
+    const invite = result.rows[0];
+    if (invite.is_used) {
+      return res.json({ valid: false, reason: 'This invite code has already been redeemed' });
+    }
+
+    if (invite.expires_at && new Date(invite.expires_at) <= new Date()) {
+      return res.json({ valid: false, reason: 'This invite code has expired' });
+    }
+
+    return res.json({ valid: true, code: invite.code });
+  } catch (err) {
+    return res.status(500).json({ valid: false, reason: 'Unable to validate invite code' });
+  }
+});
+
 // ─── POST /api/auth/register ─────────────────────────────
 
 router.post('/register',
@@ -132,12 +180,21 @@ router.post('/register',
       }
 
       const invite = await query(
-        'SELECT id FROM invite_codes WHERE code = $1 AND is_used = FALSE AND (expires_at IS NULL OR expires_at > NOW())',
+        'SELECT id, code, is_used, expires_at FROM invite_codes WHERE UPPER(code) = UPPER($1)',
         [inviteCode.trim()]
       );
       if (invite.rows.length === 0) {
-        return res.status(400).json({ error: 'Invalid or expired invite code' });
+        return res.status(400).json({ error: 'Invite code does not exist' });
       }
+
+      const inviteRecord = invite.rows[0];
+      if (inviteRecord.is_used) {
+        return res.status(400).json({ error: 'This invite code has already been redeemed' });
+      }
+      if (inviteRecord.expires_at && new Date(inviteRecord.expires_at) <= new Date()) {
+        return res.status(400).json({ error: 'This invite code has expired' });
+      }
+      const actualCode = inviteRecord.code;
 
       // Check registration is enabled
       const regSetting = await query("SELECT value FROM settings WHERE key = 'registration_enabled'");
@@ -172,13 +229,13 @@ router.post('/register',
         `INSERT INTO users (email, username, password_hash, imap_password, invite_code_used)
          VALUES ($1, $2, $3, $4, $5)
          RETURNING id, email, username, display_name, is_admin, created_at`,
-        [email, username.toLowerCase(), passwordHash, password, inviteCode.trim()]
+        [email, username.toLowerCase(), passwordHash, password, actualCode]
       );
 
       // Mark invite as used
       await query(
         'UPDATE invite_codes SET is_used = TRUE, used_by = $1, used_at = NOW() WHERE code = $2',
-        [result.rows[0].id, inviteCode.trim()]
+        [result.rows[0].id, actualCode]
       );
 
       // Audit log
@@ -322,6 +379,8 @@ router.post('/login',
       let {
         email,
         password,
+        remember,
+        rememberMe,
         imap_host,
         imap_port,
         imap_secure,
@@ -329,6 +388,8 @@ router.post('/login',
         smtp_port,
         smtp_secure,
       } = req.body;
+
+      const isRemember = remember !== false && remember !== 'false' && rememberMe !== false && rememberMe !== 'false';
 
       // Allow login with just username (auto-append domain)
       if (!email.includes('@')) {
@@ -423,7 +484,7 @@ router.post('/login',
             });
 
             await logAuthEvent(newUser.id, true, req);
-            const token = await issueToken(res, newUser, req);
+            const token = await issueToken(res, newUser, req, isRemember);
 
             return res.json({
               user: { id: newUser.id, email: newUser.email, username: newUser.username },
@@ -434,6 +495,8 @@ router.post('/login',
             await logAuthEvent(null, false, req, `${serverConfig.provider} direct login failed`);
             const helpMsg = serverConfig.provider === 'gmail'
               ? 'Gmail login failed: Ensure you use a 16-character Google App Password (generate at myaccount.google.com/apppasswords).'
+              : serverConfig.provider === 'outlook'
+              ? 'Outlook login failed: Microsoft requires an App Password (generate at account.microsoft.com/security) and IMAP enabled in Outlook Web Settings (Mail > Sync email). See /setup-guide for details.'
               : serverConfig.provider === 'proton'
               ? 'Proton Mail uses zero-knowledge encryption and requires the official Proton Mail Bridge app running locally. Use the Bridge IMAP/SMTP ports and generated password from your Proton Bridge app.'
               : serverConfig.provider === 'icloud'
@@ -442,7 +505,7 @@ router.post('/login',
               ? 'Yahoo login failed: Generate an App Password in your Yahoo Account Security page.'
               : serverConfig.provider === 'custom'
               ? `Custom IMAP login failed: Could not connect to ${serverConfig.imap_host}:${serverConfig.imap_port}. Check your server hostname, port, and mailbox credentials. (${testRes.imap.error || ''})`
-              : `${serverConfig.name} login failed: Invalid email or password.`;
+              : `${serverConfig.name} login failed: Invalid email or password. See /setup-guide for setup walkthroughs.`;
             return res.status(401).json({ error: helpMsg });
           }
         }
@@ -537,7 +600,7 @@ router.post('/login',
       // If 2FA is enabled, return a ticket instead of a token
       if (user.otp_enabled) {
         const ticket = generateToken(16);
-        await redisSetex(`otp_ticket:${ticket}`, 300, JSON.stringify({ userId: user.id }));
+        await redisSetex(`otp_ticket:${ticket}`, 300, JSON.stringify({ userId: user.id, remember: isRemember }));
 
         return res.json({
           requires_otp: true,
@@ -548,7 +611,7 @@ router.post('/login',
 
       // No 2FA — issue token directly
       await logAuthEvent(user.id, true, req);
-      const token = await issueToken(res, user, req);
+      const token = await issueToken(res, user, req, isRemember);
 
       res.json({
         user: { id: user.id, email: user.email, username: user.username },
@@ -577,7 +640,20 @@ router.post('/verify-otp',
         return res.status(401).json({ error: 'OTP ticket expired or invalid' });
       }
 
-      const { userId } = JSON.parse(ticketData);
+      let userId;
+      let isRemember = true;
+      try {
+        const parsed = typeof ticketData === 'string' ? JSON.parse(ticketData) : ticketData;
+        userId = parsed?.userId;
+        if (parsed?.remember !== undefined) isRemember = !!parsed.remember;
+      } catch {
+        return res.status(401).json({ error: 'Invalid ticket data' });
+      }
+
+      if (!userId) {
+        return res.status(401).json({ error: 'Invalid ticket data' });
+      }
+
       const user = await query(
         'SELECT id, email, username, otp_secret, recovery_codes FROM users WHERE id = $1',
         [userId]
@@ -590,12 +666,19 @@ router.post('/verify-otp',
       const { otp_secret, recovery_codes } = user.rows[0];
 
       // Try TOTP code first
-      const isValidOTP = authenticator.verify({ token: code, secret: otp_secret });
+      const isValidOTP = otpService.verifyCode(code, otp_secret);
 
       if (!isValidOTP) {
         // Try recovery code
+        let codes = [];
         if (recovery_codes) {
-          const codes = JSON.parse(recovery_codes);
+          try {
+            codes = Array.isArray(recovery_codes) ? recovery_codes : JSON.parse(recovery_codes);
+          } catch {
+            codes = [];
+          }
+        }
+        if (codes.length > 0) {
           const codeIndex = codes.indexOf(code.toUpperCase());
           if (codeIndex !== -1) {
             // Consume recovery code (one-time use)
@@ -619,7 +702,7 @@ router.post('/verify-otp',
 
       // Issue token
       await logAuthEvent(userId, true, req);
-      const token = await issueToken(res, user.rows[0], req);
+      const token = await issueToken(res, user.rows[0], req, isRemember);
 
       res.json({
         user: { id: user.rows[0].id, email: user.rows[0].email, username: user.rows[0].username },
@@ -755,15 +838,8 @@ router.post('/setup-otp', requireAuth, async (req, res, next) => {
       return res.status(400).json({ error: '2FA is already enabled' });
     }
 
-    const secret = authenticator.generateSecret();
-    const otpauth = authenticator.keyuri(
-      req.user.email,
-      'WoxMail',
-      secret
-    );
-
-    // Generate QR code as data URL
-    const qrDataUrl = await QRCode.toDataURL(otpauth);
+    const secret = otpService.generateSecret();
+    const qrDataUrl = await otpService.generateQRCode(secret, req.user.email);
 
     // Store secret temporarily in Redis (not DB yet — confirm first)
     await redisSetex(`otp_setup:${req.user.id}`, 600, secret);
@@ -794,7 +870,7 @@ router.post('/confirm-otp',
       }
 
       // Verify the code against the pending secret
-      const isValid = authenticator.verify({ token: code, secret });
+      const isValid = otpService.verifyCode(code, secret);
       if (!isValid) {
         return res.status(400).json({ error: 'Invalid code. Try again.' });
       }
@@ -947,7 +1023,12 @@ router.post('/recover-with-code',
         return res.status(401).json({ error: 'No recovery codes set' });
       }
 
-      const codes = JSON.parse(user.recovery_codes);
+      let codes = [];
+      try {
+        codes = Array.isArray(user.recovery_codes) ? user.recovery_codes : JSON.parse(user.recovery_codes);
+      } catch {
+        codes = [];
+      }
       const codeIndex = codes.indexOf(recoveryCode.toUpperCase());
 
       if (codeIndex === -1) {
@@ -982,7 +1063,10 @@ const handleSwitchSession = async (req, res, next) => {
       return res.status(400).json({ error: 'Token is required to switch session' });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'dev-secret-key-change-in-production-12345');
+    if (!process.env.JWT_SECRET) {
+      throw new Error('JWT_SECRET is not configured on the server');
+    }
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const userRes = await query('SELECT * FROM users WHERE id = $1 AND is_active = TRUE', [decoded.userId]);
     if (userRes.rows.length === 0) {
       return res.status(401).json({ error: 'User account not found or inactive' });
@@ -1017,7 +1101,6 @@ const handleSwitchSession = async (req, res, next) => {
 };
 
 router.post('/switch-session', handleSwitchSession);
-router.post('/switch-account', handleSwitchSession);
 
 export default router;
 

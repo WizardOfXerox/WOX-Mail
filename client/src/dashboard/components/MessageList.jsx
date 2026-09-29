@@ -1,8 +1,10 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useDebounce } from '../../shared/hooks.js';
 import { formatDate } from '../../shared/utils/formatters.js';
+import { decodeMimeWords, cleanEmailAddress, cleanSenderName, cleanSnippet } from '../../shared/utils/mimeDecoder.js';
 import BatchToolbar from './BatchToolbar.jsx';
 import ContextMenu from './ContextMenu.jsx';
+import ReadReceiptIndicator from './ReadReceiptIndicator.jsx';
 import { getFolderIcon } from './Sidebar.jsx';
 
 export default function MessageList({
@@ -174,13 +176,18 @@ export default function MessageList({
   const filtered = useMemo(() => {
     if (!debouncedSearch) return rawMessagesList;
     const q = debouncedSearch.toLowerCase();
-    return rawMessagesList.filter(
-      (m) =>
-        (m.subject || '').toLowerCase().includes(q) ||
-        (m.from?.name || '').toLowerCase().includes(q) ||
-        (m.from?.address || '').toLowerCase().includes(q) ||
-        (m.snippet || '').toLowerCase().includes(q)
-    );
+    return rawMessagesList.filter((m) => {
+      const fromName = typeof m.from === 'object' ? (m.from?.name || '') : String(m.from || '');
+      const fromAddr = typeof m.from === 'object' ? (m.from?.address || '') : String(m.from || '');
+      const subject = m.subject || '';
+      const snippet = m.snippet || m.preview || '';
+      return (
+        subject.toLowerCase().includes(q) ||
+        fromName.toLowerCase().includes(q) ||
+        fromAddr.toLowerCase().includes(q) ||
+        snippet.toLowerCase().includes(q)
+      );
+    });
   }, [rawMessagesList, debouncedSearch]);
 
   const toggleSelect = (uid, e) => {
@@ -220,9 +227,9 @@ export default function MessageList({
   const handleTouchStart = (e, msg) => {
     isLongPressActiveRef.current = false;
     if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
-    const touch = e.touches ? e.touches[0] : e;
-    const clientX = touch.clientX;
-    const clientY = touch.clientY;
+    const touch = (e.touches && e.touches[0]) ? e.touches[0] : e;
+    const clientX = touch?.clientX ?? 0;
+    const clientY = touch?.clientY ?? 0;
 
     longPressTimerRef.current = setTimeout(() => {
       isLongPressActiveRef.current = true;
@@ -787,7 +794,7 @@ export default function MessageList({
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          activeAccount?.provider === 'proton' && (isProtonLocked || messages.length === 0) ? (
+          activeAccount?.provider === 'proton' && isProtonLocked ? (
             <div className="empty-state" style={{ padding: '3rem 1.5rem', textAlign: 'center' }}>
               <div style={{
                 width: 60,
@@ -857,15 +864,18 @@ export default function MessageList({
 
             if (isOutboxItem) {
               const toObj = msg.to?.[0];
-              const addr = typeof toObj === 'object' ? toObj.address : toObj;
-              const name = typeof toObj === 'object' ? toObj.name : '';
+              const addr = cleanEmailAddress(typeof toObj === 'object' ? toObj.address : toObj);
+              const rawName = typeof toObj === 'object' ? toObj.name : '';
+              const name = cleanSenderName(rawName, addr);
               fromName = name && name !== addr ? `To: ${name}` : `To: ${addr || 'Recipient'}`;
               fromEmail = addr && name && name !== addr ? addr : '';
             } else {
               const rawName = msg.from?.name || '';
               const rawAddr = msg.from?.address || '';
-              fromName = rawName || rawAddr || 'Unknown';
-              fromEmail = rawAddr && rawName && rawName.toLowerCase() !== rawAddr.toLowerCase() ? rawAddr : '';
+              const cleanedAddr = cleanEmailAddress(rawAddr);
+              const cleanedName = cleanSenderName(rawName, cleanedAddr);
+              fromName = cleanedName || cleanedAddr || 'Unknown';
+              fromEmail = cleanedAddr && cleanedName && cleanedName.toLowerCase() !== cleanedAddr.toLowerCase() ? cleanedAddr : '';
             }
 
             const fromTitle = fromEmail ? `${fromName} <${fromEmail}>` : fromName;
@@ -888,7 +898,7 @@ export default function MessageList({
                 onTouchMove={handleTouchMove}
                 tabIndex={0}
                 role="button"
-                aria-label={`Email to ${fromTitle}, subject: ${msg.subject || '(no subject)'}`}
+                aria-label={`Email to ${fromTitle}, subject: ${decodeMimeWords(msg.subject) || '(no subject)'}`}
               >
                 {/* Only display checkbox when multi-selection mode is active */}
                 {isMultiSelectActive && (
@@ -965,9 +975,9 @@ export default function MessageList({
                     </span>
                     <div className="list-item-subject-wrap" style={{ display: 'flex', alignItems: 'center' }}>
                       {renderOutboxBadge(msg)}
-                      <span className="list-item-subject">{msg.subject || '(no subject)'}</span>
+                      <span className="list-item-subject">{decodeMimeWords(msg.subject) || '(no subject)'}</span>
                       {msg.snippet && (
-                        <span className="list-item-snippet"> — {msg.snippet}</span>
+                        <span className="list-item-snippet"> — {cleanSnippet(msg.snippet)}</span>
                       )}
                     </div>
                     {msg.status === 'failed' && (
@@ -984,6 +994,12 @@ export default function MessageList({
                       <span className="list-item-attachment" title="Has attachments" style={{ display: 'inline-flex', alignItems: 'center', opacity: 0.65 }}>
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                       </span>
+                    )}
+                    {(msg.trackingInfo || isOutboxItem || folder === 'Sent') && (
+                      <ReadReceiptIndicator
+                        openedAt={msg.trackingInfo?.opened_at || msg.opened_at}
+                        openCount={msg.trackingInfo?.open_count || msg.open_count || (msg.opened_at ? 1 : 0)}
+                      />
                     )}
                     <span className="list-item-date">{formatDate(msg.date)}</span>
                   </>
@@ -1016,13 +1032,21 @@ export default function MessageList({
                             </span>
                           )}
                         </span>
-                        <span className="list-item-date">{formatDate(msg.date)}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          {(msg.trackingInfo || isOutboxItem || folder === 'Sent') && (
+                            <ReadReceiptIndicator
+                              openedAt={msg.trackingInfo?.opened_at || msg.opened_at}
+                              openCount={msg.trackingInfo?.open_count || msg.open_count || (msg.opened_at ? 1 : 0)}
+                            />
+                          )}
+                          <span className="list-item-date">{formatDate(msg.date)}</span>
+                        </div>
                       </div>
                       <div className="list-item-subject" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
                         {renderOutboxBadge(msg)}
-                        <span>{msg.subject || '(no subject)'}</span>
+                        <span>{decodeMimeWords(msg.subject) || '(no subject)'}</span>
                       </div>
-                      {msg.snippet && <div className="list-item-snippet">{msg.snippet}</div>}
+                      {msg.snippet && <div className="list-item-snippet">{cleanSnippet(msg.snippet)}</div>}
                       {msg.status === 'failed' && (
                         <div style={{ marginTop: '0.35rem' }}>
                           <button
@@ -1086,10 +1110,11 @@ export default function MessageList({
           flexWrap: 'wrap',
           gap: '0.5rem',
           padding: '0.45rem 0.75rem',
-          background: 'rgba(18, 14, 30, 0.85)',
+          background: 'var(--color-bg-card, rgba(18, 14, 30, 0.85))',
           backdropFilter: 'blur(16px)',
           WebkitBackdropFilter: 'blur(16px)',
-          borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+          borderTop: '1px solid var(--color-border, rgba(255, 255, 255, 0.08))',
+          color: 'var(--color-text-primary)',
           fontSize: '0.78rem',
           zIndex: 10,
         }}
@@ -1102,11 +1127,11 @@ export default function MessageList({
           style={{
             display: 'inline-flex',
             alignItems: 'center',
-            background: 'rgba(10, 10, 22, 0.75)',
+            background: 'var(--color-bg-input, rgba(10, 10, 22, 0.75))',
             padding: '3px',
             borderRadius: '9999px',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
-            boxShadow: 'inset 0 1px 3px rgba(0, 0, 0, 0.4)',
+            border: '1px solid var(--color-border, rgba(255, 255, 255, 0.1))',
+            boxShadow: 'inset 0 1px 3px rgba(0, 0, 0, 0.15)',
             gap: '2px',
           }}
         >
@@ -1137,8 +1162,8 @@ export default function MessageList({
             }}
             onMouseOver={(e) => {
               if (listMode !== 'paged') {
-                e.currentTarget.style.color = '#ffffff';
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
+                e.currentTarget.style.color = 'var(--color-text-primary)';
+                e.currentTarget.style.background = 'var(--color-bg-hover, rgba(255, 255, 255, 0.06))';
               }
             }}
             onMouseOut={(e) => {
@@ -1152,7 +1177,7 @@ export default function MessageList({
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="4" y="3" width="16" height="18" rx="2" />
               <line x1="8" y1="7" x2="16" y2="7" />
-              <line x1="8" y1="11" x2="16" y2="11" />
+              <line x1="8" y1="11" x2="16" y2="7" />
               <line x1="8" y1="15" x2="12" y2="15" />
             </svg>
             <span>Paged</span>
@@ -1185,8 +1210,8 @@ export default function MessageList({
             }}
             onMouseOver={(e) => {
               if (listMode !== 'continuous') {
-                e.currentTarget.style.color = '#ffffff';
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
+                e.currentTarget.style.color = 'var(--color-text-primary)';
+                e.currentTarget.style.background = 'var(--color-bg-hover, rgba(255, 255, 255, 0.06))';
               }
             }}
             onMouseOut={(e) => {

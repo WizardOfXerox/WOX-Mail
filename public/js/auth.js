@@ -164,12 +164,53 @@
     }, 450);
   }
 
+  window.handleEmailInput = handleEmailInput;
+
   if (emailInput) {
     emailInput.addEventListener('input', handleEmailInput);
     emailInput.addEventListener('change', handleEmailInput);
     emailInput.addEventListener('blur', handleEmailInput);
     // Initial check if field is pre-filled
     if (emailInput.value) handleEmailInput();
+  }
+
+  // ─── Remember Me Preference & Auto-fill Initialization ───
+
+  const rememberCheckbox = document.getElementById('remember-me');
+  const savedRememberPref = localStorage.getItem('woxmail_remember_me');
+  const rememberedEmail = localStorage.getItem('woxmail_remembered_email');
+
+  if (rememberCheckbox) {
+    if (savedRememberPref === 'false') {
+      rememberCheckbox.checked = false;
+    } else {
+      rememberCheckbox.checked = true;
+    }
+
+    rememberCheckbox.addEventListener('change', () => {
+      if (rememberCheckbox.checked) {
+        localStorage.setItem('woxmail_remember_me', 'true');
+        if (emailInput && emailInput.value.trim()) {
+          localStorage.setItem('woxmail_remembered_email', emailInput.value.trim());
+        }
+      } else {
+        localStorage.setItem('woxmail_remember_me', 'false');
+        localStorage.removeItem('woxmail_remembered_email');
+      }
+    });
+  }
+
+  // Pre-fill remembered email if available and user opted in
+  const authUrlParams = new URLSearchParams(window.location.search);
+  const isAddingNewAccount = authUrlParams.has('add_account') || authUrlParams.has('new');
+  if (emailInput && !emailInput.value && rememberedEmail && savedRememberPref !== 'false' && !isAddingNewAccount) {
+    emailInput.value = rememberedEmail;
+    handleEmailInput();
+    // Focus password if email was remembered
+    const passwordInput = document.getElementById('password');
+    if (passwordInput && (document.activeElement === emailInput || !document.activeElement || document.activeElement === document.body)) {
+      setTimeout(() => passwordInput.focus(), 60);
+    }
   }
 
   // ─── Login Form ──────────────────────────────────────
@@ -183,7 +224,7 @@
       const btn = document.getElementById('login-btn');
       const email = document.getElementById('email').value.trim();
       const password = document.getElementById('password').value;
-      const rememberMe = document.getElementById('remember-me')?.checked ?? true;
+      const rememberMe = rememberCheckbox ? rememberCheckbox.checked : true;
 
       if (!email || !password) return WoxToast.error('Fill in all fields');
 
@@ -195,6 +236,7 @@
         email,
         password,
         remember: rememberMe,
+        rememberMe,
       };
 
       if (isCustomServer) {
@@ -233,10 +275,19 @@
           return;
         }
 
-        // Save account to local device manager with session token if rememberMe enabled
-        if (window.WoxAccountManager && data.user) {
-          if (rememberMe) {
+        // Save or clear remembered credentials based on rememberMe checkbox
+        if (rememberMe) {
+          localStorage.setItem('woxmail_remember_me', 'true');
+          localStorage.setItem('woxmail_remembered_email', email);
+          if (window.WoxAccountManager && data.user) {
             window.WoxAccountManager.saveAccount(data.user, data.token);
+          }
+        } else {
+          localStorage.setItem('woxmail_remember_me', 'false');
+          localStorage.removeItem('woxmail_remembered_email');
+          if (window.WoxAccountManager) {
+            window.WoxAccountManager.removeAccount(email);
+            if (data.user?.email) window.WoxAccountManager.removeAccount(data.user.email);
           }
         }
 
@@ -284,9 +335,21 @@
           return;
         }
 
-        // Save account to local device manager with session token
-        if (window.WoxAccountManager && data.user) {
-          window.WoxAccountManager.saveAccount(data.user, data.token);
+        // Save or clear remembered credentials based on rememberMe
+        const isOtpRemember = rememberCheckbox ? rememberCheckbox.checked : (localStorage.getItem('woxmail_remember_me') !== 'false');
+        if (isOtpRemember) {
+          localStorage.setItem('woxmail_remember_me', 'true');
+          const emailVal = document.getElementById('email')?.value.trim() || data.user?.email;
+          if (emailVal) localStorage.setItem('woxmail_remembered_email', emailVal);
+          if (window.WoxAccountManager && data.user) {
+            window.WoxAccountManager.saveAccount(data.user, data.token);
+          }
+        } else {
+          localStorage.setItem('woxmail_remember_me', 'false');
+          localStorage.removeItem('woxmail_remembered_email');
+          if (window.WoxAccountManager && data.user) {
+            window.WoxAccountManager.removeAccount(data.user.email);
+          }
         }
 
         WoxToast.success('Welcome back!');
@@ -314,6 +377,69 @@
 
   const registerForm = document.getElementById('register-form');
   if (registerForm) {
+    const inviteInput = document.getElementById('invite-code');
+    const inviteStatus = document.getElementById('invite-status');
+
+    // Auto-extract invite code from URL query parameters (?invite=..., ?code=..., etc.)
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const codeFromUrl = urlParams.get('invite') || urlParams.get('code') || urlParams.get('inviteCode') || urlParams.get('invite_code');
+      if (codeFromUrl && inviteInput && !inviteInput.value) {
+        inviteInput.value = codeFromUrl.trim().toUpperCase();
+      }
+    } catch {}
+
+    // Real-time Invite Code Validator
+    let validateTimer = null;
+    async function checkInviteCode(rawCode) {
+      if (!inviteStatus || !inviteInput) return;
+      const code = (rawCode || '').trim().toUpperCase();
+      if (!code) {
+        inviteStatus.innerHTML = '';
+        inviteInput.style.borderColor = '';
+        return;
+      }
+
+      if (code.length < 6) {
+        inviteStatus.innerHTML = '<span style="color: var(--color-danger, #ef4444); font-size: 0.78rem;">✕ Invite code format is too short</span>';
+        inviteInput.style.borderColor = 'var(--color-danger, #ef4444)';
+        return;
+      }
+
+      inviteStatus.innerHTML = '<span style="color: var(--color-text-secondary, #94a3b8); font-size: 0.78rem;">Verifying invite code...</span>';
+
+      try {
+        const res = await fetch(`${API}/validate-invite/${encodeURIComponent(code)}`);
+        const data = await res.json();
+        if (data.valid) {
+          inviteStatus.innerHTML = '<span style="color: var(--color-success, #22c55e); font-size: 0.78rem; display: inline-flex; align-items: center; gap: 0.3rem;">✓ Verified active invitation code</span>';
+          inviteInput.style.borderColor = 'var(--color-success, #22c55e)';
+        } else {
+          inviteStatus.innerHTML = `<span style="color: var(--color-danger, #ef4444); font-size: 0.78rem; display: inline-flex; align-items: center; gap: 0.3rem;">✕ ${data.reason || 'Invalid or expired invite code'}</span>`;
+          inviteInput.style.borderColor = 'var(--color-danger, #ef4444)';
+        }
+      } catch {
+        inviteStatus.innerHTML = '';
+        inviteInput.style.borderColor = '';
+      }
+    }
+
+    if (inviteInput) {
+      // Validate on initial load if code is prefilled
+      if (inviteInput.value) {
+        checkInviteCode(inviteInput.value);
+      }
+
+      inviteInput.addEventListener('input', (e) => {
+        // Automatically uppercase code
+        e.target.value = e.target.value.toUpperCase();
+        clearTimeout(validateTimer);
+        validateTimer = setTimeout(() => {
+          checkInviteCode(e.target.value);
+        }, 300);
+      });
+    }
+
     registerForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('register-btn');

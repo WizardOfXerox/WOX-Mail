@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getCsrfToken } from '../../shared/api.js';
 
 /**
  * Extract distinct external HTTP/HTTPS URLs from HTML string or plaintext.
@@ -74,9 +75,13 @@ export default function LinkPreviewTray({
     let isMounted = true;
     setLoading(true);
 
+    const csrfToken = getCsrfToken();
+    const reqHeaders = { 'Content-Type': 'application/json' };
+    if (csrfToken) reqHeaders['x-csrf-token'] = csrfToken;
+
     fetch('/api/mail/link-previews', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: reqHeaders,
       credentials: 'include',
       body: JSON.stringify({ urls: foundUrls }),
     })

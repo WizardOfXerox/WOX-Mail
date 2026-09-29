@@ -21,6 +21,19 @@ import pino from 'pino';
 const logger = pino({ name: 'woxmail:tempmail' });
 const router = Router();
 
+/**
+ * Verify caller possesses the valid session token if the address is a personal tier mailbox.
+ */
+function verifyPersonalAccess(req, addrRecord) {
+  if (addrRecord && addrRecord.tier === 'personal') {
+    const token = req.cookies?.[TEMP_COOKIE_NAME] || req.headers['x-temp-token'] || req.headers['x-session-token'];
+    if (!token || !addrRecord.session_token || token !== addrRecord.session_token) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // ─── Temp Mail IMAP Connection Cache ────────────────────
 const tempConnectionCache = new Map(); // address -> { client, lastUsed }
 const TEMP_CONN_TTL = 90000; // 90 seconds
@@ -113,6 +126,12 @@ router.post('/generate',
   async (req, res, next) => {
     try {
       const { expiryHours, forceNew, username, domain } = req.body;
+      const permanentDomain = process.env.DOMAIN_PERMANENT || 'wox.world';
+      if (domain && (domain.toLowerCase().trim() === permanentDomain || domain.toLowerCase().trim() === 'wox.world')) {
+        return res.status(400).json({
+          error: 'The permanent @wox.world domain is reserved for permanent user accounts and cannot be used for disposable temporary mail.'
+        });
+      }
       const existingToken = req.cookies?.[TEMP_COOKIE_NAME] || req.signedCookies?.[TEMP_COOKIE_NAME];
 
       // If not forced, no custom username or domain requested, and user already has an active session, reuse it
@@ -177,15 +196,30 @@ router.get('/inbox/:address', async (req, res, next) => {
   try {
     const { address } = req.params;
 
-    // Verify address exists and is active
+    // Verify address exists and is active or in standby pool
     const addr = await query(
-      `SELECT id, address, tier, status, expires_at, imap_password, message_count FROM temp_addresses
-       WHERE address = $1 AND status = 'active' AND expires_at > NOW()`,
+      `SELECT id, address, tier, session_token, status, expires_at, imap_password, message_count FROM temp_addresses
+       WHERE address = $1 AND status IN ('active', 'available') AND expires_at > NOW()`,
       [address]
     );
 
     if (addr.rows.length === 0) {
       return res.status(404).json({ error: 'Address not found or expired' });
+    }
+
+    if (!verifyPersonalAccess(req, addr.rows[0])) {
+      return res.status(401).json({ error: 'Personal temp mail authentication required' });
+    }
+
+    // If an available standby pool address was opened, activate it and replenish pool
+    if (addr.rows[0].status === 'available') {
+      await query(
+        `UPDATE temp_addresses 
+         SET status = 'active', activated_at = NOW(), last_accessed = NOW() 
+         WHERE id = $1`,
+        [addr.rows[0].id]
+      );
+      import('../services/pool.js').then(m => m.replenishPool().catch(() => {}));
     }
 
     let messages = [];
@@ -228,12 +262,16 @@ router.get('/sse/:address', async (req, res, next) => {
     const { address } = req.params;
 
     const addr = await query(
-      `SELECT id, address, imap_password FROM temp_addresses WHERE address = $1 AND status = 'active' AND expires_at > NOW()`,
+      `SELECT id, address, tier, session_token, imap_password FROM temp_addresses WHERE address = $1 AND status IN ('active', 'available') AND expires_at > NOW()`,
       [address]
     );
 
     if (addr.rows.length === 0) {
       return res.status(404).json({ error: 'Address not found or expired' });
+    }
+
+    if (!verifyPersonalAccess(req, addr.rows[0])) {
+      return res.status(401).json({ error: 'Personal temp mail authentication required' });
     }
 
     // SSE headers
@@ -306,13 +344,17 @@ router.get('/message/:address/:uid', async (req, res, next) => {
     const uidNum = parseInt(uid, 10);
 
     const addr = await query(
-      `SELECT id, address, imap_password FROM temp_addresses
-       WHERE address = $1 AND status = 'active' AND expires_at > NOW()`,
+      `SELECT id, address, tier, session_token, imap_password FROM temp_addresses
+       WHERE address = $1 AND status IN ('active', 'available') AND expires_at > NOW()`,
       [address]
     );
 
     if (addr.rows.length === 0 || !addr.rows[0].imap_password) {
       return res.status(404).json({ error: 'Address not found or expired' });
+    }
+
+    if (!verifyPersonalAccess(req, addr.rows[0])) {
+      return res.status(401).json({ error: 'Personal temp mail authentication required' });
     }
 
     const client = await getTempIMAPConnection(address, addr.rows[0].imap_password);
@@ -366,8 +408,8 @@ router.get('/message/:address/:uid/attachment/:index', async (req, res, next) =>
     const index = parseInt(req.params.index, 10);
 
     const addr = await query(
-      `SELECT id, address, imap_password FROM temp_addresses
-       WHERE address = $1 AND status = 'active' AND expires_at > NOW()`,
+      `SELECT id, address, tier, session_token, imap_password FROM temp_addresses
+       WHERE address = $1 AND status IN ('active', 'available') AND expires_at > NOW()`,
       [address]
     );
 
@@ -375,9 +417,18 @@ router.get('/message/:address/:uid/attachment/:index', async (req, res, next) =>
       return res.status(404).json({ error: 'Address not found or expired' });
     }
 
-    const client = await createConnection(address, addr.rows[0].imap_password);
-    const msg = await fetchMessage(client, 'INBOX', uidNum);
-    await client.logout().catch(() => {});
+    if (!verifyPersonalAccess(req, addr.rows[0])) {
+      return res.status(401).json({ error: 'Personal temp mail authentication required' });
+    }
+
+    let client;
+    let msg;
+    try {
+      client = await createConnection(address, addr.rows[0].imap_password);
+      msg = await fetchMessage(client, 'INBOX', uidNum);
+    } finally {
+      if (client) await client.logout().catch(() => {});
+    }
 
     if (!msg || !msg.source) {
       return res.status(404).json({ error: 'Message not found' });
@@ -437,8 +488,8 @@ router.get('/message/:address/:uid/eml', async (req, res, next) => {
     const uidNum = parseInt(uid, 10);
 
     const addr = await query(
-      `SELECT id, address, imap_password FROM temp_addresses
-       WHERE address = $1 AND status = 'active' AND expires_at > NOW()`,
+      `SELECT id, address, tier, session_token, imap_password FROM temp_addresses
+       WHERE address = $1 AND status IN ('active', 'available') AND expires_at > NOW()`,
       [address]
     );
 
@@ -446,9 +497,18 @@ router.get('/message/:address/:uid/eml', async (req, res, next) => {
       return res.status(404).json({ error: 'Address not found or expired' });
     }
 
-    const client = await createConnection(address, addr.rows[0].imap_password);
-    const msg = await fetchMessage(client, 'INBOX', uidNum);
-    await client.logout().catch(() => {});
+    if (!verifyPersonalAccess(req, addr.rows[0])) {
+      return res.status(401).json({ error: 'Personal temp mail authentication required' });
+    }
+
+    let client;
+    let msg;
+    try {
+      client = await createConnection(address, addr.rows[0].imap_password);
+      msg = await fetchMessage(client, 'INBOX', uidNum);
+    } finally {
+      if (client) await client.logout().catch(() => {});
+    }
 
     if (!msg || !msg.source) {
       return res.status(404).json({ error: 'Message not found' });
@@ -502,8 +562,8 @@ router.get('/message/:address/:uid/source', async (req, res, next) => {
     const uidNum = parseInt(uid, 10);
 
     const addr = await query(
-      `SELECT id, address, imap_password FROM temp_addresses
-       WHERE address = $1 AND status = 'active' AND expires_at > NOW()`,
+      `SELECT id, address, tier, session_token, imap_password FROM temp_addresses
+       WHERE address = $1 AND status IN ('active', 'available') AND expires_at > NOW()`,
       [address]
     );
 
@@ -511,9 +571,18 @@ router.get('/message/:address/:uid/source', async (req, res, next) => {
       return res.status(404).json({ error: 'Address not found or expired' });
     }
 
-    const client = await createConnection(address, addr.rows[0].imap_password);
-    const msg = await fetchMessage(client, 'INBOX', uidNum);
-    await client.logout().catch(() => {});
+    if (!verifyPersonalAccess(req, addr.rows[0])) {
+      return res.status(401).json({ error: 'Personal temp mail authentication required' });
+    }
+
+    let client;
+    let msg;
+    try {
+      client = await createConnection(address, addr.rows[0].imap_password);
+      msg = await fetchMessage(client, 'INBOX', uidNum);
+    } finally {
+      if (client) await client.logout().catch(() => {});
+    }
 
     res.json({ source: msg?.source || '' });
   } catch (err) {
@@ -621,7 +690,7 @@ router.get('/export/:address', async (req, res, next) => {
     const { address } = req.params;
     const addr = await query(
       `SELECT id, address, imap_password, created_at, expires_at FROM temp_addresses
-       WHERE address = $1 AND status = 'active' AND expires_at > NOW()`,
+       WHERE address = $1 AND status IN ('active', 'available') AND expires_at > NOW()`,
       [address]
     );
 
@@ -629,9 +698,14 @@ router.get('/export/:address', async (req, res, next) => {
       return res.status(404).json({ error: 'Address not found or expired' });
     }
 
-    const client = await createConnection(address, addr.rows[0].imap_password);
-    const result = await fetchMessages(client, 'INBOX', { page: 1, limit: 100 });
-    await client.logout().catch(() => {});
+    let client;
+    let result;
+    try {
+      client = await createConnection(address, addr.rows[0].imap_password);
+      result = await fetchMessages(client, 'INBOX', { page: 1, limit: 100 });
+    } finally {
+      if (client) await client.logout().catch(() => {});
+    }
 
     const exportData = {
       address: addr.rows[0].address,
@@ -660,10 +734,10 @@ router.get('/recent', async (req, res, next) => {
     const shouldSync = req.query.sync === 'true' || req.query.sync === '1';
 
     const result = await query(
-      `SELECT id, address, imap_password, created_at, expires_at, message_count
+      `SELECT id, address, imap_password, created_at, expires_at, message_count, status
        FROM temp_addresses
-       WHERE tier = 'public' AND status = 'active' AND expires_at > NOW()
-       ORDER BY created_at DESC
+       WHERE tier = 'public' AND status IN ('active', 'available') AND expires_at > NOW()
+       ORDER BY (CASE WHEN status = 'active' THEN 0 ELSE 1 END), created_at DESC
        LIMIT 50`
     );
 
@@ -691,6 +765,7 @@ router.get('/recent', async (req, res, next) => {
         createdAt: r.created_at,
         expiresAt: r.expires_at,
         messageCount: r.message_count || 0,
+        status: r.status,
       })),
     });
   } catch (err) {

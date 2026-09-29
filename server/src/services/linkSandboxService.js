@@ -9,6 +9,7 @@ import tls from 'tls';
 import { URL } from 'url';
 import { JSDOM } from 'jsdom';
 import createDOMPurify from 'dompurify';
+import { isSafeUrl, safeFetch } from './linkPreviewService.js';
 
 const window = new JSDOM('').window;
 const DOMPurify = createDOMPurify(window);
@@ -139,6 +140,10 @@ export async function auditTlsCertificate(hostname, port = 443) {
  */
 export async function captureHeadlessScreenshot(targetUrl) {
   try {
+    const safety = await isSafeUrl(targetUrl);
+    if (!safety.safe) {
+      return null;
+    }
     const { chromium } = await import('playwright');
     const browser = await chromium.launch({ headless: true });
     try {
@@ -169,6 +174,11 @@ export async function inspectLink(targetUrl, withScreenshot = false) {
   }
 
   const cleanUrl = stripTrackingParams(targetUrl);
+  const safety = await isSafeUrl(cleanUrl);
+  if (!safety.safe) {
+    throw new Error(`SSRF Protection: Access to private or local network is blocked (${safety.error || 'unsafe URL'}).`);
+  }
+
   const parsed = new URL(cleanUrl);
 
   const domain = parsed.hostname;
@@ -204,6 +214,11 @@ export async function inspectLink(targetUrl, withScreenshot = false) {
         const location = res.headers.get('location');
         if (location) {
           const nextUrl = new URL(location, currUrl).toString();
+          const hopSafety = await isSafeUrl(nextUrl);
+          if (!hopSafety.safe) {
+            pageSnippet = 'Redirect aborted: Target resolves to an internal/private address.';
+            break;
+          }
           if (!redirectChain.includes(nextUrl)) {
             currUrl = nextUrl;
             redirectChain.push(currUrl);
@@ -269,6 +284,10 @@ export async function inspectLink(targetUrl, withScreenshot = false) {
  */
 export async function renderSafeReader(targetUrl) {
   const cleanUrl = stripTrackingParams(targetUrl);
+  const safety = await isSafeUrl(cleanUrl);
+  if (!safety.safe) {
+    throw new Error(`SSRF Protection: Access to private or local network is blocked (${safety.error || 'unsafe URL'}).`);
+  }
   const parsed = new URL(cleanUrl);
 
   const controller = new AbortController();
@@ -276,13 +295,12 @@ export async function renderSafeReader(targetUrl) {
 
   let rawHtml = '';
   try {
-    const res = await fetch(cleanUrl, {
+    const res = await safeFetch(cleanUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 WoxMailSandbox/1.0',
         'Accept': 'text/html,application/xhtml+xml',
       },
       signal: controller.signal,
-      redirect: 'follow',
     });
     rawHtml = await res.text();
   } finally {

@@ -127,12 +127,16 @@ export function useMessages(folder, page = 1, activeAccount = null) {
   }, [isAllInboxes, refetchAllInboxes]);
 
   const refetchProton = useCallback(async () => {
-    if (!isProton || !ProtonSessionStore.hasActiveSession()) return;
+    if (!isProton) return;
     setProtonLoading(true);
     setProtonError(null);
     try {
-      const res = await fetchProtonMessages(folder, page, 25);
+      const email = activeAccount?.email || localStorage.getItem('woxmail_proton_email') || '';
+      const res = await fetchProtonMessages(folder, page, 25, email);
       setProtonData(res);
+      if (res?.messages?.length > 0) {
+        window.dispatchEvent(new CustomEvent('woxmail:proton-unlocked'));
+      }
     } catch (err) {
       setProtonError(err.message);
       if (err.message && (err.message.includes('unlock') || err.message.includes('session not active') || err.message.includes('401'))) {
@@ -141,7 +145,7 @@ export function useMessages(folder, page = 1, activeAccount = null) {
     } finally {
       setProtonLoading(false);
     }
-  }, [folder, page, isProton]);
+  }, [folder, page, isProton, activeAccount?.email]);
 
   useEffect(() => {
     if (isProton && !isAllInboxes) {
@@ -214,8 +218,9 @@ export function useMessage(uid, folder = 'INBOX', activeAccount = null) {
     setError(null);
     let active = true;
 
-    if (isProton && ProtonSessionStore.hasActiveSession()) {
-      fetchProtonMessage(uid)
+    if (isProton) {
+      const email = activeAccount?.email || localStorage.getItem('woxmail_proton_email') || '';
+      fetchProtonMessage(uid, email)
         .then((data) => {
           if (active) setMessage(data);
         })

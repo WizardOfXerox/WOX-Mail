@@ -212,6 +212,7 @@ export async function executeJmapBatch(user, requestBody) {
             if (row.is_read) keywords['$seen'] = true;
             if (row.is_starred) keywords['$flagged'] = true;
 
+            const permDomain = process.env.DOMAIN_PERMANENT || 'wox.world';
             list.push({
               id: String(row.id),
               blobId: row.checksum || `blob_${row.id}`,
@@ -220,8 +221,8 @@ export async function executeJmapBatch(user, requestBody) {
               keywords,
               size: sizeBytes,
               receivedAt: row.sent_or_received_at || row.created_at,
-              messageId: row.message_id ? [row.message_id] : [`<msg_${row.id}@wox.world>`],
-              from: [{ name: row.sender_name || '', email: row.sender_address || 'unknown@wox.world' }],
+              messageId: row.message_id ? [row.message_id] : [`<msg_${row.id}@${permDomain}>`],
+              from: [{ name: row.sender_name || '', email: row.sender_address || `unknown@${permDomain}` }],
               to: (row.recipient_addresses || []).map((addr) => ({ email: addr })),
               cc: (row.cc_addresses || []).map((addr) => ({ email: addr })),
               subject: row.subject || '(No Subject)',
@@ -247,6 +248,7 @@ export async function executeJmapBatch(user, requestBody) {
               [user.id, remainingUids]
             );
 
+            const permDomain = process.env.DOMAIN_PERMANENT || 'wox.world';
             for (const row of searchRows) {
               foundIds.add(String(row.message_uid));
               list.push({
@@ -258,7 +260,7 @@ export async function executeJmapBatch(user, requestBody) {
                 size: 2048,
                 receivedAt: row.created_at || new Date().toISOString(),
                 subject: `Message #${row.message_uid}`,
-                from: [{ name: 'Sender', email: 'sender@wox.world' }],
+                from: [{ name: 'Sender', email: `sender@${permDomain}` }],
                 to: [{ email: user.email }],
                 preview: 'Encrypted message indexed in zero-knowledge store',
                 hasAttachment: false,

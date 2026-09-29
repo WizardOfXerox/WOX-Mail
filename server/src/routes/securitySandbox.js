@@ -4,6 +4,7 @@
 
 import { Router } from 'express';
 import { inspectLink, renderSafeReader, stripTrackingParams } from '../services/linkSandboxService.js';
+import { isSafeUrl, safeFetch } from '../services/linkPreviewService.js';
 import { requireAuth } from '../middleware/auth.js';
 import { query } from '../config/database.js';
 import pino from 'pino';
@@ -65,10 +66,15 @@ router.get('/proxy-image', async (req, res) => {
       return res.status(400).send('Invalid protocol');
     }
 
+    const safety = await isSafeUrl(rawUrl);
+    if (!safety.safe) {
+      return res.status(400).send('Blocked: Target resolves to local/private network address');
+    }
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 6000);
 
-    const upstream = await fetch(rawUrl, {
+    const upstream = await safeFetch(rawUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) WoxMailImageProxy/1.0',
         'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',

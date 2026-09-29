@@ -4,7 +4,7 @@ import { validate } from '../middleware/validate.js';
 import { query } from '../config/database.js';
 import { hashPassword, verifyPassword, generateRecoveryCodes } from '../utils/crypto.js';
 import { validatePassword } from '../utils/validators.js';
-import { authenticator } from 'otplib';
+import * as apiKeyService from '../services/apiKeyService.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -419,13 +419,15 @@ router.post('/filters',
   }),
   async (req, res, next) => {
     try {
-      const { name, condition_field, condition_operator, condition_value, action, action_value, priority } = req.body;
+      const { name, condition_field, condition_operator, condition_value, action, action_value, priority = 0 } = req.body;
+      const conditions = { field: condition_field, operator: condition_operator, value: condition_value };
+      const actions = { action, value: action_value || null };
 
       const result = await query(
-        `INSERT INTO email_filters (user_id, name, condition_field, condition_operator, condition_value, action, action_value, priority)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `INSERT INTO email_filters (user_id, name, condition_field, condition_operator, condition_value, action, action_value, priority, conditions, actions, enabled, is_enabled)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, TRUE, TRUE)
          RETURNING *`,
-        [req.user.id, name, condition_field, condition_operator, condition_value, action, action_value || null, priority]
+        [req.user.id, name, condition_field, condition_operator, condition_value, action, action_value || null, priority, JSON.stringify(conditions), JSON.stringify(actions)]
       );
 
       res.status(201).json({ filter: result.rows[0] });
@@ -818,13 +820,8 @@ router.put('/preferences', async (req, res, next) => {
  */
 router.get('/api-keys', async (req, res, next) => {
   try {
-    const result = await query(`
-      SELECT id, name, key_prefix, scopes, last_used_at, expires_at, created_at
-      FROM personal_api_keys
-      WHERE user_id = $1
-      ORDER BY created_at DESC
-    `, [req.user.id]);
-    res.json({ apiKeys: result.rows });
+    const keys = await apiKeyService.listApiKeys(req.user.id);
+    res.json({ apiKeys: keys, keys });
   } catch (err) {
     next(err);
   }
@@ -836,27 +833,24 @@ router.get('/api-keys', async (req, res, next) => {
  */
 router.post('/api-keys', async (req, res, next) => {
   try {
-    const { name, scopes = ['mail:read', 'mail:send'], expires_days } = req.body;
+    const { name, scopes = ['mail:read', 'mail:send'], rateLimit = 100, permissions } = req.body;
     if (!name) return res.status(400).json({ error: 'Key name is required.' });
 
-    const crypto = await import('crypto');
-    const rawKey = `wox_${crypto.randomBytes(24).toString('hex')}`;
-    const keyPrefix = rawKey.substring(0, 8);
-    const keyHash = crypto.createHash('sha256').update(rawKey).digest('hex');
-    const expiresAt = expires_days ? new Date(Date.now() + expires_days * 86400000) : null;
-
-    const result = await query(`
-      INSERT INTO personal_api_keys (user_id, name, key_prefix, key_hash, scopes, expires_at)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      RETURNING id, name, key_prefix, scopes, expires_at, created_at
-    `, [req.user.id, name, keyPrefix, keyHash, scopes, expiresAt]);
+    const perms = permissions || (Array.isArray(scopes) ? { scopes } : { send: true });
+    const key = await apiKeyService.createApiKey(req.user.id, {
+      name,
+      rateLimit: parseInt(rateLimit, 10) || 100,
+      permissions: perms,
+    });
 
     res.status(201).json({
       message: 'Personal API key created. Copy it now, it will never be displayed again.',
       apiKey: {
-        ...result.rows[0],
-        secretKey: rawKey
-      }
+        ...key,
+        secretKey: key.rawKey,
+        token: key.rawKey,
+      },
+      key,
     });
   } catch (err) {
     next(err);
@@ -869,8 +863,9 @@ router.post('/api-keys', async (req, res, next) => {
  */
 router.delete('/api-keys/:id', async (req, res, next) => {
   try {
-    const result = await query('DELETE FROM personal_api_keys WHERE id = $1 AND user_id = $2 RETURNING id', [req.params.id, req.user.id]);
-    if (!result.rows.length) return res.status(404).json({ error: 'API key not found.' });
+    const id = parseInt(req.params.id, 10);
+    const deleted = await apiKeyService.revokeApiKey(req.user.id, id);
+    if (!deleted) return res.status(404).json({ error: 'API key not found.' });
     res.json({ message: 'API key revoked.' });
   } catch (err) {
     next(err);

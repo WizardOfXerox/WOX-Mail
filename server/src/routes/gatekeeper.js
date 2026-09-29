@@ -25,15 +25,17 @@ router.get('/pending', async (req, res, next) => {
     const userPass = user.purelymail_password || process.env.ADMIN_PASSWORD;
 
     let client;
+    let messages = [];
     try {
       client = await createConnection(user.email, userPass);
+      const res = await fetchMessages(client, 'INBOX', { page: 1, limit: 30 });
+      messages = res.messages || [];
     } catch (err) {
       logger.warn({ err: err.message }, 'Failed to connect to IMAP for screener scan');
       return res.json({ pending: [], total: 0 });
+    } finally {
+      if (client) await client.logout().catch(() => {});
     }
-
-    const { messages = [] } = await fetchMessages(client, 'INBOX', { page: 1, limit: 30 });
-    await client.logout().catch(() => {});
 
     const pendingMap = new Map();
 
@@ -76,14 +78,16 @@ router.get('/pending/count', async (req, res, next) => {
     const userPass = user.purelymail_password || process.env.ADMIN_PASSWORD;
 
     let client;
+    let messages = [];
     try {
       client = await createConnection(user.email, userPass);
+      const res = await fetchMessages(client, 'INBOX', { page: 1, limit: 20 });
+      messages = res.messages || [];
     } catch (err) {
       return res.json({ count: 0 });
+    } finally {
+      if (client) await client.logout().catch(() => {});
     }
-
-    const { messages = [] } = await fetchMessages(client, 'INBOX', { page: 1, limit: 20 });
-    await client.logout().catch(() => {});
 
     const pendingEmails = new Set();
     for (const msg of messages) {

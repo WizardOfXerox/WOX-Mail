@@ -5,6 +5,7 @@ import {
   verifyAuthenticationResponse,
 } from '@simplewebauthn/server';
 import { isoUint8Array } from '@simplewebauthn/server/helpers';
+import crypto from 'crypto';
 import { query } from '../config/database.js';
 import { setex, get, del } from '../config/redis.js';
 import { pino } from 'pino';
@@ -166,7 +167,7 @@ export async function getAuthenticationOptions(emailOrUsername = null) {
     userVerification: 'preferred',
   });
 
-  const challengeSessionId = `passkey_auth_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  const challengeSessionId = `passkey_auth_${Date.now()}_${crypto.randomBytes(16).toString('hex')}`;
   await setex(
     `passkey_auth_challenge:${challengeSessionId}`,
     120,

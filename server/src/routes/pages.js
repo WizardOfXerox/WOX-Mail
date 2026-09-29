@@ -47,7 +47,8 @@ router.get('/login', async (req, res) => {
 });
 
 router.get('/register', async (req, res) => {
-  await renderPage(req, res, 'register', { title: 'Register' });
+  const inviteCode = String(req.query.invite || req.query.code || req.query.inviteCode || req.query.invite_code || '').trim().toUpperCase();
+  await renderPage(req, res, 'register', { title: 'Register', inviteCode });
 });
 
 router.get('/forgot-password', async (req, res) => {
@@ -64,6 +65,13 @@ router.get('/personal', async (req, res) => {
 
 router.get('/support', async (req, res) => {
   await renderPage(req, res, 'support', { title: 'Support Desk' });
+});
+
+router.get(['/setup-guide', '/connect-guide', '/providers'], async (req, res) => {
+  await renderPage(req, res, 'setup-guide', {
+    title: 'Provider Setup Guide',
+    description: 'Step-by-step instructions to connect Gmail, Microsoft Outlook, Yahoo, iCloud, Proton, and Custom Domains.',
+  });
 });
 
 router.get('/tempmail', async (req, res) => {
@@ -114,13 +122,15 @@ router.get('/tempmail/nojs', async (req, res) => {
 
     let messages = [];
     if (addressRecord && addressRecord.imap_password) {
+      let client;
       try {
-        const client = await createConnection(addressRecord.address, addressRecord.imap_password);
+        client = await createConnection(addressRecord.address, addressRecord.imap_password);
         const fetched = await fetchMessages(client, 'INBOX', { page: 1, limit: 50 });
         messages = fetched.messages || [];
-        await client.logout().catch(() => {});
       } catch (err) {
         // Fallback for dev mode
+      } finally {
+        if (client) await client.logout().catch(() => {});
       }
     }
 
@@ -198,10 +208,15 @@ router.get('/tempmail/nojs/view/:uid', async (req, res) => {
     if (result.rows.length === 0) return res.redirect('/tempmail/nojs');
     const addressRecord = result.rows[0];
 
-    const client = await createConnection(addressRecord.address, addressRecord.imap_password);
-    const msg = await fetchMessage(client, 'INBOX', parseInt(req.params.uid, 10));
-    const allMessages = await fetchMessages(client, 'INBOX', { page: 1, limit: 50 });
-    await client.logout().catch(() => {});
+    let client;
+    let msg, allMessages;
+    try {
+      client = await createConnection(addressRecord.address, addressRecord.imap_password);
+      msg = await fetchMessage(client, 'INBOX', parseInt(req.params.uid, 10));
+      allMessages = await fetchMessages(client, 'INBOX', { page: 1, limit: 50 });
+    } finally {
+      if (client) await client.logout().catch(() => {});
+    }
 
     if (!msg) return res.redirect('/tempmail/nojs');
 
@@ -288,6 +303,10 @@ router.get('/privacy', async (req, res) => {
 
 router.get('/terms', async (req, res) => {
   await renderPage(req, res, 'terms', { title: 'Terms of Service' });
+});
+
+router.get(['/security/hall-of-fame', '/hall-of-fame'], async (req, res) => {
+  await renderPage(req, res, 'hall-of-fame', { title: 'Security Acknowledgments & Hall of Fame' });
 });
 
 // ─── Secure Locked Message Portal (Enclave Vault) ──────

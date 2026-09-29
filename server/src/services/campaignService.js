@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { query } from '../config/database.js';
 import { createTransporter, sendEmail } from './smtp.js';
+import { enrollSubscriberInDrips } from './dripService.js';
 import pino from 'pino';
 
 const logger = pino({ name: 'woxmail:campaigns' });
@@ -50,23 +51,28 @@ export async function deleteList(userId, listId) {
 /**
  * Add or upsert a single subscriber
  */
-export async function addSubscriber(listId, { email, firstName = '', lastName = '', customFields = {} }) {
+export async function addSubscriber(listId, { email, firstName = '', lastName = '', customFields = {}, tags = [] }) {
   const cleanEmail = email.toLowerCase().trim();
   const unsubToken = crypto.randomBytes(24).toString('hex');
+  const cleanTags = Array.isArray(tags) ? tags.map(t => String(t).trim().toUpperCase()).filter(Boolean) : [];
 
   const result = await query(
-    `INSERT INTO subscribers (list_id, email, first_name, last_name, status, custom_fields, unsubscribe_token)
-     VALUES ($1, $2, $3, $4, 'active', $5, $6)
+    `INSERT INTO subscribers (list_id, email, first_name, last_name, status, custom_fields, unsubscribe_token, tags)
+     VALUES ($1, $2, $3, $4, 'active', $5, $6, $7)
      ON CONFLICT (list_id, email)
      DO UPDATE SET
        first_name = COALESCE(EXCLUDED.first_name, subscribers.first_name),
        last_name = COALESCE(EXCLUDED.last_name, subscribers.last_name),
        status = 'active',
-       custom_fields = EXCLUDED.custom_fields
+       custom_fields = EXCLUDED.custom_fields,
+       tags = array_cat(subscribers.tags, EXCLUDED.tags)
      RETURNING *`,
-    [listId, cleanEmail, firstName.trim(), lastName.trim(), JSON.stringify(customFields), unsubToken]
+    [listId, cleanEmail, firstName.trim(), lastName.trim(), JSON.stringify(customFields), unsubToken, cleanTags]
   );
-  return result.rows[0];
+
+  const subscriber = result.rows[0];
+  enrollSubscriberInDrips(subscriber).catch(err => logger.warn({ err: err.message }, 'Failed to enroll in drip'));
+  return subscriber;
 }
 
 /**
@@ -87,14 +93,26 @@ export async function importSubscribers(listId, rows) {
     const lastName = (row.last_name || row.lastName || '').trim();
     const unsubToken = crypto.randomBytes(24).toString('hex');
 
+    const rawTags = row.tags || row.Tags || '';
+    const tags = Array.isArray(rawTags) 
+      ? rawTags.map(t => String(t).trim().toUpperCase()).filter(Boolean)
+      : String(rawTags).split(',').map(t => t.trim().toUpperCase()).filter(Boolean);
+
     try {
-      await query(
-        `INSERT INTO subscribers (list_id, email, first_name, last_name, status, unsubscribe_token)
-         VALUES ($1, $2, $3, $4, 'active', $5)
-         ON CONFLICT (list_id, email) DO NOTHING`,
-        [listId, email, firstName, lastName, unsubToken]
+      const res = await query(
+        `INSERT INTO subscribers (list_id, email, first_name, last_name, status, unsubscribe_token, tags)
+         VALUES ($1, $2, $3, $4, 'active', $5, $6)
+         ON CONFLICT (list_id, email) DO UPDATE SET
+           tags = array_cat(subscribers.tags, EXCLUDED.tags)
+         RETURNING *`,
+        [listId, email, firstName, lastName, unsubToken, tags]
       );
-      imported++;
+      if (res.rows.length > 0) {
+        enrollSubscriberInDrips(res.rows[0]).catch(() => {});
+        imported++;
+      } else {
+        skipped++;
+      }
     } catch {
       skipped++;
     }

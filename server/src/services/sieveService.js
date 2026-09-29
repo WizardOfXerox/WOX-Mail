@@ -4,6 +4,7 @@
  */
 
 import { query } from '../config/database.js';
+import { isSafeUrl } from './linkPreviewService.js';
 import pino from 'pino';
 
 const logger = pino({ name: 'sieve-engine' });
@@ -72,6 +73,12 @@ export function matchCondition(condition, email) {
 export async function dispatchWebhook(webhookUrl, payload) {
   if (!webhookUrl || typeof webhookUrl !== 'string') return;
   try {
+    const safety = await isSafeUrl(webhookUrl);
+    if (!safety.safe) {
+      logger.warn({ webhookUrl, error: safety.error }, 'Blocked Sieve webhook dispatch to unsafe internal destination');
+      return;
+    }
+
     const isDiscord = webhookUrl.includes('discord.com/api/webhooks');
     const isSlack = webhookUrl.includes('hooks.slack.com');
 
@@ -275,7 +282,7 @@ export async function purgeAgingEmailsByRules(userId, candidateEmails = []) {
         }
       }
 
-      // Execute real deletion of matching candidate email UIDs from database
+      // Execute deletion of matching candidate email UIDs from search index
       if (purgedUids.length > 0) {
         const numericUids = purgedUids.map((id) => parseInt(id, 10)).filter((n) => !isNaN(n));
         if (numericUids.length > 0) {
@@ -283,27 +290,19 @@ export async function purgeAgingEmailsByRules(userId, candidateEmails = []) {
             `DELETE FROM encrypted_search_index WHERE user_id = $1 AND message_uid = ANY($2::int[]) RETURNING message_uid`,
             [userId, numericUids]
           );
-          const delCompRes = await query(
-            `DELETE FROM compliance_archive WHERE mailbox_owner_id = $1 AND id = ANY($2::int[]) RETURNING id`,
-            [userId, numericUids]
-          );
-          purgedCount += Math.max(purgedUids.length, (delSearchRes.rowCount || 0) + (delCompRes.rowCount || 0));
+          purgedCount += Math.max(purgedUids.length, delSearchRes.rowCount || 0);
         } else {
           purgedCount += purgedUids.length;
         }
       }
     } else {
-      // If no candidate array was passed, query and delete aging entries directly from database
+      // When no candidate email list is provided in memory, evaluate against user's search index entries
       const delSearchRes = await query(
         `DELETE FROM encrypted_search_index WHERE user_id = $1 AND created_at < $2 RETURNING message_uid`,
         [userId, cutoffDate]
       );
-      const delCompRes = await query(
-        `DELETE FROM compliance_archive WHERE mailbox_owner_id = $1 AND sent_or_received_at < $2 RETURNING id`,
-        [userId, cutoffDate]
-      );
 
-      const deletedCount = (delSearchRes.rowCount || 0) + (delCompRes.rowCount || 0);
+      const deletedCount = delSearchRes.rowCount || 0;
       if (deletedCount > 0) {
         purgedCount += deletedCount;
         if (!rulesApplied.includes(rule.name)) {

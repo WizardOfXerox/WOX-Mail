@@ -177,11 +177,23 @@ export default function AccountsSection() {
 
   return (
     <div className="settings-section">
-      <div className="section-header">
-        <h2>Connected Accounts & External Inboxes</h2>
-        <p className="text-secondary">
-          Connect your existing <strong>Gmail, Microsoft Outlook, Yahoo, Fastmail, or Custom IMAP</strong> accounts to manage all your mailboxes in WoxMail with full encryption.
-        </p>
+      <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
+        <div>
+          <h2>Connected Accounts & External Inboxes</h2>
+          <p className="text-secondary">
+            Connect your existing <strong>Gmail, Microsoft Outlook, Yahoo, Fastmail, or Custom IMAP</strong> accounts to manage all your mailboxes in WoxMail with full encryption.
+          </p>
+        </div>
+        <a
+          href="/setup-guide"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="btn btn-secondary btn-sm"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', textDecoration: 'none' }}
+        >
+          <span>📖</span>
+          <span>Provider Setup Guide &rarr;</span>
+        </a>
       </div>
 
       {error && <div className="toast toast-error" style={{ position: 'static', marginBottom: '1rem', width: '100%' }}>{error}</div>}

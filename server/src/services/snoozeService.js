@@ -68,7 +68,7 @@ export async function listSnoozed(userId) {
 export async function cancelSnooze(userId, snoozeId) {
   const result = await query(
     `UPDATE snoozed_emails SET unsnoozed = TRUE
-     WHERE user_id = $1 AND id = $2 AND unsnoozed = FALSE
+     WHERE user_id = $1 AND (id = $2 OR message_uid = $2) AND unsnoozed = FALSE
      RETURNING id`,
     [userId, snoozeId]
   );

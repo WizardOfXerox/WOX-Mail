@@ -49,7 +49,7 @@ async function sendSupportEmail({ to, subject, html, text }) {
   try {
     const transporter = createTransporter(adminEmail, adminPass);
     await sendEmail(transporter, {
-      from: `"${senderName}" <${supportEmail}>`,
+      from: { name: senderName, address: supportEmail },
       to: cleanTo,
       subject,
       html,

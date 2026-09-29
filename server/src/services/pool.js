@@ -233,7 +233,7 @@ export async function claimAddress(ipAddress, expiryHours = 24, customUsername =
   if (customDomain) {
     const cleanD = customDomain.toLowerCase().replace(/^@/, '').trim();
     if (cleanD === 'wox.world' || cleanD === permanentDomain) {
-      targetDomain = permanentDomain;
+      throw new Error('The permanent @wox.world domain is reserved for permanent accounts and cannot be used for disposable temporary mail.');
     } else if (cleanD === 'mail.wox.world' || cleanD === defaultTempDomain) {
       targetDomain = defaultTempDomain;
     }

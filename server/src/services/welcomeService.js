@@ -90,7 +90,7 @@ export async function sendWoxWelcomeEmail(recipientEmail, { isTemp = false } = {
 
   try {
     const result = await sendEmail(transporter, {
-      from: `"${senderName}" <${senderEmail}>`,
+      from: { name: senderName, address: senderEmail },
       to: recipientEmail,
       subject,
       text: `Welcome to WoxMail! Your secure address ${recipientEmail} is active with Zero-Trace Ephemeral Shield and Enclave Vault protection. Need help? Contact ${senderEmail}`,

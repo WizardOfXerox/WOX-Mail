@@ -1,5 +1,6 @@
 import { ImapFlow } from 'imapflow';
 import pino from 'pino';
+import { sanitizeFrom, sanitizeSubject } from './mimeService.js';
 
 const logger = pino({ name: 'woxmail:imap' });
 
@@ -139,8 +140,6 @@ export async function resolveFolder(client, folder) {
   if (fLower === 'starred') return 'Starred';
   if (fLower === 'the feed' || fLower === 'thefeed' || fLower === '__feed') return 'The Feed';
   if (fLower === 'paper trail' || fLower === 'papertrail' || fLower === '__papertrail') return 'Paper Trail';
-  if (fLower === 'promotions' || fLower === 'promotion') return 'Promotions';
-  if (fLower === 'social') return 'Social';
   if (fLower === 'outbox') return 'Outbox';
 
   const isGmail = Boolean(
@@ -299,9 +298,9 @@ export async function fetchMessages(client, folder = 'INBOX', { page = 1, limit 
       messages.push({
         uid: msg.uid,
         seq: msg.seq,
-        subject: msg.envelope?.subject || '(no subject)',
-        from: msg.envelope?.from?.[0] || null,
-        to: msg.envelope?.to || [],
+        subject: sanitizeSubject(msg.envelope?.subject),
+        from: sanitizeFrom(msg.envelope?.from?.[0]),
+        to: (msg.envelope?.to || []).map(sanitizeFrom),
         date: msg.envelope?.date || null,
         flags: [...(msg.flags || [])],
         isRead: msg.flags ? msg.flags.has('\\Seen') : false,
@@ -350,9 +349,9 @@ export async function fetchStarredMessages(client, { page = 1, limit = 25, folde
           uid: msg.uid,
           seq: msg.seq,
           folder,
-          subject: msg.envelope?.subject || '(no subject)',
-          from: msg.envelope?.from?.[0] || null,
-          to: msg.envelope?.to || [],
+          subject: sanitizeSubject(msg.envelope?.subject),
+          from: sanitizeFrom(msg.envelope?.from?.[0]),
+          to: (msg.envelope?.to || []).map(sanitizeFrom),
           date: msg.envelope?.date || null,
           flags: [...(msg.flags || [])],
           isRead: msg.flags ? msg.flags.has('\\Seen') : false,
@@ -376,18 +375,34 @@ export async function fetchStarredMessages(client, { page = 1, limit = 25, folde
 }
 
 /**
+ * Category Classification Regex Patterns (unified across IMAP and Proton)
+ */
+export const CATEGORY_PATTERNS = {
+  feed: /\b(?:newsletter|digest|weekly|monthly|updates?|news|shield|guide|announcements?|welcome\s+to|bulletin|medium|substack|dev\.to|github\s*digests?)\b/i,
+  paperTrail: /\b(?:future\s*letters?|time\s*capsule|receipts?|invoices?|payments?|transactions?|billings?|tickets?|pin|otp|verif(?:y|ication)|statements?|purchases?|tracking\s*(?:#|number|code|link|info)?|support\s*requests?|e2e)\b|\b(?:order\s*(?:#|no\.?|num|confirma|detail|summary|placed|status|update|receipt)|your\s*order|orders@)\b|\b(?:security|auth|login|access|verification)\s*code\b|\bcode\s*(?:is|:)/i,
+  promotions: /\b(?:promo(?:tion)?s?|discounts?|sales?|deals?|offers?|coupons?|save|clearance|exclusive\s*offers?|shop\s*now|special\s*offers?|free\s*shipping|limited\s*time|flash\s*sales?|rewards?|cashback|gift\s*cards?|vouchers?|perks?|stores?)\b/i,
+  social: /\b(?:github|linkedin|twitter|x\.com|facebook|instagram|discord|reddit|slack|youtube|tiktok|pinterest|threads|medium|mastodon|twitch|community|followers?|mentions?|commented|invited\s*you|connection\s*requests?)\b/i,
+};
+
+function getMessageSearchText(m) {
+  const fromStr = typeof m.from === 'object'
+    ? `${m.from?.name || ''} ${m.from?.address || ''}`
+    : String(m.from || '');
+  return `${m.subject || ''} ${fromStr} ${m.snippet || m.preview || ''}`;
+}
+
+/**
  * Fetch The Feed messages (newsletters, subscriptions, digests).
  */
 export async function fetchFeedMessages(client, { page = 1, limit = 25 } = {}) {
-  // Fetch from INBOX and categorize
   const { messages: allInbox = [] } = await fetchMessages(client, 'INBOX', { page: 1, limit: 100 });
-  const feedRegex = /newsletter|digest|weekly|monthly|updates|news|shield|guide|announcement|welcome to|bulletin|medium|substack|dev\.to|github digests|promo|special offer|discount|sale|marketing|trends/i;
-  const paperTrailRegex = /letter|future|receipt|invoice|order|confirmation|payment|transaction|billing|ticket|pin|code|otp|verify|statement|purchase|tracking/i;
 
   const feedMessages = allInbox.filter((m) => {
-    const fromStr = typeof m.from === 'object' ? (m.from?.name || m.from?.address || '') : (m.from || '');
-    const text = `${m.subject} ${fromStr}`;
-    return !paperTrailRegex.test(text) && feedRegex.test(text);
+    const text = getMessageSearchText(m);
+    return !CATEGORY_PATTERNS.paperTrail.test(text) &&
+           !CATEGORY_PATTERNS.promotions.test(text) &&
+           !CATEGORY_PATTERNS.social.test(text) &&
+           CATEGORY_PATTERNS.feed.test(text);
   });
 
   const total = feedMessages.length;
@@ -400,14 +415,11 @@ export async function fetchFeedMessages(client, { page = 1, limit = 25 } = {}) {
  * Fetch Paper Trail messages (receipts, invoices, orders, confirmations, time capsule letters).
  */
 export async function fetchPaperTrailMessages(client, { page = 1, limit = 25 } = {}) {
-  // Fetch from INBOX and categorize
   const { messages: allInbox = [] } = await fetchMessages(client, 'INBOX', { page: 1, limit: 100 });
-  const paperTrailRegex = /letter|future|receipt|invoice|order|confirmation|payment|transaction|billing|ticket|pin|code|otp|verify|statement|purchase|tracking|e2e|support request/i;
 
   const paperTrailMessages = allInbox.filter((m) => {
-    const fromStr = typeof m.from === 'object' ? (m.from?.name || m.from?.address || '') : (m.from || '');
-    const text = `${m.subject} ${fromStr}`;
-    return paperTrailRegex.test(text);
+    const text = getMessageSearchText(m);
+    return CATEGORY_PATTERNS.paperTrail.test(text);
   });
 
   const total = paperTrailMessages.length;
@@ -421,13 +433,10 @@ export async function fetchPaperTrailMessages(client, { page = 1, limit = 25 } =
  */
 export async function fetchPromotionsMessages(client, { page = 1, limit = 25 } = {}) {
   const { messages: allInbox = [] } = await fetchMessages(client, 'INBOX', { page: 1, limit: 100 });
-  const promoRegex = /promo|discount|sale|deal|offer|coupon|save|clearance|exclusive offer|shop now|special offer|free shipping|limited time|flash sale|reward|cashback|gift card|voucher|perk|store|deals/i;
-  const paperTrailRegex = /receipt|invoice|order confirmation|payment received|billing statement/i;
 
   const promoMessages = allInbox.filter((m) => {
-    const fromStr = typeof m.from === 'object' ? (m.from?.name || m.from?.address || '') : (m.from || '');
-    const text = `${m.subject} ${fromStr}`;
-    return !paperTrailRegex.test(text) && promoRegex.test(text);
+    const text = getMessageSearchText(m);
+    return !CATEGORY_PATTERNS.paperTrail.test(text) && CATEGORY_PATTERNS.promotions.test(text);
   });
 
   const total = promoMessages.length;
@@ -441,12 +450,10 @@ export async function fetchPromotionsMessages(client, { page = 1, limit = 25 } =
  */
 export async function fetchSocialMessages(client, { page = 1, limit = 25 } = {}) {
   const { messages: allInbox = [] } = await fetchMessages(client, 'INBOX', { page: 1, limit: 100 });
-  const socialRegex = /github|linkedin|twitter|x\.com|facebook|instagram|discord|reddit|slack|youtube|tiktok|pinterest|threads|medium|mastodon|twitch|community|follower|mention|commented|invited you|connection request/i;
 
   const socialMessages = allInbox.filter((m) => {
-    const fromStr = typeof m.from === 'object' ? (m.from?.name || m.from?.address || '') : (m.from || '');
-    const text = `${m.subject} ${fromStr}`;
-    return socialRegex.test(text);
+    const text = getMessageSearchText(m);
+    return !CATEGORY_PATTERNS.paperTrail.test(text) && CATEGORY_PATTERNS.social.test(text);
   });
 
   const total = socialMessages.length;
@@ -489,7 +496,11 @@ export async function appendSentMessage(client, content) {
  */
 export async function fetchMessage(client, folder, uid) {
   let resolved = await resolveFolder(client, folder);
-  if (resolved === 'Starred' || resolved === 'The Feed' || resolved === 'Paper Trail' || resolved === 'Promotions' || resolved === 'Social') {
+  if (resolved === 'Starred') {
+    const fastFolders = await getFolderListFast(client).catch(() => []);
+    const flaggedFolder = fastFolders.find((f) => f.specialUse === '\\Flagged' || f.name.toLowerCase() === 'starred' || f.path.toLowerCase().includes('starred'));
+    resolved = flaggedFolder ? flaggedFolder.path : 'INBOX';
+  } else if (resolved === 'The Feed' || resolved === 'Paper Trail' || resolved === 'Promotions' || resolved === 'Social') {
     resolved = 'INBOX';
   }
 
@@ -546,10 +557,10 @@ export async function fetchMessage(client, folder, uid) {
 
     return {
       uid: msg.uid,
-      subject: msg.envelope?.subject || '(no subject)',
-      from: msg.envelope?.from?.[0] || null,
-      to: msg.envelope?.to || [],
-      cc: msg.envelope?.cc || [],
+      subject: sanitizeSubject(msg.envelope?.subject),
+      from: sanitizeFrom(msg.envelope?.from?.[0]),
+      to: (msg.envelope?.to || []).map(sanitizeFrom),
+      cc: (msg.envelope?.cc || []).map(sanitizeFrom),
       date: msg.envelope?.date || null,
       messageId: msg.envelope?.messageId || null,
       inReplyTo: msg.envelope?.inReplyTo || null,
@@ -570,7 +581,10 @@ export async function fetchMessage(client, folder, uid) {
  * @param {string} toFolder
  */
 export async function moveMessages(client, fromFolder, uids, toFolder) {
-  const resolvedFrom = await resolveFolder(client, fromFolder);
+  let resolvedFrom = await resolveFolder(client, fromFolder);
+  if (resolvedFrom === 'Starred' || resolvedFrom === 'The Feed' || resolvedFrom === 'Paper Trail' || resolvedFrom === 'Promotions' || resolvedFrom === 'Social') {
+    resolvedFrom = 'INBOX';
+  }
   const resolvedTo = await resolveFolder(client, toFolder);
   const lock = await acquireMailboxLock(client, resolvedFrom, 25000);
   try {
@@ -601,7 +615,10 @@ export async function moveMessages(client, fromFolder, uids, toFolder) {
  * @param {number[]} uids
  */
 export async function deleteMessages(client, folder, uids) {
-  const resolved = await resolveFolder(client, folder);
+  let resolved = await resolveFolder(client, folder);
+  if (resolved === 'Starred' || resolved === 'The Feed' || resolved === 'Paper Trail' || resolved === 'Promotions' || resolved === 'Social') {
+    resolved = 'INBOX';
+  }
   const lock = await acquireMailboxLock(client, resolved, 25000);
   try {
     await client.messageDelete(uids.join(','), { uid: true });

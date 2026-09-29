@@ -374,9 +374,17 @@ export async function deleteAlias(userId, aliasId) {
 
   if (alias.rows.length === 0) return false;
 
+  const aliasAddress = alias.rows[0].alias_address;
+
+  // Clean up any associated reverse aliases to prevent orphaned tokens
+  try {
+    await query('DELETE FROM reverse_aliases WHERE user_id = $1 AND alias_address = $2', [userId, aliasAddress]);
+  } catch (revErr) {
+    console.warn('Failed to cleanup reverse aliases for deleted alias:', revErr.message);
+  }
+
   // Remove routing rule from Purelymail using integer rule ID
   try {
-    const aliasAddress = alias.rows[0].alias_address;
     const [userPrefix, domain] = aliasAddress.split('@');
     const rulesList = await listRoutingRules(domain);
     const rule = (rulesList?.result?.rules || []).find((r) => r.matchUser === userPrefix && r.domainName === domain);

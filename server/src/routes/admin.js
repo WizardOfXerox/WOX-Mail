@@ -23,6 +23,7 @@ import {
   adminUpdateFutureLetter,
   adminDeleteFutureLetter,
 } from '../services/futureLetterService.js';
+import { refreshBlockList } from '../middleware/ipBlock.js';
 
 const router = Router();
 
@@ -1038,6 +1039,8 @@ router.post('/blocked-ips',
         [ip_address, reason || null, req.user.id, expiresAt]
       );
 
+      await refreshBlockList();
+
       res.status(201).json({ message: 'IP blocked' });
     } catch (err) {
       next(err);
@@ -1052,6 +1055,7 @@ router.post('/blocked-ips',
 router.delete('/blocked-ips/:ip', async (req, res, next) => {
   try {
     await query('DELETE FROM blocked_ips WHERE ip_address = $1', [req.params.ip]);
+    await refreshBlockList();
     res.json({ message: 'IP unblocked' });
   } catch (err) {
     next(err);
@@ -1154,7 +1158,9 @@ router.get('/audit', async (req, res, next) => {
  */
 router.get('/announcements', async (req, res, next) => {
   try {
-    const result = await query('SELECT * FROM announcements ORDER BY created_at DESC LIMIT 50');
+    const result = await query(
+      'SELECT id, title, body, body AS content, type, is_active, target_tier, created_at, ends_at FROM announcements ORDER BY created_at DESC LIMIT 50'
+    );
     res.json({ announcements: result.rows });
   } catch (err) {
     next(err);
@@ -2071,12 +2077,13 @@ router.get('/ediscovery/export', async (req, res, next) => {
       LIMIT 500
     `);
 
+    const permDomain = process.env.DOMAIN_PERMANENT || 'wox.world';
     let mbox = '';
     for (const r of records.rows) {
-      const fromAddr = r.sender_address || 'unknown@wox.world';
+      const fromAddr = r.sender_address || `unknown@${permDomain}`;
       const dateStr = new Date(r.sent_or_received_at || Date.now()).toUTCString();
       mbox += `From ${fromAddr} ${dateStr}\n`;
-      mbox += `Message-ID: <${r.message_id || r.id}@wox.world>\n`;
+      mbox += `Message-ID: <${r.message_id || r.id}@${permDomain}>\n`;
       mbox += `From: ${fromAddr}\n`;
       mbox += `To: ${(r.recipient_addresses || []).join(', ')}\n`;
       mbox += `Subject: ${r.subject || '(no subject)'}\n`;

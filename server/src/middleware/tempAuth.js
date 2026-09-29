@@ -53,19 +53,3 @@ async function validateTempSession(token) {
 
   return result.rows[0];
 }
-
-/**
- * Optional temp auth — attaches tempUser if token present but doesn't reject.
- * Useful for routes that work for both authenticated and unauthenticated users.
- */
-export function optionalTempAuth(req, res, next) {
-  const token = req.cookies?.[TEMP_COOKIE_NAME];
-  if (!token) return next();
-
-  validateTempSession(token)
-    .then((tempUser) => {
-      req.tempUser = tempUser;
-      next();
-    })
-    .catch(() => next());
-}

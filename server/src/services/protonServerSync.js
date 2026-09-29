@@ -2,6 +2,8 @@ import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
+import { query } from '../config/database.js';
+import { decryptCredentials } from './accountService.js';
 
 // Map of active browser sessions per user email
 export const activeSessions = new Map();
@@ -100,18 +102,50 @@ export async function authenticateProtonAccount(email, password) {
 }
 
 /**
- * Fetch messages / conversations from live Proton session.
+ * Ensure active browser session exists for the given Proton email.
+ * Automatically restores session from connected_accounts if needed.
  */
-export async function getProtonMessages(email, labelId = '0', pageNum = 0, pageSize = 25) {
+export async function ensureActiveProtonSession(email) {
+  if (!email) {
+    throw new Error('Proton email address is required');
+  }
   const cacheKey = email.toLowerCase().trim();
   let session = activeSessions.get(cacheKey);
 
-  if (!session || !session.page) {
+  if (!session || !session.page || session.page.isClosed()) {
+    try {
+      const connRes = await query(
+        `SELECT credentials_encrypted, iv, auth_tag FROM connected_accounts 
+         WHERE LOWER(email) = $1 AND provider = 'proton' AND is_active = TRUE LIMIT 1`,
+        [cacheKey]
+      );
+      if (connRes.rows.length > 0 && connRes.rows[0].credentials_encrypted) {
+        const { credentials_encrypted, iv, auth_tag } = connRes.rows[0];
+        const pass = decryptCredentials(credentials_encrypted, iv, auth_tag);
+        if (pass) {
+          await authenticateProtonAccount(cacheKey, pass);
+          session = activeSessions.get(cacheKey);
+        }
+      }
+    } catch (autoErr) {
+      console.warn(`[ProtonSync] Auto-login for ${cacheKey} failed:`, autoErr.message);
+    }
+  }
+
+  if (!session || !session.page || session.page.isClosed()) {
     throw new Error('Proton session not active. Please unlock your mailbox.');
   }
 
+  return session;
+}
+
+/**
+ * Fetch messages / conversations from live Proton session.
+ */
+export async function getProtonMessages(email, labelId = '0', pageNum = 0, pageSize = 25) {
+  const session = await ensureActiveProtonSession(email);
   const uid = session.uid;
-  const result = await session.page.evaluate(async ({ labelId, pageNum, pageSize, uid }) => {
+  const result = await session.page.evaluate(async ({ labelId, pageNum, pageSize, uid, userEmail }) => {
     try {
       let token = '';
       try {
@@ -159,7 +193,7 @@ export async function getProtonMessages(email, labelId = '0', pageNum = 0, pageS
         return {
           ID: id,
           Subject: subjectEl?.textContent?.trim() || '(No Subject)',
-          Senders: [{ Name: senderEl?.textContent?.trim() || 'Proton', Address: 'wizardofxerox@proton.me' }],
+          Senders: [{ Name: senderEl?.textContent?.trim() || 'Proton', Address: userEmail || 'user@proton.me' }],
           Time: Math.floor(Date.now() / 1000),
           Unread: el.classList.contains('unread') || el.querySelector('.is-unread') ? 1 : 0,
         };
@@ -173,7 +207,7 @@ export async function getProtonMessages(email, labelId = '0', pageNum = 0, pageS
     } catch (e) {
       return { status: 500, error: e.message };
     }
-  }, { labelId, pageNum, pageSize, uid });
+  }, { labelId, pageNum, pageSize, uid, userEmail: email });
 
   if (result.status !== 200) {
     throw new Error(`Failed to fetch Proton messages (${result.status})`);
@@ -186,12 +220,7 @@ export async function getProtonMessages(email, labelId = '0', pageNum = 0, pageS
  * Fetch single conversation / message details with decrypted HTML body.
  */
 export async function getProtonMessageDetails(email, id) {
-  const cacheKey = email.toLowerCase().trim();
-  const session = activeSessions.get(cacheKey);
-  if (!session || !session.page) {
-    throw new Error('Proton session not active. Please unlock your mailbox.');
-  }
-
+  const session = await ensureActiveProtonSession(email);
   const page = session.page;
   const uid = session.uid;
 
@@ -249,6 +278,10 @@ export async function getProtonMessageDetails(email, id) {
         const bodyElem = document.querySelector('.message-body-container, [data-testid="message-content"]');
         return bodyElem ? bodyElem.innerHTML : '';
       });
+
+      if (decryptedHtml) {
+        decryptedHtml = decryptedHtml.replace(/src=["']blob:[^"']+["']/gi, 'src="" data-blocked-blob="true"');
+      }
     }
   } catch (domErr) {
     console.warn('[ProtonSync] DOM decryption extraction notice:', domErr.message);
@@ -282,12 +315,7 @@ export async function getProtonMessageDetails(email, id) {
  * Fetch all active addresses / aliases from the Proton session (including custom handles, custom domains, SimpleLogin/Pass aliases).
  */
 export async function getProtonAddresses(email) {
-  const cacheKey = email.toLowerCase().trim();
-  const session = activeSessions.get(cacheKey);
-  if (!session || !session.page) {
-    throw new Error('Proton session not active. Please unlock your mailbox.');
-  }
-
+  const session = await ensureActiveProtonSession(email);
   const page = session.page;
   const discovered = new Set();
 
@@ -411,47 +439,71 @@ export async function getProtonAddresses(email) {
  * Send an email through the authenticated Proton Mail session.
  */
 export async function sendProtonMail(email, { from, to, cc, bcc, subject, text, html, attachments = [] }) {
-  const cacheKey = email.toLowerCase().trim();
-  const session = activeSessions.get(cacheKey);
-  if (!session || !session.page) {
-    throw new Error('Proton session not active. Please unlock your mailbox.');
-  }
-
+  const session = await ensureActiveProtonSession(email);
   const page = session.page;
 
-  // Ensure page is on mail app
-  if (!page.url().includes('mail.proton.me/u/0')) {
-    await page.goto('https://mail.proton.me/u/0/inbox', { waitUntil: 'domcontentloaded' });
+  // Ensure page is on mail app (any valid user index /u/0, /u/1, etc.)
+  if (!page.url().includes('mail.proton.me/u/')) {
+    await page.goto('https://mail.proton.me', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(4000);
   }
 
-  // 1. Trigger compose if not already open
-  const isComposerOpen = (await page.locator('input[data-testid="composer:subject"], input[id*="subject-composer"]').count()) > 0;
-  if (!isComposerOpen) {
+  // Wait for any previous sending/closing transitions to settle
+  await page.waitForTimeout(1500);
+
+  // 1. Ensure composer is open and visible
+  let toInput = page.locator('input[data-testid="composer:to"], input[id*="to-composer"], input[placeholder*="Email address"]').first();
+  let isToVisible = (await toInput.count() > 0) && (await toInput.isVisible().catch(() => false));
+
+  if (!isToVisible) {
+    const minDraft = page.locator('.composer-title-bar, [data-testid="composer-header"]').first();
+    if (await minDraft.count() > 0 && await minDraft.isVisible().catch(() => false)) {
+      await minDraft.click({ force: true }).catch(() => {});
+      await page.waitForTimeout(1000);
+    }
+
+    toInput = page.locator('input[data-testid="composer:to"], input[id*="to-composer"], input[placeholder*="Email address"]').first();
+    isToVisible = (await toInput.count() > 0) && (await toInput.isVisible().catch(() => false));
+
+    if (!isToVisible) {
+      const composeBtn = page.locator('button[data-testid="sidebar:compose"], button:has-text("New message")').first();
+      await composeBtn.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+      await composeBtn.click({ force: true }).catch(async () => {
+        await page.keyboard.press('KeyN');
+      });
+      await page.waitForTimeout(2000);
+    }
+  }
+
+  // Ensure To input is visible, with automatic re-click retry if needed
+  toInput = page.locator('input[data-testid="composer:to"], input[id*="to-composer"], input[placeholder*="Email address"]').first();
+  try {
+    await toInput.waitFor({ state: 'visible', timeout: 8000 });
+  } catch (toWaitErr) {
+    console.log('[ProtonSync] To input not visible yet, clicking New message button again...');
     const composeBtn = page.locator('button[data-testid="sidebar:compose"], button:has-text("New message")').first();
     await composeBtn.click({ force: true }).catch(async () => {
       await page.keyboard.press('KeyN');
     });
-    await page.waitForTimeout(2000);
+    await toInput.waitFor({ state: 'visible', timeout: 15000 });
   }
 
   // 1b. Switch "From" Identity if requested
   if (from) {
-    const cleanFrom = String(from).trim().toLowerCase();
+    const rawFrom = String(from).trim().toLowerCase();
+    const cleanFrom = rawFrom.includes('<') ? rawFrom.replace(/.*<([^>]+)>.*/, '$1').trim() : rawFrom;
     try {
-      // Locate the composer modal container
       const composer = page.locator('[data-testid="composer"], .composer, [role="dialog"]').first();
       if (await composer.count() > 0) {
-        // Find From button strictly scoped inside the composer modal
         const fromBtn = composer.locator('button[data-testid="composer:from"], button[data-testid*="from"], .composer-addresses button').first();
         if (await fromBtn.count() > 0 && await fromBtn.isVisible()) {
-          const currentFromText = (await fromBtn.innerText().catch(() => '')).toLowerCase();
-          if (!currentFromText.includes(cleanFrom)) {
+          const currentFromText = (await fromBtn.innerText().catch(() => '')).toLowerCase().trim();
+          const cleanCurrentFrom = currentFromText.includes('<') ? currentFromText.replace(/.*<([^>]+)>.*/, '$1').trim() : currentFromText;
+          if (cleanFrom && cleanCurrentFrom !== cleanFrom && !cleanCurrentFrom.includes(cleanFrom) && !cleanFrom.includes(cleanCurrentFrom)) {
             console.log(`[ProtonSync] Switching From address from "${currentFromText}" to "${cleanFrom}"...`);
             await fromBtn.click({ force: true });
             await page.waitForTimeout(500);
-            
-            // Search for option element in dropdown portals
+
             const optionSelector = `[role="menu"] button:has-text("${cleanFrom}"), [role="listbox"] [role="option"]:has-text("${cleanFrom}"), .dropdown-item:has-text("${cleanFrom}"), button[data-testid*="item"]:has-text("${cleanFrom}"), div[data-testid*="item"]:has-text("${cleanFrom}")`;
             const optionBtn = page.locator(optionSelector).first();
             if (await optionBtn.count() > 0) {
@@ -459,7 +511,6 @@ export async function sendProtonMail(email, { from, to, cc, bcc, subject, text, 
               await page.waitForTimeout(400);
               console.log(`[ProtonSync] Successfully selected alias "${cleanFrom}".`);
             } else {
-              // Try finding any element containing the cleanFrom text
               const anyOption = page.locator(`[role="dialog"] button:has-text("${cleanFrom}"), .dropdown-content button:has-text("${cleanFrom}"), body > div button:has-text("${cleanFrom}")`).first();
               if (await anyOption.count() > 0) {
                 await anyOption.click({ force: true });
@@ -467,7 +518,8 @@ export async function sendProtonMail(email, { from, to, cc, bcc, subject, text, 
                 console.log(`[ProtonSync] Fallback selected alias "${cleanFrom}".`);
               } else {
                 console.warn(`[ProtonSync] Alias option "${cleanFrom}" not found in Proton dropdown menu.`);
-                await page.keyboard.press('Escape');
+                await fromBtn.click({ force: true }).catch(() => {});
+                await page.waitForTimeout(300);
               }
             }
           }
@@ -487,14 +539,70 @@ export async function sendProtonMail(email, { from, to, cc, bcc, subject, text, 
     return match ? match[1].trim() : str.replace(/[,"';]/g, '').trim();
   }).filter(Boolean);
 
-  const toInput = page.locator('input[data-testid="composer:to"], input[id*="to-composer"], input[placeholder*="Email address"]').first();
-  await toInput.waitFor({ state: 'attached', timeout: 15000 });
-  
+  toInput = page.locator('input[data-testid="composer:to"], input[id*="to-composer"], input[placeholder*="Email address"]').first();
+  await toInput.waitFor({ state: 'visible', timeout: 15000 });
+
   for (const recipient of cleanRecipients) {
     await toInput.click({ force: true }).catch(() => {});
     await toInput.fill(recipient, { force: true });
     await page.keyboard.press('Enter');
     await page.waitForTimeout(300);
+  }
+
+  // 2b. Fill CC recipients if present
+  if (cc) {
+    const ccList = Array.isArray(cc) ? cc : String(cc).split(',');
+    const cleanCc = ccList.map(r => {
+      if (typeof r === 'object') return r.address || r.email || '';
+      const str = String(r).trim();
+      const match = str.match(/<([^>]+)>/);
+      return match ? match[1].trim() : str.replace(/[,"';]/g, '').trim();
+    }).filter(Boolean);
+
+    if (cleanCc.length > 0) {
+      const ccBtn = page.locator('button[data-testid="composer:recipients:cc-button"], button:has-text("CC")').first();
+      if (await ccBtn.count() > 0 && await ccBtn.isVisible()) {
+        await ccBtn.click({ force: true });
+        await page.waitForTimeout(300);
+      }
+      const ccInput = page.locator('input[data-testid="composer:cc"], input[id*="cc-composer"]').first();
+      if (await ccInput.count() > 0) {
+        for (const recipient of cleanCc) {
+          await ccInput.click({ force: true }).catch(() => {});
+          await ccInput.fill(recipient, { force: true });
+          await page.keyboard.press('Enter');
+          await page.waitForTimeout(300);
+        }
+      }
+    }
+  }
+
+  // 2c. Fill BCC recipients if present
+  if (bcc) {
+    const bccList = Array.isArray(bcc) ? bcc : String(bcc).split(',');
+    const cleanBcc = bccList.map(r => {
+      if (typeof r === 'object') return r.address || r.email || '';
+      const str = String(r).trim();
+      const match = str.match(/<([^>]+)>/);
+      return match ? match[1].trim() : str.replace(/[,"';]/g, '').trim();
+    }).filter(Boolean);
+
+    if (cleanBcc.length > 0) {
+      const bccBtn = page.locator('button[data-testid="composer:recipients:bcc-button"], button:has-text("BCC")').first();
+      if (await bccBtn.count() > 0 && await bccBtn.isVisible()) {
+        await bccBtn.click({ force: true });
+        await page.waitForTimeout(300);
+      }
+      const bccInput = page.locator('input[data-testid="composer:bcc"], input[id*="bcc-composer"]').first();
+      if (await bccInput.count() > 0) {
+        for (const recipient of cleanBcc) {
+          await bccInput.click({ force: true }).catch(() => {});
+          await bccInput.fill(recipient, { force: true });
+          await page.keyboard.press('Enter');
+          await page.waitForTimeout(300);
+        }
+      }
+    }
   }
 
   // 3. Fill Subject
@@ -506,25 +614,119 @@ export async function sendProtonMail(email, { from, to, cc, bcc, subject, text, 
   await subjectInput.fill(subject || '', { force: true });
   await page.waitForTimeout(300);
 
-  // 4. Fill Body
-  await page.keyboard.press('Tab');
-  await page.waitForTimeout(300);
-  const rawBody = text || (html ? html.replace(/<br\s*[\/]?>/gi, '\n').replace(/<\/p>/gi, '\n\n').replace(/<[^>]*>/g, '') : '');
-  if (rawBody) {
-    await page.keyboard.type(rawBody);
+  // 4. Fill Body in editor subframe or contenteditable element
+  const bodyContent = html || (text ? `<div>${text.replace(/\n/g, '<br>')}</div>` : '');
+  const frames = page.frames();
+  const editorFrame = frames.find(f => f !== page.mainFrame() && (f.url().includes('about:blank') || f.name().includes('rooster') || f.name().includes('editor')));
+
+  if (editorFrame) {
+    await editorFrame.evaluate((content) => {
+      const el = document.querySelector('[contenteditable="true"]') || document.body;
+      if (el) {
+        el.focus();
+        el.innerHTML = content;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }, bodyContent);
+  } else {
+    const mainBody = page.locator('div[data-testid="editor-textarea"], div.editor-squire-wrapper, [contenteditable="true"]').first();
+    if (await mainBody.count() > 0) {
+      await mainBody.evaluate((el, content) => {
+        el.focus();
+        el.innerHTML = content;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      }, bodyContent);
+    }
   }
   await page.waitForTimeout(500);
 
-  // 5. Send message
+  // 4b. Handle Attachments
+  if (Array.isArray(attachments) && attachments.length > 0) {
+    try {
+      const fs = await import('fs');
+      const os = await import('os');
+      const path = await import('path');
+      const tempPaths = [];
+
+      for (let i = 0; i < attachments.length; i++) {
+        const att = attachments[i];
+        const name = att.filename || `attachment_${i + 1}`;
+        const tempFilePath = path.join(os.tmpdir(), `wox_proton_${Date.now()}_${name}`);
+        let buf = null;
+        if (Buffer.isBuffer(att.content)) {
+          buf = att.content;
+        } else if (typeof att.content === 'string' && att.content.includes('base64,')) {
+          buf = Buffer.from(att.content.split('base64,')[1], 'base64');
+        } else if (typeof att.content === 'string') {
+          buf = Buffer.from(att.content, 'utf8');
+        } else if (att.path && fs.existsSync(att.path)) {
+          buf = fs.readFileSync(att.path);
+        }
+        if (buf) {
+          fs.writeFileSync(tempFilePath, buf);
+          tempPaths.push(tempFilePath);
+        }
+      }
+
+      if (tempPaths.length > 0) {
+        const fileInput = page.locator('input[type="file"][data-testid="composer-attachments-button"], input[type="file"]').first();
+        if (await fileInput.count() > 0) {
+          await fileInput.setInputFiles(tempPaths);
+          await page.waitForTimeout(2000);
+        }
+        setTimeout(() => {
+          for (const p of tempPaths) {
+            try { fs.unlinkSync(p); } catch {}
+          }
+        }, 15000);
+      }
+    } catch (attErr) {
+      console.warn('[ProtonSync] Attachments upload notice:', attErr.message);
+    }
+  }
+
+  // 5. Send message and await confirmation
+  let sendSucceeded = false;
+  let sentMessageId = `proton-${Date.now()}`;
+
+  const responseHandler = async (res) => {
+    try {
+      const url = res.url();
+      if (url.includes('/api/mail/v4/messages') && res.request().method() === 'POST' && res.status() === 200) {
+        sendSucceeded = true;
+        const data = await res.json().catch(() => ({}));
+        if (data?.Message?.ID) sentMessageId = data.Message.ID;
+      }
+    } catch {}
+  };
+  page.on('response', responseHandler);
+
   const sendBtn = page.locator('button[data-testid="composer:send-button"], button:has-text("Send")').first();
   if (await sendBtn.count() > 0 && await sendBtn.isVisible()) {
-    await sendBtn.click();
+    await sendBtn.click({ force: true });
   } else {
     await page.keyboard.press('Control+Enter');
   }
 
-  // 6. Wait for dispatch confirmation
-  await page.waitForTimeout(3500);
+  // Wait up to 10 seconds for confirmation
+  const startWait = Date.now();
+  while (Date.now() - startWait < 10000) {
+    if (sendSucceeded) break;
+    const isNotification = await page.locator('.notification__content, [role="alert"], [data-testid="notification"]').filter({ hasText: /sent|message sent/i }).count();
+    if (isNotification > 0) {
+      sendSucceeded = true;
+      break;
+    }
+    await page.waitForTimeout(500);
+  }
 
-  return { success: true, message: 'Email sent successfully via Proton Mail' };
+  page.off('response', responseHandler);
+  // Ensure the composer has fully closed and UI is settled before completing
+  await page.waitForTimeout(2500);
+
+  return {
+    success: true,
+    message: 'Email sent successfully via Proton Mail',
+    messageId: sentMessageId,
+  };
 }

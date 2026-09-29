@@ -28,6 +28,9 @@ import { up as m025Up } from './025_spam_learning_and_quotas.js';
 import { up as m026Up } from './026_compliance_archive_journal.js';
 import { up as m027Up } from './027_intelligence_and_controlled_attachments.js';
 import { up as m028Up } from './028_sieve_rules_and_search_index.js';
+import { up as m029Up } from './029_drip_automations_and_segments.js';
+import { up as m030Up } from './030_account_deletion_grace_period.js';
+import { up as m031Up } from './031_filters_and_spam_rules_alignment.js';
 
 /**
  * Simple migration runner.
@@ -64,6 +67,9 @@ const migrations = [
   { name: '026_compliance_archive_journal', up: m026Up },
   { name: '027_intelligence_and_controlled_attachments', up: m027Up },
   { name: '028_sieve_rules_and_search_index', up: m028Up },
+  { name: '029_drip_automations_and_segments', up: m029Up },
+  { name: '030_account_deletion_grace_period', up: m030Up },
+  { name: '031_filters_and_spam_rules_alignment', up: m031Up },
 ];
 
 async function run() {

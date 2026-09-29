@@ -88,8 +88,9 @@ Log-Msg "Node.js server verified healthy on http://localhost:3001."
 
 # 7. Start Cloudflare Tunnel for mail.wox.world in the background
 Log-Msg "Starting Cloudflare Tunnel for mail.wox.world..."
-$tunnelProc = Start-Process "H:\Ideas\Mail\cloudflared.exe" -ArgumentList "tunnel run 2b3bde6c-8fb8-431c-bd2b-fceef5c93fe3" -WorkingDirectory "H:\Ideas\Mail" -WindowStyle Hidden -PassThru
-Log-Msg "Cloudflare Tunnel started (PID: $($tunnelProc.Id))."
+$cfBin = if (Test-Path "H:\Ideas\Mail\tools\cloudflared.exe") { "H:\Ideas\Mail\tools\cloudflared.exe" } elseif (Test-Path "C:\Program Files (x86)\cloudflared\cloudflared.exe") { "C:\Program Files (x86)\cloudflared\cloudflared.exe" } else { "cloudflared.exe" }
+$tunnelProc = Start-Process $cfBin -ArgumentList "tunnel run 2b3bde6c-8fb8-431c-bd2b-fceef5c93fe3" -WorkingDirectory "H:\Ideas\Mail" -WindowStyle Hidden -PassThru
+Log-Msg "Cloudflare Tunnel started using $cfBin (PID: $($tunnelProc.Id))."
 
 # 8. Verify remote HTTPS connectivity
 Start-Sleep -Seconds 5
