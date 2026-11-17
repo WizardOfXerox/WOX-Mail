@@ -2,10 +2,634 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { useDebounce } from '../../shared/hooks.js';
 import { formatDate } from '../../shared/utils/formatters.js';
 import { decodeMimeWords, cleanEmailAddress, cleanSenderName, cleanSnippet } from '../../shared/utils/mimeDecoder.js';
+import { useSwipeGesture } from '../../shared/hooks/useSwipeGesture.js';
+import { cacheMessages, getCachedMessages } from '../../services/offlineStore.js';
 import BatchToolbar from './BatchToolbar.jsx';
 import ContextMenu from './ContextMenu.jsx';
 import ReadReceiptIndicator from './ReadReceiptIndicator.jsx';
 import { getFolderIcon } from './Sidebar.jsx';
+import { useIntl } from '../../i18n/IntlProvider.jsx';
+
+/**
+ * Normalizes subject for conversation grouping by removing Re:, Fwd:, [EXTERNAL], [Spam], etc.
+ */
+export function normalizeSubject(subject = '') {
+  let clean = decodeMimeWords(subject || '').trim();
+  const prefixRegex = /^(\s*(?:\[[^\]]+\]\s*)*(?:(?:re|fwd|fw|aw|wg|sv|vs)(?:\[\d+\])?\s*:\s*))+/i;
+  let prev;
+  do {
+    prev = clean;
+    clean = clean.replace(prefixRegex, '').trim();
+    clean = clean.replace(/^\[(external|spam|bulk|mailinglist|security|phishing|alert)\]\s*/i, '').trim();
+  } while (clean !== prev && clean.length > 0);
+  return clean.toLowerCase();
+}
+
+/**
+ * Individual Swipeable Message Card with Mobile Touch Gestures
+ */
+function SwipeableMessageCard({
+  msg,
+  layoutMode,
+  selectedUid,
+  selectedUids,
+  isMultiSelectActive,
+  onStar,
+  onDelete,
+  onBatchArchive,
+  onBatchDelete,
+  handleRowClick,
+  handleRowContextMenu,
+  handleTouchStart,
+  handleTouchEnd,
+  handleTouchMove,
+  toggleSelect,
+  renderOutboxBadge,
+  handleRetryOutbox,
+  folder,
+  isNestedChild = false,
+}) {
+  const { onTouchStart, onTouchMove, onTouchEnd, swipeOffset } = useSwipeGesture({
+    threshold: 70,
+    onSwipeRight: () => {
+      if (onBatchArchive) onBatchArchive([msg.uid]);
+      else if (window.WoxToast) window.WoxToast.info('Archived message');
+    },
+    onSwipeLeft: () => {
+      if (onDelete) onDelete(msg.uid);
+      else if (onBatchDelete) onBatchDelete([msg.uid]);
+    },
+  });
+
+  const isSwiping = swipeOffset !== 0;
+
+  const combinedTouchStart = (e) => {
+    onTouchStart(e);
+    if (handleTouchStart) handleTouchStart(e, msg);
+  };
+
+  const combinedTouchMove = (e) => {
+    onTouchMove(e);
+    if (handleTouchMove) handleTouchMove(e);
+  };
+
+  const combinedTouchEnd = (e) => {
+    onTouchEnd(e);
+    if (handleTouchEnd) handleTouchEnd(e);
+  };
+
+  const isOutboxItem = msg.isOutbox || folder === 'Outbox';
+  let fromName = '';
+  let fromEmail = '';
+
+  if (isOutboxItem) {
+    const toObj = msg.to?.[0];
+    const addr = cleanEmailAddress(typeof toObj === 'object' ? toObj.address : toObj);
+    const rawName = typeof toObj === 'object' ? toObj.name : '';
+    const name = cleanSenderName(rawName, addr);
+    fromName = name && name !== addr ? `To: ${name}` : `To: ${addr || 'Recipient'}`;
+    fromEmail = addr && name && name !== addr ? addr : '';
+  } else {
+    const rawName = msg.from?.name || '';
+    const rawAddr = msg.from?.address || '';
+    const cleanedAddr = cleanEmailAddress(rawAddr);
+    const cleanedName = cleanSenderName(rawName, cleanedAddr);
+    fromName = cleanedName || cleanedAddr || 'Unknown';
+    fromEmail = cleanedAddr && cleanedName && cleanedName.toLowerCase() !== cleanedAddr.toLowerCase() ? cleanedAddr : '';
+  }
+
+  const fromTitle = fromEmail ? `${fromName} <${fromEmail}>` : fromName;
+  const isStarred = Boolean(msg.isStarred || msg.flags?.includes('\\Flagged') || msg.starred);
+
+  return (
+    <div
+      className="swipeable-card-wrapper"
+      style={{
+        position: 'relative',
+        overflow: 'hidden',
+        ...(isNestedChild ? { marginLeft: '1.25rem', borderLeft: '2px solid var(--color-primary-light, #a78bfa)', borderRadius: '0 var(--radius-sm) var(--radius-sm) 0' } : {}),
+      }}
+    >
+      {/* Swipe Right Indicator: Green Archive */}
+      {swipeOffset > 0 && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            bottom: 0,
+            width: '100%',
+            backgroundColor: '#16a34a',
+            display: 'flex',
+            alignItems: 'center',
+            paddingLeft: '1.25rem',
+            color: '#ffffff',
+            fontWeight: 700,
+            fontSize: '0.85rem',
+            gap: '0.5rem',
+            zIndex: 1,
+          }}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>
+          <span>Archive</span>
+        </div>
+      )}
+
+      {/* Swipe Left Indicator: Red Delete */}
+      {swipeOffset < 0 && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            width: '100%',
+            backgroundColor: '#dc2626',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            paddingRight: '1.25rem',
+            color: '#ffffff',
+            fontWeight: 700,
+            fontSize: '0.85rem',
+            gap: '0.5rem',
+            zIndex: 1,
+          }}
+        >
+          <span>Delete</span>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        </div>
+      )}
+
+      <div
+        className={[
+          'list-item',
+          layoutMode === 'horizontal' || layoutMode === 'list' ? 'list-item-row' : 'list-item-card',
+          msg.isRead ? '' : 'unread',
+          selectedUid === msg.uid ? 'selected' : '',
+          selectedUids?.has(msg.uid) ? 'batch-selected' : '',
+          msg.status === 'failed' ? 'outbox-item-failed' : '',
+        ].filter(Boolean).join(' ')}
+        style={{
+          position: 'relative',
+          zIndex: 2,
+          transform: isSwiping ? `translateX(${swipeOffset}px)` : 'none',
+          transition: isSwiping ? 'none' : 'transform 0.2s cubic-bezier(0.25, 1, 0.5, 1)',
+          background: isNestedChild ? 'rgba(255, 255, 255, 0.02)' : 'var(--color-bg-card, rgba(18, 14, 30, 0.75))',
+        }}
+        onClick={() => {
+          if (Math.abs(swipeOffset) < 10 && handleRowClick) handleRowClick(msg.uid);
+        }}
+        onContextMenu={(e) => handleRowContextMenu && handleRowContextMenu(e, msg)}
+        onTouchStart={combinedTouchStart}
+        onTouchEnd={combinedTouchEnd}
+        onTouchMove={combinedTouchMove}
+        tabIndex={0}
+        role="button"
+        aria-label={`Email to ${fromTitle}, subject: ${decodeMimeWords(msg.subject) || '(no subject)'}`}
+      >
+        {isMultiSelectActive && (
+          <input
+            type="checkbox"
+            className="list-item-check"
+            checked={Boolean(selectedUids?.has(msg.uid))}
+            onChange={(e) => toggleSelect && toggleSelect(msg.uid, e)}
+            onClick={(e) => e.stopPropagation()}
+            aria-label={`Select message`}
+            style={{
+              marginRight: '0.35rem',
+              cursor: 'pointer',
+              accentColor: 'var(--color-primary)',
+              animation: 'fadeIn 0.15s ease-out'
+            }}
+          />
+        )}
+        <button
+          type="button"
+          className={`list-item-star ${isStarred ? 'starred' : ''}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (onStar) onStar(msg.uid);
+          }}
+          title={isStarred ? 'Unstar message (s)' : 'Star message (s)'}
+          aria-label={isStarred ? 'Unstar message' : 'Star message'}
+        >
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill={isStarred ? '#f59e0b' : 'none'}
+            stroke={isStarred ? '#f59e0b' : 'currentColor'}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+          </svg>
+        </button>
+
+        {layoutMode === 'horizontal' || layoutMode === 'list' ? (
+          <>
+            <span className="list-item-from" title={fromTitle} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              {msg.accountBadge && (
+                <span
+                  style={{
+                    fontSize: '0.6875rem',
+                    fontWeight: 700,
+                    padding: '0.1rem 0.4rem',
+                    borderRadius: 'var(--radius-pill)',
+                    backgroundColor: `${msg.accountBadge.color || 'var(--color-primary)'}22`,
+                    color: msg.accountBadge.color || 'var(--color-primary-light)',
+                    border: `1px solid ${msg.accountBadge.color || 'var(--color-primary)'}44`,
+                    flexShrink: 0,
+                  }}
+                >
+                  {msg.accountBadge.name}
+                </span>
+              )}
+              <span className="list-item-from-name">{fromName}</span>
+              {fromEmail && (
+                <span className="list-item-from-email text-tertiary">
+                  &lt;{fromEmail}&gt;
+                </span>
+              )}
+            </span>
+            <div className="list-item-subject-wrap" style={{ display: 'flex', alignItems: 'center' }}>
+              {renderOutboxBadge && renderOutboxBadge(msg)}
+              <span className="list-item-subject">{decodeMimeWords(msg.subject) || '(no subject)'}</span>
+              {msg.snippet && (
+                <span className="list-item-snippet"> — {cleanSnippet(msg.snippet)}</span>
+              )}
+            </div>
+            {msg.status === 'failed' && (
+              <button
+                type="button"
+                className="btn btn-primary btn-xs"
+                style={{ padding: '0.15rem 0.5rem', fontSize: '0.7rem', marginRight: '0.5rem', flexShrink: 0 }}
+                onClick={(e) => handleRetryOutbox && handleRetryOutbox(msg.outboxId, e)}
+              >
+                Retry
+              </button>
+            )}
+            {msg.hasAttachments && (
+              <span className="list-item-attachment" title="Has attachments" style={{ display: 'inline-flex', alignItems: 'center', opacity: 0.65 }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+              </span>
+            )}
+            {(msg.trackingInfo || isOutboxItem || folder === 'Sent') && (
+              <ReadReceiptIndicator
+                openedAt={msg.trackingInfo?.opened_at || msg.opened_at}
+                openCount={msg.trackingInfo?.open_count || msg.open_count || (msg.opened_at ? 1 : 0)}
+              />
+            )}
+            <span className="list-item-date">{formatDate(msg.date)}</span>
+          </>
+        ) : (
+          <>
+            <div className="list-item-content">
+              <div className="list-item-top">
+                <span className="list-item-from" title={fromTitle} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  {msg.accountBadge && (
+                    <span
+                      style={{
+                        fontSize: '0.65rem',
+                        fontWeight: 700,
+                        padding: '0.08rem 0.35rem',
+                        borderRadius: 'var(--radius-pill)',
+                        backgroundColor: `${msg.accountBadge.color || 'var(--color-primary)'}22`,
+                        color: msg.accountBadge.color || 'var(--color-primary-light)',
+                        border: `1px solid ${msg.accountBadge.color || 'var(--color-primary)'}44`,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {msg.accountBadge.name}
+                    </span>
+                  )}
+                  <span className="list-item-from-name">{fromName}</span>
+                  {fromEmail && (
+                    <span className="list-item-from-email text-tertiary">
+                      &lt;{fromEmail}&gt;
+                    </span>
+                  )}
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  {(msg.trackingInfo || isOutboxItem || folder === 'Sent') && (
+                    <ReadReceiptIndicator
+                      openedAt={msg.trackingInfo?.opened_at || msg.opened_at}
+                      openCount={msg.trackingInfo?.open_count || msg.open_count || (msg.opened_at ? 1 : 0)}
+                    />
+                  )}
+                  <span className="list-item-date">{formatDate(msg.date)}</span>
+                </div>
+              </div>
+              <div className="list-item-subject" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
+                {renderOutboxBadge && renderOutboxBadge(msg)}
+                <span>{decodeMimeWords(msg.subject) || '(no subject)'}</span>
+              </div>
+              {msg.snippet && <div className="list-item-snippet">{cleanSnippet(msg.snippet)}</div>}
+              {msg.status === 'failed' && (
+                <div style={{ marginTop: '0.35rem' }}>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-xs"
+                    style={{ padding: '0.15rem 0.5rem', fontSize: '0.7rem' }}
+                    onClick={(e) => handleRetryOutbox && handleRetryOutbox(msg.outboxId, e)}
+                  >
+                    Retry Delivery
+                  </button>
+                </div>
+              )}
+            </div>
+            {msg.hasAttachments && (
+              <span className="list-item-attachment" title="Has attachments" style={{ display: 'inline-flex', alignItems: 'center', opacity: 0.65 }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+              </span>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Threaded Group Card with Count Badge, Participants, Expand/Collapse & Mobile Swipe
+ */
+function SwipeableThreadCard({
+  thread,
+  isExpanded,
+  onToggleExpand,
+  layoutMode,
+  selectedUid,
+  selectedUids,
+  isMultiSelectActive,
+  onSelectThread,
+  onStar,
+  onDelete,
+  onBatchArchive,
+  onBatchDelete,
+  handleRowContextMenu,
+  handleTouchStart,
+  handleTouchEnd,
+  handleTouchMove,
+  toggleSelect,
+  renderOutboxBadge,
+  handleRetryOutbox,
+  folder,
+}) {
+  const latestMsg = thread.latestMessage || thread.messages[thread.messages.length - 1];
+  const isSelected = thread.uids.includes(selectedUid);
+  const isStarred = thread.isStarred;
+
+  const { onTouchStart, onTouchMove, onTouchEnd, swipeOffset } = useSwipeGesture({
+    threshold: 70,
+    onSwipeRight: () => {
+      if (onBatchArchive) onBatchArchive(thread.uids);
+      else if (window.WoxToast) window.WoxToast.info('Archived thread');
+    },
+    onSwipeLeft: () => {
+      if (onBatchDelete) onBatchDelete(thread.uids);
+      else if (onDelete) onDelete(latestMsg.uid);
+    },
+  });
+
+  const isSwiping = swipeOffset !== 0;
+
+  return (
+    <div className="thread-card-container" style={{ position: 'relative' }}>
+      <div className="swipeable-card-wrapper" style={{ position: 'relative', overflow: 'hidden' }}>
+        {/* Swipe Right Indicator: Archive entire thread */}
+        {swipeOffset > 0 && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              bottom: 0,
+              width: '100%',
+              backgroundColor: '#16a34a',
+              display: 'flex',
+              alignItems: 'center',
+              paddingLeft: '1.25rem',
+              color: '#ffffff',
+              fontWeight: 700,
+              fontSize: '0.85rem',
+              gap: '0.5rem',
+              zIndex: 1,
+            }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>
+            <span>Archive Thread ({thread.count})</span>
+          </div>
+        )}
+
+        {/* Swipe Left Indicator: Delete entire thread */}
+        {swipeOffset < 0 && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              bottom: 0,
+              width: '100%',
+              backgroundColor: '#dc2626',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              paddingRight: '1.25rem',
+              color: '#ffffff',
+              fontWeight: 700,
+              fontSize: '0.85rem',
+              gap: '0.5rem',
+              zIndex: 1,
+            }}
+          >
+            <span>Delete Thread ({thread.count})</span>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </div>
+        )}
+
+        <div
+          className={[
+            'list-item',
+            'list-item-thread',
+            layoutMode === 'horizontal' || layoutMode === 'list' ? 'list-item-row' : 'list-item-card',
+            thread.hasUnread ? 'unread' : '',
+            isSelected ? 'selected' : '',
+          ].filter(Boolean).join(' ')}
+          style={{
+            position: 'relative',
+            zIndex: 2,
+            transform: isSwiping ? `translateX(${swipeOffset}px)` : 'none',
+            transition: isSwiping ? 'none' : 'transform 0.2s cubic-bezier(0.25, 1, 0.5, 1)',
+            background: 'var(--color-bg-card, rgba(18, 14, 30, 0.75))',
+            borderLeft: thread.count > 1 ? '3px solid var(--color-primary-light, #c084fc)' : undefined,
+          }}
+          onClick={() => {
+            if (Math.abs(swipeOffset) < 10 && onSelectThread) onSelectThread(thread);
+          }}
+          onContextMenu={(e) => handleRowContextMenu && handleRowContextMenu(e, latestMsg)}
+          onTouchStart={onTouchStart}
+          onTouchEnd={onTouchEnd}
+          onTouchMove={onTouchMove}
+          tabIndex={0}
+          role="button"
+          aria-label={`Conversation: ${thread.participants.join(', ')}, ${thread.count} messages`}
+        >
+          {isMultiSelectActive && (
+            <input
+              type="checkbox"
+              className="list-item-check"
+              checked={thread.uids.every((uid) => selectedUids?.has(uid))}
+              onChange={(e) => {
+                e.stopPropagation();
+                if (toggleSelect) {
+                  thread.uids.forEach((uid) => toggleSelect(uid, e));
+                }
+              }}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                marginRight: '0.35rem',
+                cursor: 'pointer',
+                accentColor: 'var(--color-primary)',
+              }}
+            />
+          )}
+
+          <button
+            type="button"
+            className={`list-item-star ${isStarred ? 'starred' : ''}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onStar) onStar(latestMsg.uid);
+            }}
+            title={isStarred ? 'Unstar thread' : 'Star thread'}
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill={isStarred ? '#f59e0b' : 'none'}
+              stroke={isStarred ? '#f59e0b' : 'currentColor'}
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+            </svg>
+          </button>
+
+          {/* Expand/Collapse Chevron Button */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleExpand(thread.threadId);
+            }}
+            title={isExpanded ? 'Collapse thread messages' : 'Expand thread messages in list'}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--color-primary-light, #c084fc)',
+              cursor: 'pointer',
+              padding: '0 0.3rem',
+              display: 'inline-flex',
+              alignItems: 'center',
+              transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+              transition: 'transform 0.15s ease',
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="9 18 15 12 9 6"/>
+            </svg>
+          </button>
+
+          {/* Thread Count Badge */}
+          <span
+            className="badge badge-purple"
+            style={{
+              fontSize: '0.7rem',
+              fontWeight: 700,
+              padding: '0.1rem 0.45rem',
+              borderRadius: 'var(--radius-pill)',
+              marginRight: '0.35rem',
+              flexShrink: 0,
+            }}
+          >
+            ({thread.count})
+          </span>
+
+          {layoutMode === 'horizontal' || layoutMode === 'list' ? (
+            <>
+              <span className="list-item-from" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <span className="list-item-from-name" style={{ fontWeight: thread.hasUnread ? 700 : 600 }}>
+                  {thread.participants.join(', ')}
+                </span>
+              </span>
+              <div className="list-item-subject-wrap" style={{ display: 'flex', alignItems: 'center' }}>
+                <span className="list-item-subject">{decodeMimeWords(thread.subject) || '(no subject)'}</span>
+                {latestMsg.snippet && (
+                  <span className="list-item-snippet"> — {cleanSnippet(latestMsg.snippet)}</span>
+                )}
+              </div>
+              {thread.hasAttachments && (
+                <span className="list-item-attachment" title="Thread has attachments" style={{ display: 'inline-flex', alignItems: 'center', opacity: 0.65 }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                </span>
+              )}
+              <span className="list-item-date">{formatDate(thread.latestDate)}</span>
+            </>
+          ) : (
+            <div className="list-item-content">
+              <div className="list-item-top">
+                <span className="list-item-from" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <span className="list-item-from-name" style={{ fontWeight: thread.hasUnread ? 700 : 600 }}>
+                    {thread.participants.join(', ')}
+                  </span>
+                </span>
+                <span className="list-item-date">{formatDate(thread.latestDate)}</span>
+              </div>
+              <div className="list-item-subject">
+                <span>{decodeMimeWords(thread.subject) || '(no subject)'}</span>
+              </div>
+              {latestMsg.snippet && <div className="list-item-snippet">{cleanSnippet(latestMsg.snippet)}</div>}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Expanded Child Messages inside Thread */}
+      {isExpanded && (
+        <div className="thread-nested-messages" style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '2px' }}>
+          {thread.messages.map((childMsg) => (
+            <SwipeableMessageCard
+              key={childMsg.uid}
+              msg={childMsg}
+              layoutMode={layoutMode}
+              selectedUid={selectedUid}
+              selectedUids={selectedUids}
+              isMultiSelectActive={isMultiSelectActive}
+              onStar={onStar}
+              onDelete={onDelete}
+              onBatchArchive={onBatchArchive}
+              onBatchDelete={onBatchDelete}
+              handleRowClick={() => onSelectThread(thread, childMsg.uid)}
+              handleRowContextMenu={handleRowContextMenu}
+              handleTouchStart={handleTouchStart}
+              handleTouchEnd={handleTouchEnd}
+              handleTouchMove={handleTouchMove}
+              toggleSelect={toggleSelect}
+              renderOutboxBadge={renderOutboxBadge}
+              handleRetryOutbox={handleRetryOutbox}
+              folder={folder}
+              isNestedChild={true}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function MessageList({
   messages = [],
@@ -20,6 +644,8 @@ export default function MessageList({
   onLayoutChange,
   dockOpen = false,
   onToggleDock,
+  user = null,
+  onOpenShortcuts,
   onClearFilter,
   onSelect,
   onStar,
@@ -41,6 +667,7 @@ export default function MessageList({
   isProtonLocked,
   onUnlockProton,
 }) {
+  const { t } = useIntl();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUids, setSelectedUids] = useState(new Set());
   const [isSelectionMode, setIsSelectionMode] = useState(false);
@@ -62,6 +689,28 @@ export default function MessageList({
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [showScrollTop, setShowScrollTop] = useState(false);
+
+  // Conversation Grouping (Threading) Mode
+  const [isThreaded, setIsThreaded] = useState(() => {
+    return localStorage.getItem('woxmail_threaded_mode') === 'true';
+  });
+  const [expandedThreadIds, setExpandedThreadIds] = useState(new Set());
+
+  const toggleThreadedMode = () => {
+    setIsThreaded((prev) => {
+      const next = !prev;
+      localStorage.setItem('woxmail_threaded_mode', String(next));
+      return next;
+    });
+  };
+
+  const toggleThreadExpand = (threadId) => {
+    setExpandedThreadIds((prev) => {
+      const next = new Set(prev);
+      next.has(threadId) ? next.delete(threadId) : next.add(threadId);
+      return next;
+    });
+  };
 
   // Sync page 1 messages to continuous stream when folder/filter/refresh changes
   useEffect(() => {
@@ -190,6 +839,112 @@ export default function MessageList({
     });
   }, [rawMessagesList, debouncedSearch]);
 
+  // Cache loaded messages to IndexedDB for offline reading
+  useEffect(() => {
+    if (rawMessagesList && rawMessagesList.length > 0 && folder) {
+      cacheMessages(folder, rawMessagesList).catch(() => {});
+    }
+  }, [rawMessagesList, folder]);
+
+  // Conversation Grouping / Threading Calculation
+  const threadedItems = useMemo(() => {
+    if (!isThreaded) return null;
+
+    const threadMap = new Map();
+    const msgIdToThreadKey = new Map();
+
+    for (const msg of filtered) {
+      const rawSubj = msg.subject || '';
+      const normSubj = normalizeSubject(rawSubj);
+      const msgId = msg.messageId ? String(msg.messageId).trim() : null;
+      const inReplyTo = msg.inReplyTo ? String(msg.inReplyTo).trim() : null;
+
+      let targetKey = null;
+
+      if (inReplyTo && msgIdToThreadKey.has(inReplyTo)) {
+        targetKey = msgIdToThreadKey.get(inReplyTo);
+      } else if (normSubj && threadMap.has(normSubj)) {
+        targetKey = normSubj;
+      }
+
+      if (!targetKey) {
+        targetKey = normSubj || `msg_${msg.uid || Math.random().toString(36).substr(2, 9)}`;
+      }
+
+      if (msgId) msgIdToThreadKey.set(msgId, targetKey);
+      if (inReplyTo && !msgIdToThreadKey.has(inReplyTo)) msgIdToThreadKey.set(inReplyTo, targetKey);
+
+      if (!threadMap.has(targetKey)) {
+        threadMap.set(targetKey, {
+          threadId: targetKey,
+          normalizedSubject: normSubj,
+          subject: rawSubj || '(no subject)',
+          messages: [],
+        });
+      }
+
+      threadMap.get(targetKey).messages.push(msg);
+    }
+
+    const threads = Array.from(threadMap.values()).map((thread) => {
+      const sorted = [...thread.messages].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+      const latestMessage = sorted[sorted.length - 1];
+
+      const participantSet = new Set();
+      const participantsList = [];
+      for (const m of sorted) {
+        const rawName = m.from?.name || '';
+        const rawAddr = cleanEmailAddress(m.from?.address || (typeof m.from === 'string' ? m.from : ''));
+        const name = cleanSenderName(rawName, rawAddr) || rawAddr || 'Unknown';
+        if (!participantSet.has(name)) {
+          participantSet.add(name);
+          participantsList.push(name);
+        }
+      }
+
+      const hasUnread = sorted.some((m) => !m.isRead);
+      const isStarred = sorted.some((m) => Boolean(m.isStarred || m.flags?.includes('\\Flagged') || m.starred));
+      const hasAttachments = sorted.some((m) => m.hasAttachments);
+      const uids = sorted.map((m) => m.uid);
+
+      return {
+        ...thread,
+        messages: sorted,
+        count: sorted.length,
+        latestMessage,
+        latestDate: latestMessage?.date || sorted[0]?.date,
+        participants: participantsList,
+        hasUnread,
+        isStarred,
+        hasAttachments,
+        uids,
+      };
+    });
+
+    threads.sort((a, b) => new Date(b.latestDate || 0) - new Date(a.latestDate || 0));
+    return threads;
+  }, [filtered, isThreaded]);
+
+  const handleSelectThread = (thread, specificUid = null) => {
+    if (isLongPressActiveRef.current) {
+      isLongPressActiveRef.current = false;
+      return;
+    }
+    const targetUid = specificUid || thread.latestMessage?.uid;
+    window.__woxmail_active_thread = thread;
+    try {
+      sessionStorage.setItem('woxmail_active_thread', JSON.stringify({
+        threadId: thread.threadId,
+        subject: thread.subject,
+        uids: thread.uids,
+        count: thread.count,
+        messages: thread.messages,
+      }));
+    } catch (err) {}
+    window.dispatchEvent(new CustomEvent('woxmail:active-thread-change', { detail: thread }));
+    if (targetUid) onSelect(targetUid);
+  };
+
   const toggleSelect = (uid, e) => {
     if (e) e.stopPropagation();
     setSelectedUids((prev) => {
@@ -270,6 +1025,9 @@ export default function MessageList({
     if (isMultiSelectActive) {
       toggleSelect(uid);
     } else {
+      window.__woxmail_active_thread = null;
+      try { sessionStorage.removeItem('woxmail_active_thread'); } catch (err) {}
+      window.dispatchEvent(new CustomEvent('woxmail:active-thread-change', { detail: null }));
       onSelect(uid);
     }
   };
@@ -534,11 +1292,11 @@ export default function MessageList({
 
   return (
     <section className="dashboard-list" aria-label="Messages list">
-      <div className="list-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 1rem', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', background: 'rgba(18, 14, 30, 0.75)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0, flex: 1 }}>
-          <h2 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, textTransform: 'capitalize', display: 'flex', alignItems: 'center', gap: '0.45rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--color-primary-light)' }}>{getFolderIcon(folder)}</span>
-            <span>{folder === '__all_inboxes' || folder === 'All Inboxes' ? 'All Inboxes' : folder}</span>
+      <div className="list-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', padding: '0.65rem 0.85rem', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', background: 'rgba(18, 14, 30, 0.75)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', minWidth: 0, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, flex: 1, overflow: 'hidden' }}>
+          <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, textTransform: 'capitalize', display: 'flex', alignItems: 'center', gap: '0.4rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--color-primary-light)', flexShrink: 0 }}>{getFolderIcon(folder)}</span>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{folder === '__all_inboxes' || folder === 'All Inboxes' ? t('nav.allInboxes', 'All Inboxes') : (folder === 'INBOX' ? t('nav.inbox', 'Inbox') : folder)}</span>
           </h2>
           {pagination?.total !== undefined && (
             <span style={{ fontSize: '0.75rem', color: 'var(--color-text-tertiary)', background: 'rgba(255, 255, 255, 0.06)', padding: '0.1rem 0.45rem', borderRadius: 'var(--radius-pill)', border: '1px solid var(--color-border-subtle)', flexShrink: 0 }}>
@@ -666,6 +1424,41 @@ export default function MessageList({
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/></svg>
             </button>
           )}
+
+          {onOpenShortcuts && (
+            <button
+              type="button"
+              className="layout-btn hide-mobile"
+              onClick={onOpenShortcuts}
+              title="Keyboard Shortcuts (?)"
+              aria-label="Keyboard Shortcuts"
+              style={{ marginLeft: 2, fontWeight: 700, fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              ?
+            </button>
+          )}
+
+          <a
+            href="/settings"
+            className="layout-btn hide-mobile"
+            title="Settings"
+            aria-label="Settings"
+            style={{ marginLeft: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none', color: 'inherit' }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </a>
+
+          {user?.is_admin && (
+            <a
+              href="/admin"
+              className="layout-btn hide-mobile"
+              title="Admin Control Panel"
+              aria-label="Admin Control Panel"
+              style={{ marginLeft: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none', color: 'var(--color-primary-light)' }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            </a>
+          )}
         </div>
       </div>
 
@@ -709,12 +1502,43 @@ export default function MessageList({
           ) : (
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><polyline points="9 11 12 14 22 4"/></svg>
           )}
-          <span>{selectedUids.size > 0 ? `${selectedUids.size} selected` : isSelectionMode ? 'Done' : 'Select'}</span>
+          <span>{selectedUids.size > 0 ? `${selectedUids.size} selected` : isSelectionMode ? 'Done' : t('mail.select', 'Select')}</span>
+        </button>
+
+        {/* Conversation Grouping (Threading) Toggle — placed in sub-header to prevent header overlap */}
+        <button
+          type="button"
+          className={`btn btn-ghost btn-xs ${isThreaded ? 'active' : ''}`}
+          onClick={toggleThreadedMode}
+          title={isThreaded ? 'Conversation View: Enabled (Click to show individual messages)' : 'Conversation View: Disabled (Click to group messages by thread)'}
+          aria-label="Toggle Conversation Threads"
+          style={{
+            height: 30,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.3rem',
+            padding: '0 0.55rem',
+            borderRadius: 'var(--radius-sm)',
+            border: isThreaded ? '1px solid var(--color-primary, #7c3aed)' : '1px solid var(--color-border)',
+            background: isThreaded ? 'var(--color-primary-glow, rgba(124, 58, 237, 0.2))' : 'var(--color-bg-hover)',
+            color: isThreaded ? 'var(--color-primary-light, #c084fc)' : 'var(--color-text-secondary)',
+            fontSize: '0.75rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            flexShrink: 0,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            <path d="M8 10h.01M12 10h.01M16 10h.01"/>
+          </svg>
+          <span>{t('mail.threads', 'Threads')}</span>
         </button>
 
         <input
           className="input"
-          placeholder="Filter messages in this folder..."
+          placeholder={t('mail.filterPlaceholder', 'Filter messages in this folder...')}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           style={{
@@ -853,223 +1677,87 @@ export default function MessageList({
               <span className="empty-icon" style={{ display: 'inline-flex', color: 'var(--color-text-tertiary)' }}>
                 <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
               </span>
-              <p>{searchQuery ? 'No matches found' : folder === 'Outbox' ? 'All outgoing emails have been delivered. Outbox is clear.' : `No messages in ${folder}`}</p>
+              <p>{searchQuery ? 'No matches found' : folder === 'Outbox' ? 'All outgoing emails have been delivered. Outbox is clear.' : t('mail.noMessagesInFolder', `No messages in ${folder === '__all_inboxes' || folder === 'All Inboxes' ? t('nav.allInboxes', 'All Inboxes') : (folder === 'INBOX' ? t('nav.inbox', 'Inbox') : folder)}`).replace('{folder}', folder === '__all_inboxes' || folder === 'All Inboxes' ? t('nav.allInboxes', 'All Inboxes') : (folder === 'INBOX' ? t('nav.inbox', 'Inbox') : folder))}</p>
             </div>
           )
-        ) : (
-          filtered.map((msg) => {
-            const isOutboxItem = msg.isOutbox || folder === 'Outbox';
-            let fromName = '';
-            let fromEmail = '';
-
-            if (isOutboxItem) {
-              const toObj = msg.to?.[0];
-              const addr = cleanEmailAddress(typeof toObj === 'object' ? toObj.address : toObj);
-              const rawName = typeof toObj === 'object' ? toObj.name : '';
-              const name = cleanSenderName(rawName, addr);
-              fromName = name && name !== addr ? `To: ${name}` : `To: ${addr || 'Recipient'}`;
-              fromEmail = addr && name && name !== addr ? addr : '';
-            } else {
-              const rawName = msg.from?.name || '';
-              const rawAddr = msg.from?.address || '';
-              const cleanedAddr = cleanEmailAddress(rawAddr);
-              const cleanedName = cleanSenderName(rawName, cleanedAddr);
-              fromName = cleanedName || cleanedAddr || 'Unknown';
-              fromEmail = cleanedAddr && cleanedName && cleanedName.toLowerCase() !== cleanedAddr.toLowerCase() ? cleanedAddr : '';
+        ) : isThreaded && threadedItems ? (
+          threadedItems.map((thread) => {
+            if (thread.count === 1) {
+              const msg = thread.latestMessage;
+              return (
+                <SwipeableMessageCard
+                  key={msg.uid}
+                  msg={msg}
+                  layoutMode={layoutMode}
+                  selectedUid={selectedUid}
+                  selectedUids={selectedUids}
+                  isMultiSelectActive={isMultiSelectActive}
+                  onStar={onStar}
+                  onDelete={onDelete}
+                  onBatchArchive={onBatchArchive}
+                  onBatchDelete={onBatchDelete}
+                  handleRowClick={handleRowClick}
+                  handleRowContextMenu={handleRowContextMenu}
+                  handleTouchStart={handleTouchStart}
+                  handleTouchEnd={handleTouchEnd}
+                  handleTouchMove={handleTouchMove}
+                  toggleSelect={toggleSelect}
+                  renderOutboxBadge={renderOutboxBadge}
+                  handleRetryOutbox={handleRetryOutbox}
+                  folder={folder}
+                />
+              );
             }
-
-            const fromTitle = fromEmail ? `${fromName} <${fromEmail}>` : fromName;
-
             return (
-              <div
-                key={msg.uid}
-                className={[
-                  'list-item',
-                  layoutMode === 'horizontal' || layoutMode === 'list' ? 'list-item-row' : 'list-item-card',
-                  msg.isRead ? '' : 'unread',
-                  selectedUid === msg.uid ? 'selected' : '',
-                  selectedUids.has(msg.uid) ? 'batch-selected' : '',
-                  msg.status === 'failed' ? 'outbox-item-failed' : '',
-                ].filter(Boolean).join(' ')}
-                onClick={() => handleRowClick(msg.uid)}
-                onContextMenu={(e) => handleRowContextMenu(e, msg)}
-                onTouchStart={(e) => handleTouchStart(e, msg)}
-                onTouchEnd={handleTouchEnd}
-                onTouchMove={handleTouchMove}
-                tabIndex={0}
-                role="button"
-                aria-label={`Email to ${fromTitle}, subject: ${decodeMimeWords(msg.subject) || '(no subject)'}`}
-              >
-                {/* Only display checkbox when multi-selection mode is active */}
-                {isMultiSelectActive && (
-                  <input
-                    type="checkbox"
-                    className="list-item-check"
-                    checked={selectedUids.has(msg.uid)}
-                    onChange={(e) => toggleSelect(msg.uid, e)}
-                    onClick={(e) => e.stopPropagation()}
-                    aria-label={`Select message`}
-                    style={{
-                      marginRight: '0.35rem',
-                      cursor: 'pointer',
-                      accentColor: 'var(--color-primary)',
-                      animation: 'fadeIn 0.15s ease-out'
-                    }}
-                  />
-                )}
-                {(() => {
-                  const isStarred = Boolean(msg.isStarred || msg.flags?.includes('\\Flagged') || msg.starred);
-                  return (
-                    <button
-                      type="button"
-                      className={`list-item-star ${isStarred ? 'starred' : ''}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (onStar) onStar(msg.uid);
-                      }}
-                      title={isStarred ? 'Unstar message (s)' : 'Star message (s)'}
-                      aria-label={isStarred ? 'Unstar message' : 'Star message'}
-                    >
-                      <svg
-                        width="15"
-                        height="15"
-                        viewBox="0 0 24 24"
-                        fill={isStarred ? '#f59e0b' : 'none'}
-                        stroke={isStarred ? '#f59e0b' : 'currentColor'}
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                      </svg>
-                    </button>
-                  );
-                })()}
-
-                {layoutMode === 'horizontal' || layoutMode === 'list' ? (
-                  /* Horizontal Single-Line Desktop Row (Gmail/Outlook style) */
-                  <>
-                    <span className="list-item-from" title={fromTitle} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                      {msg.accountBadge && (
-                        <span
-                          style={{
-                            fontSize: '0.6875rem',
-                            fontWeight: 700,
-                            padding: '0.1rem 0.4rem',
-                            borderRadius: 'var(--radius-pill)',
-                            backgroundColor: `${msg.accountBadge.color || 'var(--color-primary)'}22`,
-                            color: msg.accountBadge.color || 'var(--color-primary-light)',
-                            border: `1px solid ${msg.accountBadge.color || 'var(--color-primary)'}44`,
-                            flexShrink: 0,
-                          }}
-                        >
-                          {msg.accountBadge.name}
-                        </span>
-                      )}
-                      <span className="list-item-from-name">{fromName}</span>
-                      {fromEmail && (
-                        <span className="list-item-from-email text-tertiary">
-                          &lt;{fromEmail}&gt;
-                        </span>
-                      )}
-                    </span>
-                    <div className="list-item-subject-wrap" style={{ display: 'flex', alignItems: 'center' }}>
-                      {renderOutboxBadge(msg)}
-                      <span className="list-item-subject">{decodeMimeWords(msg.subject) || '(no subject)'}</span>
-                      {msg.snippet && (
-                        <span className="list-item-snippet"> — {cleanSnippet(msg.snippet)}</span>
-                      )}
-                    </div>
-                    {msg.status === 'failed' && (
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-xs"
-                        style={{ padding: '0.15rem 0.5rem', fontSize: '0.7rem', marginRight: '0.5rem', flexShrink: 0 }}
-                        onClick={(e) => handleRetryOutbox(msg.outboxId, e)}
-                      >
-                        Retry
-                      </button>
-                    )}
-                    {msg.hasAttachments && (
-                      <span className="list-item-attachment" title="Has attachments" style={{ display: 'inline-flex', alignItems: 'center', opacity: 0.65 }}>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-                      </span>
-                    )}
-                    {(msg.trackingInfo || isOutboxItem || folder === 'Sent') && (
-                      <ReadReceiptIndicator
-                        openedAt={msg.trackingInfo?.opened_at || msg.opened_at}
-                        openCount={msg.trackingInfo?.open_count || msg.open_count || (msg.opened_at ? 1 : 0)}
-                      />
-                    )}
-                    <span className="list-item-date">{formatDate(msg.date)}</span>
-                  </>
-                ) : (
-                  /* Vertical Split Card Item */
-                  <>
-                    <div className="list-item-content">
-                      <div className="list-item-top">
-                        <span className="list-item-from" title={fromTitle} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                          {msg.accountBadge && (
-                            <span
-                              style={{
-                                fontSize: '0.65rem',
-                                fontWeight: 700,
-                                padding: '0.08rem 0.35rem',
-                                borderRadius: 'var(--radius-pill)',
-                                backgroundColor: `${msg.accountBadge.color || 'var(--color-primary)'}22`,
-                                color: msg.accountBadge.color || 'var(--color-primary-light)',
-                                border: `1px solid ${msg.accountBadge.color || 'var(--color-primary)'}44`,
-                                flexShrink: 0,
-                              }}
-                            >
-                              {msg.accountBadge.name}
-                            </span>
-                          )}
-                          <span className="list-item-from-name">{fromName}</span>
-                          {fromEmail && (
-                            <span className="list-item-from-email text-tertiary">
-                              &lt;{fromEmail}&gt;
-                            </span>
-                          )}
-                        </span>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                          {(msg.trackingInfo || isOutboxItem || folder === 'Sent') && (
-                            <ReadReceiptIndicator
-                              openedAt={msg.trackingInfo?.opened_at || msg.opened_at}
-                              openCount={msg.trackingInfo?.open_count || msg.open_count || (msg.opened_at ? 1 : 0)}
-                            />
-                          )}
-                          <span className="list-item-date">{formatDate(msg.date)}</span>
-                        </div>
-                      </div>
-                      <div className="list-item-subject" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
-                        {renderOutboxBadge(msg)}
-                        <span>{decodeMimeWords(msg.subject) || '(no subject)'}</span>
-                      </div>
-                      {msg.snippet && <div className="list-item-snippet">{cleanSnippet(msg.snippet)}</div>}
-                      {msg.status === 'failed' && (
-                        <div style={{ marginTop: '0.35rem' }}>
-                          <button
-                            type="button"
-                            className="btn btn-primary btn-xs"
-                            style={{ padding: '0.15rem 0.5rem', fontSize: '0.7rem' }}
-                            onClick={(e) => handleRetryOutbox(msg.outboxId, e)}
-                          >
-                            Retry Delivery
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                    {msg.hasAttachments && (
-                      <span className="list-item-attachment" title="Has attachments" style={{ display: 'inline-flex', alignItems: 'center', opacity: 0.65 }}>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-                      </span>
-                    )}
-                  </>
-                )}
-              </div>
+              <SwipeableThreadCard
+                key={thread.threadId}
+                thread={thread}
+                isExpanded={expandedThreadIds.has(thread.threadId)}
+                onToggleExpand={toggleThreadExpand}
+                layoutMode={layoutMode}
+                selectedUid={selectedUid}
+                selectedUids={selectedUids}
+                isMultiSelectActive={isMultiSelectActive}
+                onSelectThread={handleSelectThread}
+                onStar={onStar}
+                onDelete={onDelete}
+                onBatchArchive={onBatchArchive}
+                onBatchDelete={onBatchDelete}
+                handleRowContextMenu={handleRowContextMenu}
+                handleTouchStart={handleTouchStart}
+                handleTouchEnd={handleTouchEnd}
+                handleTouchMove={handleTouchMove}
+                toggleSelect={toggleSelect}
+                renderOutboxBadge={renderOutboxBadge}
+                handleRetryOutbox={handleRetryOutbox}
+                folder={folder}
+              />
             );
           })
+        ) : (
+          filtered.map((msg) => (
+            <SwipeableMessageCard
+              key={msg.uid}
+              msg={msg}
+              layoutMode={layoutMode}
+              selectedUid={selectedUid}
+              selectedUids={selectedUids}
+              isMultiSelectActive={isMultiSelectActive}
+              onStar={onStar}
+              onDelete={onDelete}
+              onBatchArchive={onBatchArchive}
+              onBatchDelete={onBatchDelete}
+              handleRowClick={handleRowClick}
+              handleRowContextMenu={handleRowContextMenu}
+              handleTouchStart={handleTouchStart}
+              handleTouchEnd={handleTouchEnd}
+              handleTouchMove={handleTouchMove}
+              toggleSelect={toggleSelect}
+              renderOutboxBadge={renderOutboxBadge}
+              handleRetryOutbox={handleRetryOutbox}
+              folder={folder}
+            />
+          ))
         )}
 
         {/* Continuous Scroll Load More Indicator / End of List Banner */}
@@ -1151,11 +1839,11 @@ export default function MessageList({
               gap: '0.35rem',
               border: listMode === 'paged' ? '1px solid rgba(255, 255, 255, 0.2)' : '1px solid transparent',
               background: listMode === 'paged'
-                ? 'linear-gradient(135deg, var(--color-primary, #7c3aed), #6d28d9)'
+                ? 'linear-gradient(135deg, var(--color-primary), var(--color-primary-hover))'
                 : 'transparent',
-              color: listMode === 'paged' ? '#ffffff' : 'var(--color-text-secondary, #9898b0)',
+              color: listMode === 'paged' ? 'var(--color-on-primary, #ffffff)' : 'var(--color-text-secondary, #9898b0)',
               boxShadow: listMode === 'paged'
-                ? '0 2px 8px rgba(124, 58, 237, 0.45), 0 1px 2px rgba(0, 0, 0, 0.3)'
+                ? '0 2px 8px var(--color-primary-glow), 0 1px 2px rgba(0, 0, 0, 0.25)'
                 : 'none',
               cursor: 'pointer',
               transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
@@ -1199,11 +1887,11 @@ export default function MessageList({
               gap: '0.35rem',
               border: listMode === 'continuous' ? '1px solid rgba(255, 255, 255, 0.2)' : '1px solid transparent',
               background: listMode === 'continuous'
-                ? 'linear-gradient(135deg, var(--color-primary, #7c3aed), #6d28d9)'
+                ? 'linear-gradient(135deg, var(--color-primary), var(--color-primary-hover))'
                 : 'transparent',
-              color: listMode === 'continuous' ? '#ffffff' : 'var(--color-text-secondary, #9898b0)',
+              color: listMode === 'continuous' ? 'var(--color-on-primary, #ffffff)' : 'var(--color-text-secondary, #9898b0)',
               boxShadow: listMode === 'continuous'
-                ? '0 2px 8px rgba(124, 58, 237, 0.45), 0 1px 2px rgba(0, 0, 0, 0.3)'
+                ? '0 2px 8px var(--color-primary-glow), 0 1px 2px rgba(0, 0, 0, 0.25)'
                 : 'none',
               cursor: 'pointer',
               transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',

@@ -4,10 +4,35 @@
  */
 
 import { query } from '../config/database.js';
-import { isSafeUrl } from './linkPreviewService.js';
+import { isSafeUrl, safeFetch } from './linkPreviewService.js';
 import pino from 'pino';
 
 const logger = pino({ name: 'sieve-engine' });
+
+const MAX_REGEX_LENGTH = 200;
+
+/**
+ * Validate regex pattern to mitigate ReDoS (nested/adjacent quantifiers, extreme length).
+ * @param {string} pattern
+ * @returns {RegExp|null}
+ */
+function compileSafeRegex(pattern) {
+  if (typeof pattern !== 'string' || !pattern || pattern.length > MAX_REGEX_LENGTH) {
+    return null;
+  }
+  // Reject nested quantifiers e.g. (a+)+, (.*)*, (\w+){2,}, and adjacent quantifiers e.g. a+*
+  if (
+    /\([^)]*(?:[+*]|\{\d+,?\d*\})[^)]*\)\s*(?:[+*?]|\{\d+)/.test(pattern) ||
+    /(?:[+*?]|\{\d+,?\d*\})\s*(?:[+*]|\{\d+)/.test(pattern)
+  ) {
+    return null;
+  }
+  try {
+    return new RegExp(pattern, 'i');
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Checks if a single rule condition matches an email.
@@ -30,7 +55,14 @@ export function matchCondition(condition, email) {
   } else if (field === 'body') {
     targetValue = String(email.text || email.html || '');
   } else if (field === 'has_attachment') {
-    return Boolean(email.hasAttachments);
+    const hasAtt = Boolean(email.hasAttachments || (Array.isArray(email.attachments) && email.attachments.length > 0));
+    if (condition.value === undefined || condition.value === null || condition.value === '') {
+      return hasAtt;
+    }
+    const expected = typeof condition.value === 'boolean'
+      ? condition.value
+      : !['false', '0', 'no'].includes(String(condition.value).trim().toLowerCase());
+    return hasAtt === expected;
   } else if (field === 'age_days' || field === 'older_than_days') {
     const emailDate = email.date ? new Date(email.date) : new Date();
     const ageDays = (Date.now() - emailDate.getTime()) / (1000 * 3600 * 24);
@@ -53,13 +85,15 @@ export function matchCondition(condition, email) {
       return targetValue.startsWith(expectedValue);
     case 'ends_with':
       return targetValue.endsWith(expectedValue);
-    case 'regex':
+    case 'regex': {
+      const re = compileSafeRegex(String(condition.value || ''));
+      if (!re) return false;
       try {
-        const re = new RegExp(condition.value, 'i');
-        return re.test(targetValue);
+        return re.test(targetValue.slice(0, 50000));
       } catch {
         return false;
       }
+    }
     default:
       return targetValue.includes(expectedValue);
   }
@@ -72,6 +106,8 @@ export function matchCondition(condition, email) {
  */
 export async function dispatchWebhook(webhookUrl, payload) {
   if (!webhookUrl || typeof webhookUrl !== 'string') return;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
   try {
     const safety = await isSafeUrl(webhookUrl);
     if (!safety.safe) {
@@ -106,19 +142,17 @@ export async function dispatchWebhook(webhookUrl, payload) {
       });
     }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-
-    await fetch(webhookUrl, {
+    const res = await safeFetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body,
       signal: controller.signal,
     });
-
-    clearTimeout(timeout);
+    await res.body?.cancel().catch(() => {});
   } catch (err) {
     logger.warn({ err, webhookUrl }, 'Failed to dispatch Sieve rule webhook');
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -175,7 +209,7 @@ export async function evaluateSieveRules(userId, email) {
           snippet: email.snippet,
           targetFolder: targetFolder || 'INBOX',
           date: email.date || new Date().toISOString(),
-        });
+        }).catch(() => {});
       }
     }
   }
@@ -206,6 +240,13 @@ export async function getUserSieveRules(userId) {
  */
 export async function saveSieveRule(userId, ruleData) {
   const { id, name, conditions, actions, webhook_url, priority, is_active } = ruleData;
+
+  if (webhook_url) {
+    const safety = await isSafeUrl(webhook_url);
+    if (!safety.safe) {
+      throw new Error(`Unsafe Sieve webhook URL blocked: ${safety.error || 'private/internal addresses are prohibited'}`);
+    }
+  }
 
   if (id) {
     const { rows } = await query(
@@ -263,7 +304,7 @@ export async function purgeAgingEmailsByRules(userId, candidateEmails = []) {
     const thresholdDays = Number(purgeAction.value) || 30;
     const cutoffDate = new Date(Date.now() - thresholdDays * 86400000);
 
-    // If candidate emails are provided in memory, evaluate conditions and collect matching IDs
+    // If candidate emails are provided in memory, evaluate conditions and collect unique matching IDs
     if (candidateEmails.length > 0) {
       for (const email of candidateEmails) {
         const emailDate = email.date ? new Date(email.date) : new Date();
@@ -281,20 +322,6 @@ export async function purgeAgingEmailsByRules(userId, candidateEmails = []) {
           }
         }
       }
-
-      // Execute deletion of matching candidate email UIDs from search index
-      if (purgedUids.length > 0) {
-        const numericUids = purgedUids.map((id) => parseInt(id, 10)).filter((n) => !isNaN(n));
-        if (numericUids.length > 0) {
-          const delSearchRes = await query(
-            `DELETE FROM encrypted_search_index WHERE user_id = $1 AND message_uid = ANY($2::int[]) RETURNING message_uid`,
-            [userId, numericUids]
-          );
-          purgedCount += Math.max(purgedUids.length, delSearchRes.rowCount || 0);
-        } else {
-          purgedCount += purgedUids.length;
-        }
-      }
     } else {
       // When no candidate email list is provided in memory, evaluate against user's search index entries
       const delSearchRes = await query(
@@ -309,6 +336,20 @@ export async function purgeAgingEmailsByRules(userId, candidateEmails = []) {
           rulesApplied.push(rule.name);
         }
       }
+    }
+  }
+
+  // Execute deletion of collected candidate email UIDs once after evaluating all rules (no double-counting)
+  if (candidateEmails.length > 0 && purgedUids.length > 0) {
+    const numericUids = purgedUids.map((id) => parseInt(id, 10)).filter((n) => !Number.isNaN(n));
+    if (numericUids.length > 0) {
+      const delSearchRes = await query(
+        `DELETE FROM encrypted_search_index WHERE user_id = $1 AND message_uid = ANY($2::int[]) RETURNING message_uid`,
+        [userId, numericUids]
+      );
+      purgedCount = Math.max(purgedUids.length, delSearchRes.rowCount || 0);
+    } else {
+      purgedCount = purgedUids.length;
     }
   }
 

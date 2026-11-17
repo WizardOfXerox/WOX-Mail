@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { get, put } from '../../shared/api.js';
+import { createPortal } from 'react-dom';
+import { get } from '../../shared/api.js';
 
-export default function AccountSwitcherModal({ activeAccount, onSelectAccount, user }) {
-  const [isOpen, setIsOpen] = useState(false);
+export default function AccountSwitcherModal({ activeAccount, onSelectAccount, user, onClose }) {
+  const isModalMode = typeof onClose === 'function';
+  const [isOpen, setIsOpen] = useState(isModalMode);
   const [accounts, setAccounts] = useState([]);
   const [savedDeviceAccounts, setSavedDeviceAccounts] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -10,7 +12,7 @@ export default function AccountSwitcherModal({ activeAccount, onSelectAccount, u
   const loadAccounts = async () => {
     try {
       setLoading(true);
-      const res = await get('/api/accounts');
+      const res = await get('/accounts');
       setAccounts(res.accounts || []);
     } catch (err) {
       console.warn('Failed to load accounts for switcher:', err.message);
@@ -27,14 +29,27 @@ export default function AccountSwitcherModal({ activeAccount, onSelectAccount, u
   };
 
   useEffect(() => {
-    if (isOpen) {
+    if (isModalMode || isOpen) {
       loadAccounts();
     }
-  }, [isOpen]);
+  }, [isModalMode, isOpen]);
+
+  useEffect(() => {
+    if (!isModalMode) return;
+    const handleEsc = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [isModalMode, onClose]);
 
   const handleSwitch = (acc) => {
     onSelectAccount(acc);
-    setIsOpen(false);
+    if (isModalMode) {
+      onClose();
+    } else {
+      setIsOpen(false);
+    }
   };
 
   const handleSwitchProfile = (savedAcc) => {
@@ -45,42 +60,18 @@ export default function AccountSwitcherModal({ activeAccount, onSelectAccount, u
     }
   };
 
-  return (
-    <div style={{ position: 'relative' }}>
-      <button
-        type="button"
-        className="btn btn-secondary btn-sm"
-        onClick={() => setIsOpen(!isOpen)}
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '0.5rem',
-          padding: '0.4rem 0.75rem',
-          borderRadius: 'var(--radius-pill)',
-          background: 'var(--color-bg-elevated)',
-          border: '1px solid var(--color-border)'
-        }}
-      >
-        <span
-          style={{
-            width: 10,
-            height: 10,
-            borderRadius: '50%',
-            backgroundColor: activeAccount ? (activeAccount.color || 'var(--color-primary)') : 'var(--color-primary)',
-            display: 'inline-block'
-          }}
-        />
-        <span style={{ fontSize: '0.8125rem', fontWeight: 600, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {activeAccount ? activeAccount.email : (user?.email || 'Sovereign')}
-        </span>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
-      </button>
-
-      {isOpen && (
+  const panelContent = (
         <div
-          style={{
+          style={isModalMode ? {
+            width: '100%',
+            maxWidth: 440,
+            background: 'var(--color-bg-card, var(--color-bg-elevated))',
+            border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-xl)',
+            boxShadow: '0 25px 60px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--color-primary-glow)',
+            padding: '1.25rem',
+            animation: 'slideIn 0.15s ease'
+          } : {
             position: 'absolute',
             top: 'calc(100% + 8px)',
             left: 0,
@@ -93,9 +84,29 @@ export default function AccountSwitcherModal({ activeAccount, onSelectAccount, u
             padding: '0.5rem',
             animation: 'slideIn 0.15s ease'
           }}
+          onClick={(e) => e.stopPropagation()}
         >
+          {isModalMode && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', paddingBottom: '0.65rem', borderBottom: '1px solid var(--color-border)' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800 }}>Switch Account</h3>
+                <p style={{ margin: '0.15rem 0 0', fontSize: '0.78rem', color: 'var(--color-text-secondary)' }}>
+                  Switch mailboxes or saved profiles on this device
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-icon btn-sm"
+                onClick={onClose}
+                aria-label="Close account switcher"
+                title="Close (Esc)"
+              >
+                ✕
+              </button>
+            </div>
+          )}
           <div style={{ padding: '0.4rem 0.6rem', fontSize: '0.6875rem', fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase' }}>
-            Active Account
+            Active Account {loading ? '(Loading...)' : ''}
           </div>
 
           {/* Primary Sovereign Account */}
@@ -108,7 +119,8 @@ export default function AccountSwitcherModal({ activeAccount, onSelectAccount, u
               padding: '0.5rem 0.75rem',
               borderRadius: 'var(--radius-sm)',
               cursor: 'pointer',
-              background: !activeAccount ? 'rgba(124, 58, 237, 0.15)' : 'transparent'
+              background: !activeAccount ? 'var(--color-primary-subtle)' : 'transparent',
+              border: !activeAccount ? '1px solid var(--color-primary-glow)' : '1px solid transparent'
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -144,7 +156,8 @@ export default function AccountSwitcherModal({ activeAccount, onSelectAccount, u
                     padding: '0.5rem 0.75rem',
                     borderRadius: 'var(--radius-sm)',
                     cursor: 'pointer',
-                    background: activeAccount?.id === acc.id ? 'rgba(124, 58, 237, 0.15)' : 'transparent'
+                    background: activeAccount?.id === acc.id ? 'var(--color-primary-subtle)' : 'transparent',
+                    border: activeAccount?.id === acc.id ? '1px solid var(--color-primary-glow)' : '1px solid transparent'
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -233,7 +246,7 @@ export default function AccountSwitcherModal({ activeAccount, onSelectAccount, u
 
           <div style={{ borderTop: '1px solid var(--color-border)', marginTop: '0.5rem', paddingTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
             <a
-              href="/settings#accounts"
+              href="/settings/accounts"
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -270,7 +283,67 @@ export default function AccountSwitcherModal({ activeAccount, onSelectAccount, u
             </a>
           </div>
         </div>
-      )}
+  );
+
+  if (isModalMode) {
+    if (typeof document === 'undefined') return null;
+    return createPortal(
+      <div
+        className="account-switcher-backdrop"
+        onClick={onClose}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0, 0, 0, 0.72)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+          zIndex: 999999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '1.25rem',
+        }}
+      >
+        {panelContent}
+      </div>,
+      document.body
+    );
+  }
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <button
+        type="button"
+        className="btn btn-secondary btn-sm"
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          padding: '0.4rem 0.75rem',
+          borderRadius: 'var(--radius-pill)',
+          background: 'var(--color-bg-elevated)',
+          border: '1px solid var(--color-border)'
+        }}
+      >
+        <span
+          style={{
+            width: 10,
+            height: 10,
+            borderRadius: '50%',
+            backgroundColor: activeAccount ? (activeAccount.color || 'var(--color-primary)') : 'var(--color-primary)',
+            display: 'inline-block'
+          }}
+        />
+        <span style={{ fontSize: '0.8125rem', fontWeight: 600, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {activeAccount ? activeAccount.email : (user?.email || 'Sovereign')}
+        </span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+
+      {isOpen && panelContent}
     </div>
   );
 }

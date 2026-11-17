@@ -12,7 +12,7 @@ export default function AppSwitcher({ currentApp = 'mail', onSelectApp = null })
   const buttonRef = useRef(null);
   const popoverRef = useRef(null);
   const [popoverCoords, setPopoverCoords] = useState({ top: 0, left: 0 });
-  const { mode, setMode, metadata, allModes } = useExperienceMode();
+  const { mode, setMode, isFeatureVisible, metadata, allModes } = useExperienceMode();
 
   const updatePosition = useCallback(() => {
     if (buttonRef.current) {
@@ -42,7 +42,22 @@ export default function AppSwitcher({ currentApp = 'mail', onSelectApp = null })
     };
   }, [isOpen, updatePosition]);
 
-  // Close on outside click
+  // Always register Alt+A toggle shortcut; register outside-click and Escape only when open
+  useEffect(() => {
+    function handleGlobalKeyDown(e) {
+      const tag = (e.target?.tagName || '').toLowerCase();
+      const inInput = tag === 'input' || tag === 'textarea' || e.target?.isContentEditable;
+      if (e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'a' && !inInput) {
+        e.preventDefault();
+        setIsOpen((prev) => !prev);
+      } else if (e.key === 'Escape' && isOpen) {
+        setIsOpen(false);
+      }
+    }
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [isOpen]);
+
   useEffect(() => {
     function handleClickOutside(e) {
       if (
@@ -54,24 +69,11 @@ export default function AppSwitcher({ currentApp = 'mail', onSelectApp = null })
         setIsOpen(false);
       }
     }
-    function handleKeyDown(e) {
-      if (e.key === 'Escape' && isOpen) {
-        setIsOpen(false);
-      }
-      // Ctrl+. or Alt+A toggles app switcher
-      if ((e.ctrlKey || e.metaKey) && e.key === '.') {
-        e.preventDefault();
-        setIsOpen((prev) => !prev);
-      }
-    }
-
     if (isOpen) {
       document.addEventListener('mousedown', handleClickOutside);
-      document.addEventListener('keydown', handleKeyDown);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen]);
 
@@ -84,9 +86,10 @@ export default function AppSwitcher({ currentApp = 'mail', onSelectApp = null })
     }
   };
 
-  const apps = [
+  const allApps = [
     {
       id: 'mail',
+      featureKey: 'mail',
       label: 'Mailbox',
       tagline: 'Core sovereign email',
       icon: (
@@ -101,6 +104,7 @@ export default function AppSwitcher({ currentApp = 'mail', onSelectApp = null })
     },
     {
       id: 'gatekeeper',
+      featureKey: 'gatekeeper',
       label: 'The Gatekeeper',
       tagline: 'Cold sender screening',
       icon: (
@@ -111,9 +115,11 @@ export default function AppSwitcher({ currentApp = 'mail', onSelectApp = null })
       ),
       color: '#f59e0b',
       bg: 'rgba(245, 158, 11, 0.12)',
+      url: '/dashboard?app=gatekeeper',
     },
     {
       id: 'campaigns',
+      featureKey: 'campaigns',
       label: 'Broadcasts & Drips',
       tagline: 'Mailing lists & campaigns',
       icon: (
@@ -124,11 +130,13 @@ export default function AppSwitcher({ currentApp = 'mail', onSelectApp = null })
       ),
       color: '#ec4899',
       bg: 'rgba(236, 72, 153, 0.12)',
+      url: '/dashboard?app=campaigns',
     },
     {
       id: 'kanban',
-      label: 'Contacts & CRM',
-      tagline: 'Dossiers & deal pipeline',
+      featureKey: 'kanban',
+      label: 'Kanban Workflow',
+      tagline: 'Visual email pipeline & tasks',
       icon: (
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <rect width="18" height="18" x="3" y="3" rx="2" />
@@ -139,9 +147,28 @@ export default function AppSwitcher({ currentApp = 'mail', onSelectApp = null })
       ),
       color: '#10b981',
       bg: 'rgba(16, 185, 129, 0.12)',
+      url: '/dashboard?app=kanban',
+    },
+    {
+      id: 'calendar',
+      featureKey: 'calendar',
+      label: 'Calendar',
+      tagline: 'Schedule & agenda events',
+      icon: (
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+          <line x1="16" y1="2" x2="16" y2="6" />
+          <line x1="8" y1="2" x2="8" y2="6" />
+          <line x1="3" y1="10" x2="21" y2="10" />
+        </svg>
+      ),
+      color: '#8b5cf6',
+      bg: 'rgba(139, 92, 246, 0.12)',
+      url: '/dashboard?view=calendar',
     },
     {
       id: 'tempmail',
+      featureKey: 'tempmail',
       label: 'Disposable Mail',
       tagline: 'Zero-trace burner inbox',
       icon: (
@@ -155,6 +182,7 @@ export default function AppSwitcher({ currentApp = 'mail', onSelectApp = null })
     },
     {
       id: 'futureme',
+      featureKey: 'futureme',
       label: 'Letters to Future',
       tagline: 'Time-capsule deliveries',
       icon: (
@@ -169,6 +197,7 @@ export default function AppSwitcher({ currentApp = 'mail', onSelectApp = null })
     },
     {
       id: 'developer',
+      featureKey: 'developer',
       label: 'Developer Studio',
       tagline: 'REST API, keys & webhooks',
       icon: (
@@ -183,6 +212,7 @@ export default function AppSwitcher({ currentApp = 'mail', onSelectApp = null })
     },
     {
       id: 'support',
+      featureKey: 'support',
       label: 'Helpdesk & Tickets',
       tagline: 'Customer support desk',
       icon: (
@@ -194,9 +224,11 @@ export default function AppSwitcher({ currentApp = 'mail', onSelectApp = null })
       ),
       color: '#eab308',
       bg: 'rgba(234, 179, 8, 0.12)',
+      url: '/dashboard?app=support',
     },
     {
       id: 'settings',
+      featureKey: 'settings',
       label: 'System Settings',
       tagline: 'Preferences & security',
       icon: (
@@ -210,6 +242,7 @@ export default function AppSwitcher({ currentApp = 'mail', onSelectApp = null })
       url: '/settings',
     },
   ];
+  const apps = allApps.filter((a) => !a.featureKey || isFeatureVisible(a.featureKey));
 
   return (
     <div className="app-switcher-container" ref={containerRef} style={{ position: 'relative' }}>
@@ -219,7 +252,7 @@ export default function AppSwitcher({ currentApp = 'mail', onSelectApp = null })
         type="button"
         className={`btn btn-ghost btn-icon app-switcher-btn ${isOpen ? 'active' : ''}`}
         onClick={() => setIsOpen(!isOpen)}
-        title="WoxApps & Suites (Ctrl+.)"
+        title="WoxApps & Suites (Alt+A)"
         aria-label="WoxApps and Suites launcher"
         style={{
           width: '36px',
@@ -392,7 +425,7 @@ export default function AppSwitcher({ currentApp = 'mail', onSelectApp = null })
 
           {/* Footer hint */}
           <div style={{ marginTop: '0.75rem', paddingTop: '0.5rem', borderTop: '1px solid var(--color-border-subtle, rgba(255,255,255,0.06))', textAlign: 'center', fontSize: '0.68rem', color: 'var(--color-text-tertiary, #64748b)' }}>
-            Tip: Press <kbd style={{ padding: '1px 4px', background: 'rgba(255,255,255,0.1)', borderRadius: '3px' }}>Ctrl+.</kbd> anywhere to open suites
+            Tip: Press <kbd style={{ padding: '1px 4px', background: 'rgba(255,255,255,0.1)', borderRadius: '3px' }}>Alt+A</kbd> anywhere to open suites
           </div>
         </div>,
         document.body

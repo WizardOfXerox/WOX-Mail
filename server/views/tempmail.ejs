@@ -16,9 +16,14 @@
         </div>
       </div>
       <h1 class="tempmail-title" style="font-size: clamp(1.6rem, 5vw, 2.25rem); margin-bottom: 0.25rem; font-weight: 800;">Instant Disposable Email</h1>
-      <p class="tempmail-subtitle text-secondary" style="font-size: clamp(0.85rem, 2vw, 0.95rem); margin: 0 auto; max-width: 540px;">
+      <p class="tempmail-subtitle text-secondary" style="font-size: clamp(0.85rem, 2vw, 0.95rem); margin: 0 auto 0.85rem; max-width: 540px;">
         Zero signup required. Use this temporary address anywhere to protect your privacy from spam and trackers.
       </p>
+      <div style="display: inline-flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; justify-content: center;">
+        <a href="/tempmail" class="btn btn-primary btn-xs" style="border-radius: var(--radius-pill); padding: 0.3rem 0.8rem;">Public Instant</a>
+        <a href="/tempmail/personal" class="btn btn-secondary btn-xs" style="border-radius: var(--radius-pill); padding: 0.3rem 0.8rem;">Personal (Password)</a>
+        <a href="/tempmail/login" class="btn btn-ghost btn-xs" style="border-radius: var(--radius-pill); padding: 0.3rem 0.8rem;">Personal Login</a>
+      </div>
     </div>
 
     <!-- Main Mailbox Hub Card -->
@@ -263,7 +268,7 @@
         <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>
         <span>Share</span>
       </button>
-      <button type="button" class="btn btn-ghost btn-sm" onclick="closeQR()">Close</button>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="closeQR()">Close</button>
     </div>
   </div>
 </div>
@@ -888,12 +893,21 @@
     padding: 2.25rem 2rem;
     border-radius: var(--radius-xl);
     border: 1px solid var(--color-border);
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 40px var(--color-primary-glow);
-    background: var(--color-bg-card);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.55), 0 0 40px var(--color-primary-glow);
+    background: var(--color-bg-card) !important;
+    color: var(--color-text-primary);
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
     display: flex;
     flex-direction: column;
     align-items: center;
     text-align: center;
+  }
+  [data-theme='light'] .qr-modal-card {
+    background: #ffffff !important;
+    color: #1a1a2e !important;
+    border-color: #e2e2ea !important;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.2), 0 0 32px var(--color-primary-glow) !important;
   }
   .qr-modal-header {
     margin-bottom: 1.25rem;
@@ -903,7 +917,7 @@
     width: 48px;
     height: 48px;
     border-radius: 50%;
-    background: rgba(124, 58, 237, 0.15);
+    background: var(--color-primary-subtle);
     border: 1px solid var(--color-primary-light);
     display: flex;
     align-items: center;
@@ -1005,9 +1019,10 @@
     .mailbox-card { padding: 1rem 0.85rem; border-radius: var(--radius-lg); }
     .address-input-group { min-width: 100%; padding: 0.55rem 0.75rem; border-radius: var(--radius-md); }
     .address-input-field { font-size: 0.9rem; }
-    .address-actions-grid { width: 100%; display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.35rem; align-items: center; }
-    .address-actions-grid .btn { justify-content: center; width: 100%; font-size: 0.75rem; padding: 0.45rem 0.25rem; min-height: 40px; gap: 0.2rem; }
-    .address-actions-grid select { width: 100%; font-size: 0.7rem; min-height: 40px; }
+    .address-actions-grid { width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.35rem; align-items: center; }
+    .address-actions-grid .btn,
+    .address-actions-grid select { justify-content: center; width: 100%; min-width: 0; max-width: 100%; font-size: 0.75rem; padding: 0.45rem 0.25rem; min-height: 40px; gap: 0.2rem; overflow: hidden; text-overflow: ellipsis; }
+    .address-actions-grid select { font-size: 0.7rem; padding: 0.4rem 0.35rem !important; }
     .duration-selector-bar { display: none; padding-top: 0.75rem; margin-top: 0.65rem; }
     .duration-selector-bar.open { display: block; }
     .duration-bar-content { flex-direction: row; justify-content: space-between; align-items: center; gap: 0.35rem; width: 100%; }
@@ -1042,5 +1057,11 @@
     .upgrade-banner .btn { width: 100%; justify-content: center; }
 
     .keyboard-shortcuts-bar { display: none; }
+  }
+
+  @media (max-width: 480px) {
+    .address-actions-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.4rem; }
+    .duration-bar-content { flex-wrap: wrap; }
+    .duration-pills { flex-wrap: wrap; width: 100%; }
   }
 </style>

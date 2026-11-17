@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { get, post, patch } from '../../shared/api.js';
 
 /**
  * AdminTickets — Staff Helpdesk Triage Board for Support Tickets
@@ -19,8 +20,7 @@ export default function AdminTickets() {
 
   const fetchStats = async () => {
     try {
-      const res = await fetch('/api/support/admin/stats', { credentials: 'include' });
-      const data = await res.json();
+      const data = await get('/support/admin/stats');
       setStats(data.stats);
     } catch {}
   };
@@ -28,10 +28,7 @@ export default function AdminTickets() {
   const fetchTickets = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/support/admin/tickets?status=${statusFilter}&priority=${priorityFilter}`, {
-        credentials: 'include',
-      });
-      const data = await res.json();
+      const data = await get(`/support/admin/tickets?status=${encodeURIComponent(statusFilter)}&priority=${encodeURIComponent(priorityFilter)}`);
       setTickets(data.tickets || []);
     } catch (err) {
       console.error('Failed to fetch admin tickets', err);
@@ -42,8 +39,7 @@ export default function AdminTickets() {
 
   const fetchThread = async (id) => {
     try {
-      const res = await fetch(`/api/support/admin/tickets/${id}`, { credentials: 'include' });
-      const data = await res.json();
+      const data = await get(`/support/admin/tickets/${id}`);
       setThreadData(data);
       setSelectedTicketId(id);
     } catch (err) {
@@ -58,12 +54,7 @@ export default function AdminTickets() {
 
   const handleUpdateStatus = async (ticketId, newStatus) => {
     try {
-      await fetch(`/api/support/admin/tickets/${ticketId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ status: newStatus }),
-      });
+      await patch(`/support/admin/tickets/${ticketId}`, { status: newStatus });
       fetchStats();
       fetchTickets();
       if (selectedTicketId === ticketId) fetchThread(ticketId);
@@ -78,16 +69,10 @@ export default function AdminTickets() {
 
     setSending(true);
     try {
-      const res = await fetch(`/api/support/admin/tickets/${selectedTicketId}/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          messageText: replyText.trim(),
-          isInternalNote,
-        }),
+      const data = await post(`/support/admin/tickets/${selectedTicketId}/messages`, {
+        messageText: replyText.trim(),
+        isInternalNote,
       });
-      const data = await res.json();
       if (data.success) {
         setReplyText('');
         fetchThread(selectedTicketId);

@@ -167,6 +167,27 @@ export function decryptCredentials(ciphertext, ivHex, authTagHex) {
 }
 
 /**
+ * Registry of connection cache eviction handlers (e.g. from mail routes).
+ */
+const cacheEvictors = new Set();
+
+export function registerCacheEvictor(fn) {
+  if (typeof fn === 'function') {
+    cacheEvictors.add(fn);
+  }
+}
+
+export async function evictConnectionCache(userId, accountId = null) {
+  for (const fn of cacheEvictors) {
+    try {
+      await fn(userId, accountId);
+    } catch {
+      // Ignore cache eviction hook errors
+    }
+  }
+}
+
+/**
  * Test external IMAP and SMTP connections before saving
  */
 export async function testConnection({ provider, imap_host, imap_port, imap_secure, smtp_host, smtp_port, smtp_secure, email, password }) {
@@ -174,20 +195,24 @@ export async function testConnection({ provider, imap_host, imap_port, imap_secu
 
   if (provider === 'proton' || imap_host === 'mail-api.proton.me') {
     return {
-      imap: { success: true, message: 'Proton Direct API & SRP-6a verified.' },
-      smtp: { success: true, message: 'Proton Cloud Dispatch verified.' }
+      imap: { success: false, error: 'Proton Mail does not expose standard IMAP/SMTP directly. Use Proton Direct API login or local Proton Mail Bridge.' },
+      smtp: { success: false, error: 'Proton Mail does not expose standard IMAP/SMTP directly. Use Proton Direct API login or local Proton Mail Bridge.' }
     };
   }
+
+  const tlsOptions = {
+    rejectUnauthorized: process.env.ALLOW_SELF_SIGNED_TLS !== 'true',
+  };
 
   // 1. Test IMAP
   try {
     const client = new ImapFlow({
       host: imap_host,
       port: Number(imap_port) || 993,
-      secure: imap_secure !== false,
+      secure: imap_secure !== false && imap_secure !== 'false',
       auth: { user: email, pass: password },
       logger: false,
-      tls: { rejectUnauthorized: false }
+      tls: tlsOptions
     });
     await client.connect();
     results.imap = { success: true, message: 'IMAP connection and authentication succeeded.' };
@@ -198,12 +223,14 @@ export async function testConnection({ provider, imap_host, imap_port, imap_secu
 
   // 2. Test SMTP
   try {
-    const transporter = nodemailer.createTransporter({
+    const resolvedPort = Number(smtp_port) || (smtp_secure === true || smtp_secure === 'true' ? 465 : 587);
+    const isSecure = smtp_secure === true || smtp_secure === 'true';
+    const transporter = nodemailer.createTransport({
       host: smtp_host,
-      port: Number(smtp_port) || (smtp_secure ? 465 : 587),
-      secure: smtp_secure === true,
+      port: resolvedPort,
+      secure: isSecure,
       auth: { user: email, pass: password },
-      tls: { rejectUnauthorized: false }
+      tls: tlsOptions
     });
     await transporter.verify();
     results.smtp = { success: true, message: 'SMTP connection and handshake succeeded.' };
@@ -238,46 +265,113 @@ export async function connectAccount(userId, accountData) {
     password,
     display_name,
     imap_host,
-    imap_port = 993,
-    imap_secure = true,
+    imap_port,
+    imap_secure,
     smtp_host,
-    smtp_port = 465,
-    smtp_secure = true,
-    is_default = false
+    smtp_port,
+    smtp_secure,
+    is_default = false,
+    skipVerification = false,
+    skip_verify = false,
+    skipVerify = false,
   } = accountData;
 
   if (!email || !password) {
     throw new Error('Email address and password are required.');
   }
 
-  // Auto-fill preset host/port if provider given
+  const normalizedEmail = String(email).trim().toLowerCase();
+  const shouldSkipVerify = Boolean(skipVerification || skip_verify || skipVerify);
+
+  // Auto-fill preset host/port if provider given (without clobbering Outlook/iCloud/GMX defaults)
   const preset = PROVIDER_PRESETS[provider] || PROVIDER_PRESETS.custom;
+  const resolvePort = (val, fallback) => {
+    if (val === undefined || val === null || val === '') return fallback;
+    const num = Number(val);
+    return Number.isFinite(num) && num > 0 ? num : fallback;
+  };
+  const resolveBool = (val, fallback) => {
+    if (val === undefined || val === null || val === '') return fallback;
+    if (typeof val === 'string') return val.toLowerCase() === 'true';
+    return Boolean(val);
+  };
+
   const finalImapHost = imap_host || preset.imap_host;
-  const finalImapPort = Number(imap_port) || preset.imap_port;
-  const finalImapSecure = imap_secure !== undefined ? Boolean(imap_secure) : preset.imap_secure;
+  const finalImapPort = resolvePort(imap_port, preset.imap_port);
+  const finalImapSecure = resolveBool(imap_secure, preset.imap_secure);
   const finalSmtpHost = smtp_host || preset.smtp_host;
-  const finalSmtpPort = Number(smtp_port) || preset.smtp_port;
-  const finalSmtpSecure = smtp_secure !== undefined ? Boolean(smtp_secure) : preset.smtp_secure;
+  const finalSmtpPort = resolvePort(smtp_port, preset.smtp_port);
+  const finalSmtpSecure = resolveBool(smtp_secure, preset.smtp_secure);
 
   if (!finalImapHost || !finalSmtpHost) {
     throw new Error('IMAP host and SMTP host are required for custom connections.');
   }
 
-  // Verify connection first
-  const testRes = await testConnection({
-    provider,
-    imap_host: finalImapHost,
-    imap_port: finalImapPort,
-    imap_secure: finalImapSecure,
-    smtp_host: finalSmtpHost,
-    smtp_port: finalSmtpPort,
-    smtp_secure: finalSmtpSecure,
-    email,
-    password
-  });
+  let testRes = {
+    imap: { success: shouldSkipVerify, message: shouldSkipVerify ? 'Skipped' : '' },
+    smtp: { success: shouldSkipVerify, message: shouldSkipVerify ? 'Skipped' : '' },
+  };
 
-  if (!testRes.imap.success) {
-    throw new Error(`IMAP validation failed: ${testRes.imap.error}`);
+  if (provider === 'proton' || preset.direct_api) {
+    if (!shouldSkipVerify) {
+      // Check whether this user already has a verified active Proton session from /api/proton/login
+      const { activeSessions, authenticateProtonAccount } = await import('./protonServerSync.js');
+      const existingRes = await query(
+        `SELECT credentials_encrypted, iv, auth_tag FROM connected_accounts
+         WHERE user_id = $1 AND LOWER(email) = $2 AND provider = 'proton' AND is_active = TRUE LIMIT 1`,
+        [userId, normalizedEmail]
+      );
+      const existingSession = activeSessions.get(normalizedEmail);
+      let alreadyVerified = false;
+      if (existingRes.rows.length > 0 && existingSession && !existingSession.pending2FA) {
+        try {
+          const row = existingRes.rows[0];
+          const storedPass = decryptCredentials(row.credentials_encrypted, row.iv, row.auth_tag);
+          if (storedPass === password) {
+            alreadyVerified = true;
+          }
+        } catch {
+          alreadyVerified = false;
+        }
+      }
+
+      if (!alreadyVerified) {
+        const authRes = await authenticateProtonAccount(normalizedEmail, password);
+        if (authRes?.requires2FA) {
+          throw new Error('Proton Mail 2FA verification required. Complete login via Proton Direct Sync first.');
+        }
+        if (!authRes?.success) {
+          throw new Error('Proton Mail authentication failed.');
+        }
+      }
+
+      testRes = {
+        imap: { success: true, message: 'Proton Direct API session verified.' },
+        smtp: { success: true, message: 'Proton Cloud Dispatch verified.' },
+      };
+    }
+  } else {
+    // Verify both IMAP and SMTP connections first for standard/custom accounts
+    testRes = await testConnection({
+      provider,
+      imap_host: finalImapHost,
+      imap_port: finalImapPort,
+      imap_secure: finalImapSecure,
+      smtp_host: finalSmtpHost,
+      smtp_port: finalSmtpPort,
+      smtp_secure: finalSmtpSecure,
+      email: normalizedEmail,
+      password
+    });
+
+    if (!shouldSkipVerify) {
+      if (!testRes.imap.success) {
+        throw new Error(`IMAP validation failed: ${testRes.imap.error}`);
+      }
+      if (!testRes.smtp.success) {
+        throw new Error(`SMTP validation failed: ${testRes.smtp.error}`);
+      }
+    }
   }
 
   // Encrypt credentials
@@ -305,19 +399,26 @@ export async function connectAccount(userId, accountData) {
       smtp_host = EXCLUDED.smtp_host,
       smtp_port = EXCLUDED.smtp_port,
       smtp_secure = EXCLUDED.smtp_secure,
+      auth_type = EXCLUDED.auth_type,
       credentials_encrypted = EXCLUDED.credentials_encrypted,
       iv = EXCLUDED.iv,
       auth_tag = EXCLUDED.auth_tag,
+      is_default = EXCLUDED.is_default,
+      color = EXCLUDED.color,
       is_active = TRUE,
+      sync_status = 'idle',
+      sync_error = NULL,
       updated_at = NOW()
-    RETURNING id, provider, email, display_name, is_default, is_active, created_at
+    RETURNING id, provider, email, display_name, imap_host, imap_port, imap_secure, smtp_host, smtp_port, smtp_secure, is_default, is_active, color, created_at
   `, [
-    userId, provider, email, display_name || email.split('@')[0],
+    userId, provider, normalizedEmail, display_name || normalizedEmail.split('@')[0],
     finalImapHost, finalImapPort, finalImapSecure,
     finalSmtpHost, finalSmtpPort, finalSmtpSecure,
     'app_password', ciphertext, iv, authTag,
-    is_default, true, preset.color
+    Boolean(is_default), true, preset.color
   ]);
+
+  await evictConnectionCache(userId, insertRes.rows[0].id);
 
   return {
     account: insertRes.rows[0],
@@ -349,6 +450,9 @@ export async function deleteAccount(userId, accountId) {
     WHERE id = $1 AND user_id = $2
     RETURNING id, email
   `, [accountId, userId]);
+  if (res.rows[0]) {
+    await evictConnectionCache(userId, accountId);
+  }
   return res.rows[0] || null;
 }
 
@@ -363,6 +467,9 @@ export async function setDefaultAccount(userId, accountId) {
     WHERE id = $1 AND user_id = $2
     RETURNING id, email, is_default
   `, [accountId, userId]);
+  if (res.rows[0]) {
+    await evictConnectionCache(userId, accountId);
+  }
   return res.rows[0] || null;
 }
 
@@ -370,6 +477,8 @@ export default {
   PROVIDER_PRESETS,
   encryptCredentials,
   decryptCredentials,
+  registerCacheEvictor,
+  evictConnectionCache,
   testConnection,
   listAccounts,
   connectAccount,

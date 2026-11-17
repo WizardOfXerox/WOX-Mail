@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { put } from '../../shared/api.js';
 
 /**
  * ThemeCustomizerModal
@@ -161,27 +162,22 @@ export default function ThemeCustomizerModal({ onClose }) {
   const saveToCloud = async () => {
     try {
       setSaving(true);
-      await fetch('/api/settings/preferences', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          preferences: {
-            theme,
-            accent,
-            bgMode,
-            bgIntensity,
-            density,
-            font,
-            glass: glassEnabled
-          }
-        })
+      await put('/settings/preferences', {
+        preferences: {
+          theme,
+          accent,
+          bgMode,
+          bgIntensity,
+          density,
+          font,
+          glass: glassEnabled
+        }
       });
       setSavedNotice(true);
       setTimeout(() => setSavedNotice(false), 3000);
       if (window.WoxToast) window.WoxToast.success('Theme preferences saved to profile');
     } catch (err) {
-      if (window.WoxToast) window.WoxToast.info('Preferences saved locally on this device');
+      if (window.WoxToast) window.WoxToast.error('Failed to sync preferences to server: ' + err.message);
     } finally {
       setSaving(false);
     }

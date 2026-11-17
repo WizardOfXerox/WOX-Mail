@@ -31,6 +31,7 @@ import { up as m028Up } from './028_sieve_rules_and_search_index.js';
 import { up as m029Up } from './029_drip_automations_and_segments.js';
 import { up as m030Up } from './030_account_deletion_grace_period.js';
 import { up as m031Up } from './031_filters_and_spam_rules_alignment.js';
+import { up as m032Up } from './032_schema_integrity_and_fixes.js';
 
 /**
  * Simple migration runner.
@@ -70,6 +71,7 @@ const migrations = [
   { name: '029_drip_automations_and_segments', up: m029Up },
   { name: '030_account_deletion_grace_period', up: m030Up },
   { name: '031_filters_and_spam_rules_alignment', up: m031Up },
+  { name: '032_schema_integrity_and_fixes', up: m032Up },
 ];
 
 async function run() {

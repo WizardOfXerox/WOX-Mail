@@ -1,6 +1,8 @@
 import { ImapFlow } from 'imapflow';
+import { simpleParser } from 'mailparser';
 import pino from 'pino';
-import { sanitizeFrom, sanitizeSubject } from './mimeService.js';
+import { sanitizeFrom, sanitizeSubject, cleanSnippet } from './mimeService.js';
+import { isPurelymailWelcomeEmail } from '../utils/helpers.js';
 
 const logger = pino({ name: 'woxmail:imap' });
 
@@ -95,6 +97,7 @@ export async function getFolderListFast(client) {
 export async function acquireMailboxLock(client, folderPath, timeoutMs = 25000) {
   let lockTimeoutOccurred = false;
   let timer;
+  client._activeLocks = (client._activeLocks || 0) + 1;
 
   try {
     const lock = await Promise.race([
@@ -112,8 +115,30 @@ export async function acquireMailboxLock(client, folderPath, timeoutMs = 25000) 
         }, timeoutMs);
       }),
     ]);
+
+    if (!lock) {
+      client._activeLocks = Math.max(0, (client._activeLocks || 1) - 1);
+      throw new Error(`Failed to acquire mailbox lock on ${folderPath}`);
+    }
+
+    let released = false;
+    const origRelease = lock.release.bind(lock);
+    lock.release = () => {
+      if (released) return;
+      released = true;
+      client._activeLocks = Math.max(0, (client._activeLocks || 1) - 1);
+      const res = origRelease();
+      if (client._evictAfterRelease && client._activeLocks === 0) {
+        try {
+          client.logout?.().catch(() => client.close?.());
+        } catch {}
+      }
+      return res;
+    };
+
     return lock;
   } catch (err) {
+    client._activeLocks = Math.max(0, (client._activeLocks || 1) - 1);
     if (lockTimeoutOccurred) {
       client.usable = false;
       try { client.close(); } catch {}
@@ -122,6 +147,29 @@ export async function acquireMailboxLock(client, folderPath, timeoutMs = 25000) 
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Resolve a virtual folder name ('Starred', 'The Feed', 'Paper Trail', 'Promotions', 'Social')
+ * to its true backing IMAP mailbox path.
+ */
+export async function resolveVirtualBackingFolder(client, resolvedFolder) {
+  if (resolvedFolder === 'Starred') {
+    const fastFolders = await getFolderListFast(client).catch(() => []);
+    const flaggedFolder = fastFolders.find(
+      (f) => f.specialUse === '\\Flagged' || f.name.toLowerCase() === 'starred' || f.path.toLowerCase().includes('starred')
+    );
+    return flaggedFolder ? flaggedFolder.path : 'INBOX';
+  }
+  if (
+    resolvedFolder === 'The Feed' ||
+    resolvedFolder === 'Paper Trail' ||
+    resolvedFolder === 'Promotions' ||
+    resolvedFolder === 'Social'
+  ) {
+    return 'INBOX';
+  }
+  return resolvedFolder;
 }
 
 /**
@@ -235,6 +283,34 @@ export async function resolveFolder(client, folder) {
   return folder;
 }
 
+async function extractBodyPreview(msg) {
+  let rawText = '';
+  if (msg?.source) {
+    try {
+      const parsed = await simpleParser(msg.source);
+      if (parsed?.text && parsed.text.trim()) {
+        rawText = parsed.text;
+      } else if (parsed?.html) {
+        rawText = parsed.html
+          .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+          .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\s+/g, ' ');
+      }
+    } catch {
+      // Ignore partial parse errors and fallback
+    }
+  }
+  if (!rawText) {
+    rawText = msg?.snippet || msg?.preview || msg?.text || '';
+  }
+  const normalized = String(rawText).replace(/\r\n/g, '\n').trim();
+  return {
+    text: normalized.slice(0, 4000),
+    snippet: cleanSnippet(normalized.replace(/\s+/g, ' ').slice(0, 200)),
+  };
+}
+
 /**
  * Fetch paginated messages from a folder.
  * @param {ImapFlow} client
@@ -274,7 +350,7 @@ export async function fetchMessages(client, folder = 'INBOX', { page = 1, limit 
   try {
     // Search all UIDs in the mailbox
     const allUids = await client.search({ all: true }, { uid: true });
-    const total = Array.isArray(allUids) ? allUids.length : 0;
+    let total = Array.isArray(allUids) ? allUids.length : 0;
     if (total === 0) return { messages: [], total: 0 };
 
     // Sort descending (newest UID first)
@@ -287,6 +363,8 @@ export async function fetchMessages(client, folder = 'INBOX', { page = 1, limit 
     }
 
     const messages = [];
+    let suppressedCount = 0;
+    const isInbox = resolved.toUpperCase() === 'INBOX';
 
     for await (const msg of client.fetch(pageUids.join(','), {
       envelope: true,
@@ -294,10 +372,13 @@ export async function fetchMessages(client, folder = 'INBOX', { page = 1, limit 
       bodyStructure: true,
       uid: true,
       size: true,
+      source: { start: 0, maxLength: 16384 },
     }, { uid: true })) {
-      messages.push({
+      const { text, snippet } = await extractBodyPreview(msg);
+      const item = {
         uid: msg.uid,
         seq: msg.seq,
+        folder: resolved,
         subject: sanitizeSubject(msg.envelope?.subject),
         from: sanitizeFrom(msg.envelope?.from?.[0]),
         to: (msg.envelope?.to || []).map(sanitizeFrom),
@@ -307,7 +388,18 @@ export async function fetchMessages(client, folder = 'INBOX', { page = 1, limit 
         isStarred: msg.flags ? msg.flags.has('\\Flagged') : false,
         size: msg.size || 0,
         hasAttachments: hasAttachments(msg.bodyStructure),
-      });
+        text,
+        snippet,
+      };
+      if (isInbox && isPurelymailWelcomeEmail(item)) {
+        suppressedCount++;
+        continue;
+      }
+      messages.push(item);
+    }
+
+    if (suppressedCount > 0) {
+      total = Math.max(0, total - suppressedCount);
     }
 
     // Sort newest first by date & UID
@@ -319,7 +411,7 @@ export async function fetchMessages(client, folder = 'INBOX', { page = 1, limit 
 }
 
 /**
- * Fetch Starred messages by searching INBOX for \Flagged flag.
+ * Fetch Starred messages by searching provider Starred folder or INBOX for \Flagged flag.
  */
 export async function fetchStarredMessages(client, { page = 1, limit = 25, folder = 'INBOX' } = {}) {
   const allStarred = [];
@@ -338,17 +430,20 @@ export async function fetchStarredMessages(client, { page = 1, limit = 25, folde
     lock = await acquireMailboxLock(client, targetFolder, 25000);
     const uids = await client.search(searchFilter, { uid: true });
     if (Array.isArray(uids) && uids.length > 0) {
-      for await (const msg of client.fetch(uids.join(','), {
+      const sortedUids = [...uids].sort((a, b) => b - a);
+      for await (const msg of client.fetch(sortedUids.join(','), {
         envelope: true,
         flags: true,
         bodyStructure: true,
         uid: true,
         size: true,
+        source: { start: 0, maxLength: 16384 },
       }, { uid: true })) {
+        const { text, snippet } = await extractBodyPreview(msg);
         allStarred.push({
           uid: msg.uid,
           seq: msg.seq,
-          folder,
+          folder: targetFolder,
           subject: sanitizeSubject(msg.envelope?.subject),
           from: sanitizeFrom(msg.envelope?.from?.[0]),
           to: (msg.envelope?.to || []).map(sanitizeFrom),
@@ -358,6 +453,8 @@ export async function fetchStarredMessages(client, { page = 1, limit = 25, folde
           isStarred: true,
           size: msg.size || 0,
           hasAttachments: hasAttachments(msg.bodyStructure),
+          text,
+          snippet,
         });
       }
     }
@@ -388,78 +485,61 @@ function getMessageSearchText(m) {
   const fromStr = typeof m.from === 'object'
     ? `${m.from?.name || ''} ${m.from?.address || ''}`
     : String(m.from || '');
-  return `${m.subject || ''} ${fromStr} ${m.snippet || m.preview || ''}`;
+  return `${m.subject || ''} ${fromStr} ${m.snippet || m.preview || m.text || ''}`;
+}
+
+/**
+ * Mutually-exclusive message classification matching GET /folders counts:
+ * Priority: paperTrail -> promotions -> social -> feed -> primary
+ */
+export function classifyMessageCategory(m) {
+  const text = getMessageSearchText(m);
+  if (CATEGORY_PATTERNS.paperTrail.test(text)) return 'paperTrail';
+  if (CATEGORY_PATTERNS.promotions.test(text)) return 'promotions';
+  if (CATEGORY_PATTERNS.social.test(text)) return 'social';
+  if (CATEGORY_PATTERNS.feed.test(text)) return 'feed';
+  return 'primary';
+}
+
+async function fetchCategoryMessages(client, targetCategory, { page = 1, limit = 25 } = {}) {
+  const { messages: allInbox = [] } = await fetchMessages(client, 'INBOX', { page: 1, limit: 100 });
+  const matched = allInbox.filter(
+    (m) => !isPurelymailWelcomeEmail(m) && classifyMessageCategory(m) === targetCategory
+  );
+  const total = matched.length;
+  const startIdx = (page - 1) * limit;
+  return {
+    messages: matched.slice(startIdx, startIdx + limit),
+    total,
+  };
 }
 
 /**
  * Fetch The Feed messages (newsletters, subscriptions, digests).
  */
 export async function fetchFeedMessages(client, { page = 1, limit = 25 } = {}) {
-  const { messages: allInbox = [] } = await fetchMessages(client, 'INBOX', { page: 1, limit: 100 });
-
-  const feedMessages = allInbox.filter((m) => {
-    const text = getMessageSearchText(m);
-    return !CATEGORY_PATTERNS.paperTrail.test(text) &&
-           !CATEGORY_PATTERNS.promotions.test(text) &&
-           !CATEGORY_PATTERNS.social.test(text) &&
-           CATEGORY_PATTERNS.feed.test(text);
-  });
-
-  const total = feedMessages.length;
-  const startIdx = (page - 1) * limit;
-  const messages = feedMessages.slice(startIdx, startIdx + limit);
-  return { messages, total };
+  return fetchCategoryMessages(client, 'feed', { page, limit });
 }
 
 /**
  * Fetch Paper Trail messages (receipts, invoices, orders, confirmations, time capsule letters).
  */
 export async function fetchPaperTrailMessages(client, { page = 1, limit = 25 } = {}) {
-  const { messages: allInbox = [] } = await fetchMessages(client, 'INBOX', { page: 1, limit: 100 });
-
-  const paperTrailMessages = allInbox.filter((m) => {
-    const text = getMessageSearchText(m);
-    return CATEGORY_PATTERNS.paperTrail.test(text);
-  });
-
-  const total = paperTrailMessages.length;
-  const startIdx = (page - 1) * limit;
-  const messages = paperTrailMessages.slice(startIdx, startIdx + limit);
-  return { messages, total };
+  return fetchCategoryMessages(client, 'paperTrail', { page, limit });
 }
 
 /**
  * Fetch Promotions messages (marketing, deals, offers, promotions).
  */
 export async function fetchPromotionsMessages(client, { page = 1, limit = 25 } = {}) {
-  const { messages: allInbox = [] } = await fetchMessages(client, 'INBOX', { page: 1, limit: 100 });
-
-  const promoMessages = allInbox.filter((m) => {
-    const text = getMessageSearchText(m);
-    return !CATEGORY_PATTERNS.paperTrail.test(text) && CATEGORY_PATTERNS.promotions.test(text);
-  });
-
-  const total = promoMessages.length;
-  const startIdx = (page - 1) * limit;
-  const messages = promoMessages.slice(startIdx, startIdx + limit);
-  return { messages, total };
+  return fetchCategoryMessages(client, 'promotions', { page, limit });
 }
 
 /**
  * Fetch Social messages (social networks, community, collaboration alerts).
  */
 export async function fetchSocialMessages(client, { page = 1, limit = 25 } = {}) {
-  const { messages: allInbox = [] } = await fetchMessages(client, 'INBOX', { page: 1, limit: 100 });
-
-  const socialMessages = allInbox.filter((m) => {
-    const text = getMessageSearchText(m);
-    return !CATEGORY_PATTERNS.paperTrail.test(text) && CATEGORY_PATTERNS.social.test(text);
-  });
-
-  const total = socialMessages.length;
-  const startIdx = (page - 1) * limit;
-  const messages = socialMessages.slice(startIdx, startIdx + limit);
-  return { messages, total };
+  return fetchCategoryMessages(client, 'social', { page, limit });
 }
 
 /**
@@ -472,10 +552,12 @@ export async function fetchSocialMessages(client, { page = 1, limit = 25 } = {})
 export async function appendMessage(client, folder, content, flags = ['\\Seen']) {
   const resolved = await resolveFolder(client, folder);
   try {
-    await client.append(resolved, content, flags);
+    const res = await client.append(resolved, content, flags);
     logger.info({ folder: resolved }, 'Message successfully appended to IMAP folder');
+    return res;
   } catch (err) {
     logger.warn({ folder: resolved, err: err.message }, 'Failed to append message to folder');
+    throw err;
   }
 }
 
@@ -496,13 +578,7 @@ export async function appendSentMessage(client, content) {
  */
 export async function fetchMessage(client, folder, uid) {
   let resolved = await resolveFolder(client, folder);
-  if (resolved === 'Starred') {
-    const fastFolders = await getFolderListFast(client).catch(() => []);
-    const flaggedFolder = fastFolders.find((f) => f.specialUse === '\\Flagged' || f.name.toLowerCase() === 'starred' || f.path.toLowerCase().includes('starred'));
-    resolved = flaggedFolder ? flaggedFolder.path : 'INBOX';
-  } else if (resolved === 'The Feed' || resolved === 'Paper Trail' || resolved === 'Promotions' || resolved === 'Social') {
-    resolved = 'INBOX';
-  }
+  resolved = await resolveVirtualBackingFolder(client, resolved);
 
   let lock;
   try {
@@ -582,9 +658,7 @@ export async function fetchMessage(client, folder, uid) {
  */
 export async function moveMessages(client, fromFolder, uids, toFolder) {
   let resolvedFrom = await resolveFolder(client, fromFolder);
-  if (resolvedFrom === 'Starred' || resolvedFrom === 'The Feed' || resolvedFrom === 'Paper Trail' || resolvedFrom === 'Promotions' || resolvedFrom === 'Social') {
-    resolvedFrom = 'INBOX';
-  }
+  resolvedFrom = await resolveVirtualBackingFolder(client, resolvedFrom);
   const resolvedTo = await resolveFolder(client, toFolder);
   const lock = await acquireMailboxLock(client, resolvedFrom, 25000);
   try {
@@ -616,9 +690,7 @@ export async function moveMessages(client, fromFolder, uids, toFolder) {
  */
 export async function deleteMessages(client, folder, uids) {
   let resolved = await resolveFolder(client, folder);
-  if (resolved === 'Starred' || resolved === 'The Feed' || resolved === 'Paper Trail' || resolved === 'Promotions' || resolved === 'Social') {
-    resolved = 'INBOX';
-  }
+  resolved = await resolveVirtualBackingFolder(client, resolved);
   const lock = await acquireMailboxLock(client, resolved, 25000);
   try {
     await client.messageDelete(uids.join(','), { uid: true });
@@ -637,9 +709,7 @@ export async function deleteMessages(client, folder, uids) {
  */
 export async function toggleFlag(client, folder, uids, flag, add = true) {
   let resolved = await resolveFolder(client, folder);
-  if (resolved === 'Starred' || resolved === 'The Feed' || resolved === 'Paper Trail' || resolved === 'Promotions' || resolved === 'Social') {
-    resolved = 'INBOX';
-  }
+  resolved = await resolveVirtualBackingFolder(client, resolved);
   const lock = await acquireMailboxLock(client, resolved, 25000);
   try {
     if (add) {
@@ -660,7 +730,8 @@ export async function toggleFlag(client, folder, uids, flag, add = true) {
  * @returns {Promise<number[]>} Matching UIDs
  */
 export async function searchMessages(client, folder, criteria) {
-  const resolved = await resolveFolder(client, folder);
+  let resolved = await resolveFolder(client, folder);
+  resolved = await resolveVirtualBackingFolder(client, resolved);
   const lock = await acquireMailboxLock(client, resolved, 25000);
   try {
     return await client.search(criteria, { uid: true });
@@ -676,6 +747,8 @@ export async function searchMessages(client, folder, criteria) {
  */
 export async function createFolder(client, path) {
   await client.mailboxCreate(path);
+  client._cachedFolders = null;
+  client._cachedFoldersTime = 0;
 }
 
 /**
@@ -686,6 +759,8 @@ export async function createFolder(client, path) {
  */
 export async function renameFolder(client, oldPath, newPath) {
   await client.mailboxRename(oldPath, newPath);
+  client._cachedFolders = null;
+  client._cachedFoldersTime = 0;
 }
 
 /**
@@ -695,6 +770,8 @@ export async function renameFolder(client, oldPath, newPath) {
  */
 export async function deleteFolder(client, path) {
   await client.mailboxDelete(path);
+  client._cachedFolders = null;
+  client._cachedFoldersTime = 0;
 }
 
 /**
@@ -723,7 +800,7 @@ export async function getInboxMessageCount(email, password) {
  * @param {object} bodyStructure
  * @returns {boolean}
  */
-function hasAttachments(bodyStructure) {
+export function hasAttachments(bodyStructure) {
   if (!bodyStructure) return false;
   if (bodyStructure.disposition === 'attachment') return true;
   if (bodyStructure.childNodes) {
@@ -735,6 +812,12 @@ function hasAttachments(bodyStructure) {
 export default {
   createConnection,
   listFolders,
+  getFolderListFast,
+  acquireMailboxLock,
+  resolveFolder,
+  resolveVirtualBackingFolder,
+  classifyMessageCategory,
+  hasAttachments,
   fetchMessages,
   fetchMessage,
   moveMessages,

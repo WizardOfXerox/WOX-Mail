@@ -40,6 +40,7 @@ const SHORTCUT_GROUPS = [
       { key: 'Ctrl + 2', desc: '3-Pane vertical split layout' },
       { key: 'Ctrl + 3', desc: 'Horizontal split layout' },
       { key: 'Ctrl + .', desc: 'Toggle side dock panel' },
+      { key: 'Alt + A', desc: 'Open WoxApps & Suites switcher' },
       { key: 'Ctrl + k', desc: 'Open Command Palette' },
       { key: '?', desc: 'Show this keyboard shortcuts guide' },
     ],
@@ -62,64 +63,145 @@ export default function KeyboardShortcutsModal({ isOpen, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-fade-in"
+      className="compose-overlay"
       onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Keyboard Shortcuts"
+      style={{ zIndex: 10001 }}
     >
       <div
-        className="relative w-full max-w-2xl max-h-[85vh] bg-[#16162a] border border-[#2a2a4a] rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+        className="card"
         onClick={(e) => e.stopPropagation()}
+        style={{
+          position: 'relative',
+          width: '100%',
+          maxWidth: '680px',
+          maxHeight: '85vh',
+          padding: 0,
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          borderRadius: 'var(--radius-lg)',
+          border: '1px solid var(--color-border)',
+          background: 'var(--color-bg-card)',
+          boxShadow: 'var(--shadow-lg)',
+        }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#2a2a4a] bg-[#1a1a32]/80">
-          <div className="flex items-center gap-3">
-            <span className="text-xl inline-flex text-[#a78bfa]">
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '1rem 1.5rem',
+            borderBottom: '1px solid var(--color-border)',
+            background: 'var(--color-bg-elevated)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <span style={{ display: 'inline-flex', color: 'var(--color-primary-light)' }}>
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="M6 8h.001"/><path d="M10 8h.001"/><path d="M14 8h.001"/><path d="M18 8h.001"/><path d="M6 12h.001"/><path d="M10 12h.001"/><path d="M14 12h.001"/><path d="M18 12h.001"/><path d="M7 16h10"/></svg>
             </span>
             <div>
-              <h2 className="text-lg font-bold text-[#f0f0f5]">Keyboard Shortcuts</h2>
-              <p className="text-xs text-[#9898b0]">Superhuman & VIM-grade velocity shortcuts</p>
+              <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                Keyboard Shortcuts
+              </h2>
+              <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
+                High-velocity navigation and triage shortcuts
+              </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-lg text-[#9898b0] hover:text-white hover:bg-[#252545] transition-colors"
+            className="btn btn-ghost btn-icon"
+            aria-label="Close keyboard shortcuts"
+            style={{ width: 32, height: 32 }}
           >
             ✕
           </button>
         </div>
 
         {/* Filter Input */}
-        <div className="px-6 pt-4 pb-2">
+        <div style={{ padding: '1rem 1.5rem 0.5rem' }}>
           <input
             type="text"
-            placeholder="Search shortcuts (e.g. compose, copy, archive, j/k)..."
+            className="input"
+            placeholder="Search shortcuts (e.g. compose, archive, j/k)..."
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             autoFocus
-            className="w-full px-4 py-2 bg-[#0f0f1a] border border-[#2a2a4a] focus:border-[#7c3aed] rounded-xl text-sm text-[#f0f0f5] placeholder-[#6868a0] outline-none transition-colors"
+            style={{ width: '100%', fontSize: '0.875rem' }}
           />
         </div>
 
         {/* Shortcuts Grid */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
+        <div
+          style={{
+            flex: 1,
+            overflowY: 'auto',
+            padding: '1rem 1.5rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '1.5rem',
+            minHeight: 0,
+          }}
+        >
           {filteredGroups.length === 0 ? (
-            <p className="text-center text-sm text-[#6868a0] py-8">
+            <p style={{ textAlign: 'center', fontSize: '0.875rem', color: 'var(--color-text-tertiary)', padding: '2rem 0' }}>
               No shortcuts found for "{filter}"
             </p>
           ) : (
             filteredGroups.map((group) => (
               <div key={group.category}>
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-[#7c3aed] mb-3">
+                <h3
+                  style={{
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                    color: 'var(--color-primary-light)',
+                    margin: '0 0 0.75rem',
+                  }}
+                >
                   {group.category}
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+                    gap: '0.5rem',
+                  }}
+                >
                   {group.shortcuts.map((s) => (
                     <div
                       key={s.key}
-                      className="flex items-center justify-between p-2.5 rounded-lg bg-[#1a1a30] border border-[#252545] hover:border-[#7c3aed]/40 transition-colors"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '0.75rem',
+                        padding: '0.6rem 0.75rem',
+                        borderRadius: 'var(--radius-md)',
+                        background: 'var(--color-bg-elevated)',
+                        border: '1px solid var(--color-border-subtle)',
+                      }}
                     >
-                      <span className="text-sm text-[#d0d0e0]">{s.desc}</span>
-                      <kbd className="px-2 py-1 text-xs font-mono font-semibold text-[#a78bfa] bg-[#0f0f1a] border border-[#3a3a5e] rounded shadow-sm">
+                      <span style={{ fontSize: '0.84rem', color: 'var(--color-text-primary)' }}>{s.desc}</span>
+                      <kbd
+                        className="mono"
+                        style={{
+                          padding: '0.2rem 0.5rem',
+                          fontSize: '0.72rem',
+                          fontWeight: 600,
+                          color: 'var(--color-primary-light)',
+                          background: 'var(--color-bg-page)',
+                          border: '1px solid var(--color-border)',
+                          borderRadius: '5px',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
                         {s.key}
                       </kbd>
                     </div>
@@ -131,10 +213,17 @@ export default function KeyboardShortcutsModal({ isOpen, onClose }) {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3 border-t border-[#2a2a4a] bg-[#1a1a32]/50 text-right">
-          <span className="text-xs text-[#6868a0]">
-            Press <kbd className="px-1.5 py-0.5 font-mono text-[10px] bg-[#0f0f1a] border border-[#3a3a5e] rounded text-[#9898b0]">Esc</kbd> or click outside to dismiss
-          </span>
+        <div
+          style={{
+            padding: '0.75rem 1.5rem',
+            borderTop: '1px solid var(--color-border)',
+            background: 'var(--color-bg-elevated)',
+            textAlign: 'right',
+            fontSize: '0.75rem',
+            color: 'var(--color-text-tertiary)',
+          }}
+        >
+          Press <kbd className="mono" style={{ padding: '1px 6px', background: 'var(--color-bg-page)', border: '1px solid var(--color-border)', borderRadius: '4px', color: 'var(--color-text-secondary)' }}>Esc</kbd> or click outside to dismiss
         </div>
       </div>
     </div>

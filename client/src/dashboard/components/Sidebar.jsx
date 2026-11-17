@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { post, del } from '../../shared/api.js';
+import { get, post, del } from '../../shared/api.js';
 import { useIntl } from '../../i18n/IntlProvider.jsx';
 import AppSwitcher from '../../shared/components/AppSwitcher.jsx';
 import { useExperienceMode } from '../../shared/hooks/useExperienceMode.js';
+import { ProtonSessionStore } from '../../services/protonSessionStore.js';
+import { protonClient } from '../../services/protonAPI.js';
+import AccountSwitcherModal from './AccountSwitcherModal.jsx';
 
 const SYSTEM_FOLDERS = [
   { name: 'INBOX', label: 'Inbox', specialUse: '\\Inbox' },
@@ -154,6 +157,7 @@ export default function Sidebar({
   onFolderChange,
   onOpenSupport,
   onOpenTheme,
+  onOpenAccountSwitcher,
   onCompose,
   onUnlockProton,
   onSelectApp,
@@ -169,12 +173,22 @@ export default function Sidebar({
 
   const getFolderDisplayLabel = (f) => {
     const keyMap = {
+      '__all_inboxes': 'nav.allInboxes',
+      'All Inboxes': 'nav.allInboxes',
       'INBOX': 'nav.inbox',
+      'Inbox': 'nav.inbox',
+      'The Feed': 'nav.theFeed',
+      'Paper Trail': 'nav.paperTrail',
+      'Promotions': 'nav.promotions',
+      'Social': 'nav.social',
+      'Starred': 'nav.starred',
+      'Archive': 'nav.archive',
       'Sent': 'nav.sent',
+      'Outbox': 'nav.outbox',
       'Drafts': 'nav.drafts',
       'Trash': 'nav.trash',
       'Spam': 'nav.spam',
-      'Archive': 'nav.archive',
+      'Junk': 'nav.spam',
     };
     return keyMap[f.name] ? t(keyMap[f.name], f.label) : f.label;
   };
@@ -211,8 +225,7 @@ export default function Sidebar({
     let isMounted = true;
     const fetchScreenerCount = async () => {
       try {
-        const res = await fetch('/api/screener/pending/count', { credentials: 'include' });
-        const data = await res.json();
+        const data = await get('/screener/pending/count');
         if (isMounted) setScreenerPendingCount(data.count || 0);
       } catch {}
     };
@@ -235,18 +248,21 @@ export default function Sidebar({
       // Direct name or path match
       if (fName === sfName || fPath === sfName) return true;
 
-      // Special-use match (strictly non-null)
-      if (sf.specialUse && f.specialUse === sf.specialUse) return true;
+      // Special-use match (strictly non-null; handle Gmail \All for Archive)
+      if (sf.specialUse && f.specialUse) {
+        if (f.specialUse === sf.specialUse) return true;
+        if (sf.name === 'Archive' && f.specialUse === '\\All') return true;
+      }
 
-      // Provider-specific aliases (e.g. Gmail [Gmail]/Bin, [Gmail]/Sent Mail, [Gmail]/Drafts)
-      if (sf.name === 'Spam' && (fName === 'junk' || f.specialUse === '\\Junk' || fPath.includes('spam') || fPath.includes('junk'))) return true;
-      if (sf.name === 'Trash' && (fName === 'bin' || fName === 'deleted' || f.specialUse === '\\Trash' || fPath.includes('trash') || fPath.includes('bin'))) return true;
-      if (sf.name === 'Sent' && (fName.includes('sent') || f.specialUse === '\\Sent' || fPath.includes('sent'))) return true;
-      if (sf.name === 'Drafts' && (fName.includes('draft') || f.specialUse === '\\Drafts' || fPath.includes('draft'))) return true;
-      if (sf.name === 'Archive' && (fName === 'all mail' || f.specialUse === '\\Archive' || f.specialUse === '\\All' || fPath.includes('all mail'))) return true;
-      if (sf.name === 'Starred' && (fName === 'starred' || f.specialUse === '\\Flagged' || fPath.includes('starred'))) return true;
-      if (sf.name === 'Promotions' && (fName.includes('promotion') || f.specialUse === '\\Promotions' || fPath.includes('promotion'))) return true;
-      if (sf.name === 'Social' && (fName.includes('social') || f.specialUse === '\\Social' || fPath.includes('social'))) return true;
+      // Provider-specific exact segment aliases
+      if (sf.name === 'Spam' && (fName === 'junk' || fName === 'junk email' || fPath.endsWith('/spam') || fPath.endsWith('/junk'))) return true;
+      if (sf.name === 'Trash' && (fName === 'bin' || fName === 'deleted' || fName === 'deleted items' || fPath.endsWith('/trash') || fPath.endsWith('/bin'))) return true;
+      if (sf.name === 'Sent' && (fName === 'sent mail' || fName === 'sent items' || fName === 'sent messages' || fPath.endsWith('/sent'))) return true;
+      if (sf.name === 'Drafts' && (fName === 'draft' || fPath.endsWith('/drafts'))) return true;
+      if (sf.name === 'Archive' && (fName === 'all mail' || fPath.endsWith('/all mail'))) return true;
+      if (sf.name === 'Starred' && (fName === 'starred' || fPath.endsWith('/starred'))) return true;
+      if (sf.name === 'Promotions' && (fName === 'promotions' || fPath.endsWith('/promotions'))) return true;
+      if (sf.name === 'Social' && (fName === 'social' || fPath.endsWith('/social'))) return true;
 
       return false;
     });
@@ -258,7 +274,8 @@ export default function Sidebar({
   const providerSystemPatterns = [
     '[gmail]', 'important', 'all mail', 'bin', 'sent mail',
     'sent items', 'deleted items', 'junk email', 'bulk mail',
-    'sent messages', 'deleted messages', 'conversation history', 'sync issues'
+    'sent messages', 'deleted messages', 'conversation history', 'sync issues',
+    'drafts', 'sent', 'trash', 'spam', 'junk', 'archive', 'starred', 'promotions', 'social'
   ];
   const customFolders = (folders || []).filter((f) => {
     if (!f) return false;
@@ -274,9 +291,14 @@ export default function Sidebar({
     if (e) e.preventDefault();
     const trimmed = newFolderName.trim();
     if (!trimmed) return;
+    if (activeAccount?.provider === 'proton') {
+      if (window.WoxToast) window.WoxToast.error('Creating custom IMAP folders is not available on Proton mailboxes');
+      return;
+    }
     setFolderLoading(true);
     try {
-      await post('/mail/folders', { name: trimmed });
+      const accParam = activeAccount?.id ? `?accountId=${encodeURIComponent(activeAccount.id)}` : '';
+      await post(`/mail/folders${accParam}`, { name: trimmed });
       if (window.WoxToast) window.WoxToast.success(`Folder "${trimmed}" created`);
       setNewFolderName('');
       setShowCreateFolderModal(false);
@@ -290,9 +312,11 @@ export default function Sidebar({
   };
 
   const handleDeleteFolder = async (folderName) => {
+    if (activeAccount?.provider === 'proton') return;
     if (!confirm(`Are you sure you want to delete folder "${folderName}"?`)) return;
     try {
-      await del(`/mail/folders/${encodeURIComponent(folderName)}`);
+      const accParam = activeAccount?.id ? `?accountId=${encodeURIComponent(activeAccount.id)}` : '';
+      await del(`/mail/folders/${encodeURIComponent(folderName)}${accParam}`);
       if (window.WoxToast) window.WoxToast.success(`Folder "${folderName}" deleted`);
       if (typeof refetchFolders === 'function') refetchFolders();
       if (activeFolder === folderName) onFolderChange('INBOX');
@@ -322,13 +346,13 @@ export default function Sidebar({
             style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 800, fontSize: '1.15rem', letterSpacing: '-0.02em', flexShrink: 0 }}
           >
             <img src="/assets/favicon.svg" alt="WoxMail" style={{ width: 26, height: 26, objectFit: 'contain', flexShrink: 0 }} />
-            {!collapsed && (
+            {!isEffectivelyCollapsed && (
               <span style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>Wox<span style={{ color: 'var(--color-primary-light)' }}>Mail</span></span>
             )}
           </a>
         </div>
         <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', flexShrink: 0 }}>
-          {!collapsed && (
+          {!isEffectivelyCollapsed && (
             <span
               style={{
                 fontSize: '0.68rem',
@@ -416,7 +440,7 @@ export default function Sidebar({
 
       <nav className="sidebar-nav">
         <div className="nav-section">
-          <div className="nav-section-title">Mailbox</div>
+          <div className="nav-section-title">{t('nav.mailbox', 'Mailbox')}</div>
           <button
             type="button"
             className={`sidebar-item ${activeFolder === '__all_inboxes' ? 'active' : ''}`}
@@ -433,7 +457,7 @@ export default function Sidebar({
                 <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
               </svg>
             </span>
-            <span className="sidebar-label">All Inboxes</span>
+            <span className="sidebar-label">{t('nav.allInboxes', 'All Inboxes')}</span>
           </button>
           {enrichedFolders
             .filter((f) => {
@@ -500,7 +524,7 @@ export default function Sidebar({
           <div className="nav-section">
             <div className="nav-section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.4rem 0.75rem 0.2rem' }}>
               <div className="nav-section-title" style={{ margin: 0 }}>Custom Folders</div>
-              {!collapsed && (
+              {!isEffectivelyCollapsed && (
                 <button
                   type="button"
                   className="btn btn-ghost btn-xs"
@@ -512,7 +536,7 @@ export default function Sidebar({
                 </button>
               )}
             </div>
-            {customFolders.length === 0 && !collapsed && (
+            {customFolders.length === 0 && !isEffectivelyCollapsed && (
               <button
                 type="button"
                 className="sidebar-item"
@@ -538,7 +562,7 @@ export default function Sidebar({
                     <span className="sidebar-label" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fName}</span>
                     {f && f.unseen > 0 && <span className="sidebar-badge">{f.unseen}</span>}
                   </button>
-                  {!collapsed && (
+                  {!isEffectivelyCollapsed && (
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); handleDeleteFolder(fName); }}
@@ -601,7 +625,7 @@ export default function Sidebar({
             title={collapsed ? 'Expand Sidebar (Reclaim Full Names)' : 'Collapse Sidebar to Mini-Rail'}
           >
             <span>{collapsed ? '▶' : '◀'}</span>
-            <span className="collapse-text">{collapsed ? '' : 'Collapse Sidebar'}</span>
+            <span className="collapse-text">{collapsed ? '' : t('nav.collapse', 'Collapse Sidebar')}</span>
           </button>
         )}
 
@@ -622,15 +646,20 @@ export default function Sidebar({
             <span className="sidebar-icon">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></svg>
             </span>
-            <span className="sidebar-label">Install App</span>
+            <span className="sidebar-label">{t('nav.installApp', 'Install App')}</span>
           </button>
         )}
 
-        <button type="button" className="sidebar-item" title="Support Desk" onClick={() => window.location.href = '/support'}>
+        <button
+          type="button"
+          className="sidebar-item"
+          title="Support Desk"
+          onClick={() => (onOpenSupport ? onOpenSupport() : (window.location.href = '/support'))}
+        >
           <span className="sidebar-icon">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
           </span>
-          <span className="sidebar-label">Support Desk</span>
+          <span className="sidebar-label">{t('nav.supportDesk', 'Support Desk')}</span>
         </button>
         {(user?.email?.includes('@proton.') || user?.email?.includes('@pm.me')) && (
           <button
@@ -667,7 +696,7 @@ export default function Sidebar({
           <span className="sidebar-icon">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 0 20z"/></svg>
           </span>
-          <span className="sidebar-label">Theme & Shaders</span>
+          <span className="sidebar-label">{t('nav.theme', 'Theme & Shaders')}</span>
         </button>
         <div className="sidebar-user">
           <span className="text-secondary" title={user?.email}>{user?.email}</span>
@@ -678,30 +707,38 @@ export default function Sidebar({
           className="sidebar-item"
           title="Switch Account"
           onClick={() => {
-            if (window.WoxAccountManager) {
-              setSavedAccounts(window.WoxAccountManager.getAccounts());
+            if (onOpenAccountSwitcher) {
+              onOpenAccountSwitcher();
+            } else {
+              setShowAccountSwitcher(true);
             }
-            setShowAccountSwitcher(true);
           }}
         >
           <span className="sidebar-icon">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           </span>
-          <span className="sidebar-label">Switch Account</span>
+          <span className="sidebar-label">{t('nav.switchAccount', 'Switch Account')}</span>
         </button>
         <button
           type="button"
           className="sidebar-item"
           title="Logout"
           onClick={async () => {
-            await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+            try {
+              await protonClient.logout().catch(() => {});
+              ProtonSessionStore.clearSession();
+              if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+                navigator.serviceWorker.controller.postMessage({ type: 'SIGN_OUT' });
+              }
+              await post('/auth/logout');
+            } catch {}
             window.location.href = '/login';
           }}
         >
           <span className="sidebar-icon">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
           </span>
-          <span className="sidebar-label">Logout</span>
+          <span className="sidebar-label">{t('nav.logout', 'Logout')}</span>
         </button>
       </div>
 

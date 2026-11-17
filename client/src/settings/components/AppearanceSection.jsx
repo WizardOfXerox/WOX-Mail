@@ -9,6 +9,25 @@ export default function AppearanceSection() {
   const [font, setFont] = useState(() => localStorage.getItem('woxmail_font') || 'inter');
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    get('/api/settings/preferences')
+      .then((res) => {
+        if (!active || !res?.preferences) return;
+        const p = res.preferences;
+        if (p.accent) handleAccentChange(p.accent);
+        if (p.bgMode) handleBgModeChange(p.bgMode);
+        if (p.bgIntensity !== undefined && !Number.isNaN(Number(p.bgIntensity))) {
+          handleIntensityChange(p.bgIntensity);
+        }
+        if (p.density) handleDensityChange(p.density);
+        if (p.font) handleFontChange(p.font);
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
 
   const ACCENTS = [
     { id: 'purple', name: 'Sovereign Purple', color: '#7c3aed' },
@@ -84,6 +103,8 @@ export default function AppearanceSection() {
   const savePreferencesToCloud = async () => {
     try {
       setSaving(true);
+      setError(null);
+      setSuccess(null);
       await put('/api/settings/preferences', {
         preferences: {
           accent,
@@ -96,7 +117,7 @@ export default function AppearanceSection() {
       setSuccess('Appearance preferences saved to your cloud profile!');
       setTimeout(() => setSuccess(null), 4000);
     } catch (err) {
-      console.warn('Failed to sync to cloud:', err.message);
+      setError(err.message || 'Failed to sync appearance preferences to cloud profile.');
     } finally {
       setSaving(false);
     }
@@ -111,6 +132,7 @@ export default function AppearanceSection() {
         </p>
       </div>
 
+      {error && <div className="toast toast-error" style={{ position: 'static', marginBottom: '1.5rem', width: '100%' }}>{error}</div>}
       {success && <div className="toast toast-success" style={{ position: 'static', marginBottom: '1.5rem', width: '100%' }}>{success}</div>}
 
       {/* 1. Sovereign Color Accents */}
@@ -163,7 +185,7 @@ export default function AppearanceSection() {
                 padding: '1rem',
                 borderRadius: 'var(--radius-md)',
                 border: bgMode === item.id ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
-                background: bgMode === item.id ? 'rgba(124, 58, 237, 0.12)' : 'var(--color-bg-elevated)',
+                background: bgMode === item.id ? 'var(--color-primary-subtle)' : 'var(--color-bg-elevated)',
                 cursor: 'pointer',
                 transition: 'all var(--transition-fast)'
               }}
@@ -211,7 +233,7 @@ export default function AppearanceSection() {
                 padding: '1rem',
                 borderRadius: 'var(--radius-md)',
                 border: density === item.id ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
-                background: density === item.id ? 'rgba(124, 58, 237, 0.12)' : 'var(--color-bg-elevated)',
+                background: density === item.id ? 'var(--color-primary-subtle)' : 'var(--color-bg-elevated)',
                 cursor: 'pointer'
               }}
             >
@@ -237,7 +259,7 @@ export default function AppearanceSection() {
                 padding: '1rem',
                 borderRadius: 'var(--radius-md)',
                 border: font === item.id ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
-                background: font === item.id ? 'rgba(124, 58, 237, 0.12)' : 'var(--color-bg-elevated)',
+                background: font === item.id ? 'var(--color-primary-subtle)' : 'var(--color-bg-elevated)',
                 cursor: 'pointer'
               }}
             >

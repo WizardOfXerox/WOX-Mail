@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useExperienceMode } from '../hooks/useExperienceMode.js';
 
 /**
  * Superhuman-grade Command Palette (Ctrl+K / Cmd+K)
@@ -8,6 +9,7 @@ export default function CommandPalette({ isOpen, onClose, onAction, folders = []
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef(null);
+  const { isFeatureVisible } = useExperienceMode();
 
   // Load command usage frequencies from localStorage
   const usageMap = useMemo(() => {
@@ -49,8 +51,12 @@ const baseCommands = useMemo(() => {
     { id: 'compose', title: 'New Message', category: 'Mail', desc: 'Compose standard or encrypted email', action: () => onAction('compose') },
     { id: 'secure', title: 'Send Confidential Locked Email', category: 'Privacy', desc: 'Zero-knowledge AES-256 password locked email', action: () => onAction('secure') },
     { id: 'refresh', title: 'Refresh Mailbox', category: 'Mail', desc: 'Fetch latest messages and folder counts', action: () => onAction('refresh') },
-    { id: 'gatekeeper', title: 'The Gatekeeper', category: 'Privacy', desc: 'Quarantine & screen first-contact senders', action: () => onAction('gatekeeper') },
-    { id: 'campaigns', title: 'WoxNewsletter & Campaigns', category: 'Broadcasting', desc: 'Mailing list broadcaster & subscriber manager', action: () => onAction('campaigns') },
+    ...(isFeatureVisible('gatekeeper') ? [{ id: 'gatekeeper', title: 'The Gatekeeper', category: 'Privacy', desc: 'Quarantine & screen first-contact senders', action: () => onAction('gatekeeper') }] : []),
+    ...(isFeatureVisible('campaigns') ? [{ id: 'campaigns', title: 'WoxNewsletter & Campaigns', category: 'Broadcasting', desc: 'Mailing list broadcaster & subscriber manager', action: () => onAction('campaigns') }] : []),
+    ...(isFeatureVisible('kanban') ? [{ id: 'kanban', title: 'Kanban Workflow Board', category: 'Productivity', desc: 'Open visual email triage pipeline', action: () => onAction('kanban') }] : []),
+    ...(isFeatureVisible('calendar') ? [{ id: 'calendar', title: 'Calendar & Agenda', category: 'Productivity', desc: 'Open schedule and upcoming events', action: () => onAction('calendar') }] : []),
+    ...(isFeatureVisible('templates') ? [{ id: 'templates', title: 'Email Templates Library', category: 'Compose', desc: 'Insert or compose with reusable templates', action: () => onAction('templates') }] : []),
+    { id: 'accounts', title: 'Switch Account / Mailboxes', category: 'Accounts', desc: 'Switch active inbox or linked accounts', action: () => onAction('accounts') },
     { id: 'support', title: 'Sovereign Support Desk', category: 'Help', desc: 'Open tickets, live support & diagnostics', action: () => onAction('support') },
     { id: 'futureme', title: 'Write Letter to the Future', category: 'Time Capsule', desc: 'Deliver letter 1, 3, 5, 10 years from now', action: () => { window.location.href = '/futureme'; } },
     { id: 'tempmail', title: 'Generate Disposable Temp Mail', category: 'Temp Mail', desc: 'Instant anonymous mailbox with SSE', action: () => { window.location.href = '/tempmail'; } },
@@ -81,7 +87,7 @@ const baseCommands = useMemo(() => {
   }
 
   return list;
-}, [folders, user, onAction]);
+}, [folders, user, onAction, isFeatureVisible]);
 
   // Filter & sort by search query and usage frequency
   const filtered = useMemo(() => {

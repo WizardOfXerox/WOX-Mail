@@ -5,6 +5,7 @@
 
 import crypto from 'crypto';
 import { query } from '../config/database.js';
+import { isSafeUrl, safeFetch } from './linkPreviewService.js';
 import pino from 'pino';
 
 const logger = pino({ name: 'woxmail:webhooks' });
@@ -25,8 +26,13 @@ export function generateWebhookSecret() {
  * @param {string[]} [events=['mail.received']]
  */
 export async function createWebhook(userId, name, targetUrl, events = ['mail.received', 'mail.otp_extracted']) {
-  if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+  if (!targetUrl || (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://'))) {
     throw new Error('Target URL must start with http:// or https://');
+  }
+
+  const safety = await isSafeUrl(targetUrl);
+  if (!safety.safe) {
+    throw new Error(`Unsafe webhook target URL blocked: ${safety.error || 'private/internal addresses are prohibited'}`);
   }
 
   const secretKey = generateWebhookSecret();
@@ -72,8 +78,12 @@ export async function updateWebhook(userId, webhookId, updates) {
     values.push(updates.name);
   }
   if (updates.target_url !== undefined) {
-    if (!updates.target_url.startsWith('http://') && !updates.target_url.startsWith('https://')) {
+    if (!updates.target_url || (!updates.target_url.startsWith('http://') && !updates.target_url.startsWith('https://'))) {
       throw new Error('Target URL must start with http:// or https://');
+    }
+    const safety = await isSafeUrl(updates.target_url);
+    if (!safety.safe) {
+      throw new Error(`Unsafe webhook target URL blocked: ${safety.error || 'private/internal addresses are prohibited'}`);
     }
     sets.push(`target_url = $${idx++}`);
     values.push(updates.target_url);
@@ -163,7 +173,7 @@ async function deliverToWebhook(webhook, eventType, payload) {
   const timeoutId = setTimeout(() => controller.abort(), 5000);
 
   try {
-    const res = await fetch(webhook.target_url, {
+    const res = await safeFetch(webhook.target_url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -176,14 +186,14 @@ async function deliverToWebhook(webhook, eventType, payload) {
       signal: controller.signal,
     });
 
-    clearTimeout(timeoutId);
     status = res.status;
     responseText = (await res.text()).slice(0, 1000);
     success = res.ok;
   } catch (err) {
-    clearTimeout(timeoutId);
     responseText = err.name === 'AbortError' ? 'Request timed out (5s limit)' : err.message;
     success = false;
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   const executionMs = Date.now() - startTime;

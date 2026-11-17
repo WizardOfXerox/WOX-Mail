@@ -8,7 +8,8 @@ export default function AdminQueueTab() {
   const [spamRules, setSpamRules] = useState([]);
   const [loading, setLoading] = useState(true);
   const [flushing, setFlushing] = useState(false);
-  const [activeSubView, setActiveSubView] = useState('queue'); // 'queue' | 'quarantine'
+  const [activeSubView, setActiveSubView] = useState('all'); // 'all' | 'queue' | 'quarantine'
+  const [quarantineFilter, setQuarantineFilter] = useState('');
 
   useEffect(() => {
     fetchData();
@@ -102,24 +103,43 @@ export default function AdminQueueTab() {
       </div>
 
       {/* Sub-navigation tabs */}
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', borderBottom: '1px solid var(--color-border)', paddingBottom: '0.5rem' }}>
-        <button
-          type="button"
-          className={`btn ${activeSubView === 'queue' ? 'btn-primary btn-sm' : 'btn-ghost btn-sm'}`}
-          onClick={() => setActiveSubView('queue')}
-        >
-          Outbound Delivery Queue ({stats.total})
-        </button>
-        <button
-          type="button"
-          className={`btn ${activeSubView === 'quarantine' ? 'btn-primary btn-sm' : 'btn-ghost btn-sm'}`}
-          onClick={() => setActiveSubView('quarantine')}
-        >
-          Screener & Quarantine Bay ({screenerRules.length + spamRules.length})
-        </button>
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', borderBottom: '1px solid var(--color-border)', paddingBottom: '0.5rem', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className={`btn ${activeSubView === 'all' ? 'btn-primary btn-sm' : 'btn-ghost btn-sm'}`}
+            onClick={() => setActiveSubView('all')}
+          >
+            All Views ({stats.total + screenerRules.length + spamRules.length})
+          </button>
+          <button
+            type="button"
+            className={`btn ${activeSubView === 'queue' ? 'btn-primary btn-sm' : 'btn-ghost btn-sm'}`}
+            onClick={() => setActiveSubView('queue')}
+          >
+            Outbound Delivery Queue ({stats.total})
+          </button>
+          <button
+            type="button"
+            className={`btn ${activeSubView === 'quarantine' ? 'btn-primary btn-sm' : 'btn-ghost btn-sm'}`}
+            onClick={() => setActiveSubView('quarantine')}
+          >
+            Screener & Quarantine Bay ({screenerRules.length + spamRules.length})
+          </button>
+        </div>
+        {(activeSubView === 'all' || activeSubView === 'quarantine') && (
+          <input
+            type="text"
+            className="input input-sm"
+            placeholder="Filter screener / spam rules..."
+            value={quarantineFilter}
+            onChange={(e) => setQuarantineFilter(e.target.value)}
+            style={{ width: 220 }}
+          />
+        )}
       </div>
 
-      {activeSubView === 'queue' && (
+      {(activeSubView === 'all' || activeSubView === 'queue') && (
         <>
           {/* Metrics summary cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
@@ -146,7 +166,7 @@ export default function AdminQueueTab() {
           </div>
 
           {/* Queue Jobs Table */}
-          <div className="admin-card" style={{ padding: '0', overflow: 'hidden' }}>
+          <div className="admin-card" style={{ padding: '0', overflow: 'hidden', marginBottom: activeSubView === 'all' ? '1.5rem' : 0 }}>
             <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--color-bg-elevated)', textAlign: 'left', borderBottom: '1px solid var(--color-border)' }}>
@@ -200,51 +220,123 @@ export default function AdminQueueTab() {
         </>
       )}
 
-      {activeSubView === 'quarantine' && (
-        <div className="admin-card" style={{ padding: '1.25rem' }}>
-          <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '0.75rem' }}>
-            The Gatekeeper Screener & Quarantine Policies
-          </h3>
-          <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: '1rem' }}>
-            Active screening rules filtering unknown inbound senders into quarantine bays or cold email holding lists.
-          </p>
+      {(activeSubView === 'all' || activeSubView === 'quarantine') && (() => {
+        const q = quarantineFilter.trim().toLowerCase();
+        const filteredScreener = screenerRules.filter((r) =>
+          !q ||
+          (r.sender_pattern || '').toLowerCase().includes(q) ||
+          (r.user_email || '').toLowerCase().includes(q) ||
+          (r.destination || '').toLowerCase().includes(q)
+        );
+        const filteredSpam = spamRules.filter((r) =>
+          !q ||
+          (r.value || '').toLowerCase().includes(q) ||
+          (r.type || '').toLowerCase().includes(q)
+        );
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            <div className="admin-card" style={{ padding: '1.25rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0 }}>
+                  The Gatekeeper Screener Rules ({filteredScreener.length})
+                </h3>
+                <span className="badge badge-purple">Screener Policies</span>
+              </div>
+              <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: '1rem' }}>
+                Active screening rules routing unknown inbound senders into Inbox, The Feed, Paper Trail, or Blocked quarantine bays.
+              </p>
 
-          <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: 'var(--color-bg-elevated)', textAlign: 'left', borderBottom: '1px solid var(--color-border)' }}>
-                <th style={{ padding: '0.75rem 1rem' }}>User Email</th>
-                <th style={{ padding: '0.75rem 1rem' }}>Sender Pattern</th>
-                <th style={{ padding: '0.75rem 1rem' }}>Match Type</th>
-                <th style={{ padding: '0.75rem 1rem' }}>Destination</th>
-                <th style={{ padding: '0.75rem 1rem' }}>Created At</th>
-              </tr>
-            </thead>
-            <tbody>
-              {screenerRules.length === 0 ? (
-                <tr>
-                  <td colSpan="5" style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
-                    No active screener rules.
-                  </td>
-                </tr>
-              ) : (
-                screenerRules.map((rule) => (
-                  <tr key={rule.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                    <td style={{ padding: '0.75rem 1rem', fontSize: '0.85rem' }}>{rule.user_email || `User #${rule.user_id}`}</td>
-                    <td style={{ padding: '0.75rem 1rem', fontFamily: 'var(--font-mono)', fontSize: '0.85rem' }}>{rule.sender_pattern}</td>
-                    <td style={{ padding: '0.75rem 1rem', fontSize: '0.85rem' }}>
-                      <span className="badge badge-purple">{rule.match_type}</span>
-                    </td>
-                    <td style={{ padding: '0.75rem 1rem', fontSize: '0.85rem' }}>{rule.destination}</td>
-                    <td style={{ padding: '0.75rem 1rem', fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>
-                      {new Date(rule.created_at).toLocaleDateString()}
-                    </td>
+              <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: 'var(--color-bg-elevated)', textAlign: 'left', borderBottom: '1px solid var(--color-border)' }}>
+                    <th style={{ padding: '0.75rem 1rem' }}>User Email</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Sender Pattern</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Match Type</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Destination</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Created At</th>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+                </thead>
+                <tbody>
+                  {filteredScreener.length === 0 ? (
+                    <tr>
+                      <td colSpan="5" style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                        {q ? 'No screener rules matching filter.' : 'No active screener rules.'}
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredScreener.map((rule) => (
+                      <tr key={rule.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                        <td style={{ padding: '0.75rem 1rem', fontSize: '0.85rem' }}>{rule.user_email || `User #${rule.user_id}`}</td>
+                        <td style={{ padding: '0.75rem 1rem', fontFamily: 'var(--font-mono)', fontSize: '0.85rem' }}>{rule.sender_pattern}</td>
+                        <td style={{ padding: '0.75rem 1rem', fontSize: '0.85rem' }}>
+                          <span className="badge badge-purple">{rule.match_type}</span>
+                        </td>
+                        <td style={{ padding: '0.75rem 1rem', fontSize: '0.85rem' }}>
+                          <span className={`badge ${rule.destination === 'blocked' ? 'badge-red' : rule.destination === 'inbox' ? 'badge-green' : 'badge-amber'}`}>
+                            {rule.destination}
+                          </span>
+                        </td>
+                        <td style={{ padding: '0.75rem 1rem', fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>
+                          {new Date(rule.created_at).toLocaleDateString()}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="admin-card" style={{ padding: '1.25rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0 }}>
+                  User Spam Whitelist & Blacklist Rules ({filteredSpam.length})
+                </h3>
+                <span className="badge badge-amber">Spam Filter Holds</span>
+              </div>
+              <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: '1rem' }}>
+                Per-user whitelist and blacklist sender rules enforced during inbound triage.
+              </p>
+
+              <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: 'var(--color-bg-elevated)', textAlign: 'left', borderBottom: '1px solid var(--color-border)' }}>
+                    <th style={{ padding: '0.75rem 1rem' }}>Rule ID</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>User ID</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Rule Type</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Pattern / Address</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Created At</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredSpam.length === 0 ? (
+                    <tr>
+                      <td colSpan="5" style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                        {q ? 'No spam rules matching filter.' : 'No spam whitelist/blacklist rules configured.'}
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredSpam.map((sr) => (
+                      <tr key={sr.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                        <td style={{ padding: '0.75rem 1rem', fontFamily: 'var(--font-mono)', fontSize: '0.85rem' }}>#{sr.id}</td>
+                        <td style={{ padding: '0.75rem 1rem', fontSize: '0.85rem' }}>User #{sr.user_id}</td>
+                        <td style={{ padding: '0.75rem 1rem' }}>
+                          <span className={`badge ${sr.type === 'blacklist' ? 'badge-red' : 'badge-green'}`}>
+                            {String(sr.type || '').toUpperCase()}
+                          </span>
+                        </td>
+                        <td style={{ padding: '0.75rem 1rem', fontFamily: 'var(--font-mono)', fontSize: '0.85rem' }}>{sr.value}</td>
+                        <td style={{ padding: '0.75rem 1rem', fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>
+                          {new Date(sr.created_at).toLocaleDateString()}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

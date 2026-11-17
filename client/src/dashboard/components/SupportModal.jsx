@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { get, post } from '../../shared/api.js';
 
 /**
  * SupportModal — User Helpdesk Portal with Ticket Tracking, Live Thread & Diagnostics
@@ -26,11 +27,10 @@ export default function SupportModal({ user, onClose }) {
   const fetchTickets = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/support/tickets', { credentials: 'include' });
-      const data = await res.json();
+      const data = await get('/support/tickets');
       setTickets(data.tickets || []);
     } catch (err) {
-      console.error('Failed to fetch tickets', err);
+      if (window.WoxToast) window.WoxToast.error('Failed to load support tickets: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -39,13 +39,12 @@ export default function SupportModal({ user, onClose }) {
   const fetchThread = async (id) => {
     try {
       setLoadingThread(true);
-      const res = await fetch(`/api/support/tickets/${id}`, { credentials: 'include' });
-      const data = await res.json();
+      const data = await get(`/support/tickets/${id}`);
       setThreadData(data);
       setSelectedTicketId(id);
       setActiveView('thread');
     } catch (err) {
-      alert('Failed to load ticket thread: ' + err.message);
+      if (window.WoxToast) window.WoxToast.error('Failed to load ticket thread: ' + err.message);
     } finally {
       setLoadingThread(false);
     }
@@ -71,26 +70,23 @@ export default function SupportModal({ user, onClose }) {
     try {
       const fullMessage = `${messageText.trim()}\n\n---\n[System Diagnostics Info]\nBrowser: ${diagnosticsInfo.userAgent}\nScreen: ${diagnosticsInfo.screen}\nTimezone: ${diagnosticsInfo.timeZone}`;
 
-      const res = await fetch('/api/support/tickets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          subject: subject.trim(),
-          category,
-          priority,
-          messageText: fullMessage,
-        }),
+      const data = await post('/support/tickets', {
+        subject: subject.trim(),
+        category,
+        priority,
+        messageText: fullMessage,
       });
-      const data = await res.json();
-      if (data.success) {
+      if (data.success && data.ticket) {
         setSubject('');
         setMessageText('');
+        if (window.WoxToast) window.WoxToast.success('Support ticket opened');
         fetchTickets();
         fetchThread(data.ticket.id);
+      } else {
+        throw new Error(data.error || 'Failed to create ticket');
       }
     } catch (err) {
-      alert('Failed to create ticket: ' + err.message);
+      if (window.WoxToast) window.WoxToast.error('Failed to create ticket: ' + err.message);
     } finally {
       setCreating(false);
     }
@@ -102,19 +98,17 @@ export default function SupportModal({ user, onClose }) {
 
     setSendingReply(true);
     try {
-      const res = await fetch(`/api/support/tickets/${selectedTicketId}/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ messageText: replyText.trim() }),
+      const data = await post(`/support/tickets/${selectedTicketId}/messages`, {
+        messageText: replyText.trim(),
       });
-      const data = await res.json();
       if (data.success) {
         setReplyText('');
         fetchThread(selectedTicketId);
+      } else {
+        throw new Error(data.error || 'Failed to send reply');
       }
     } catch (err) {
-      alert('Failed to post reply: ' + err.message);
+      if (window.WoxToast) window.WoxToast.error('Failed to post reply: ' + err.message);
     } finally {
       setSendingReply(false);
     }

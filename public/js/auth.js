@@ -7,6 +7,17 @@
 
   const API = '/api/auth';
   let otpTicket = null;
+  let recoveryMode = false;
+
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
 
   function getCsrfToken() {
     const match = document.cookie.match(/woxmail_csrf=([^;]+)/);
@@ -267,11 +278,22 @@
         }
 
         if (data.requires_otp) {
-          // Show OTP form
+          // Show OTP form in TOTP mode
           otpTicket = data.ticket;
+          recoveryMode = false;
+          const otpInput = document.getElementById('otp-code');
+          if (otpInput) {
+            otpInput.value = '';
+            otpInput.maxLength = 6;
+            otpInput.pattern = '[0-9]{6}';
+            otpInput.inputMode = 'numeric';
+            otpInput.placeholder = '000000';
+            otpInput.style.letterSpacing = '';
+            otpInput.style.fontSize = '';
+          }
           loginForm.style.display = 'none';
           otpForm.style.display = 'flex';
-          document.getElementById('otp-code').focus();
+          otpInput?.focus();
           return;
         }
 
@@ -280,7 +302,7 @@
           localStorage.setItem('woxmail_remember_me', 'true');
           localStorage.setItem('woxmail_remembered_email', email);
           if (window.WoxAccountManager && data.user) {
-            window.WoxAccountManager.saveAccount(data.user, data.token);
+            window.WoxAccountManager.saveAccount(data.user, data.switchToken || data.token);
           }
         } else {
           localStorage.setItem('woxmail_remember_me', 'false');
@@ -313,7 +335,9 @@
       const btn = document.getElementById('otp-btn');
       const code = document.getElementById('otp-code').value.trim();
 
-      if (!code || code.length < 6) return WoxToast.error('Enter a 6-digit code');
+      if (!code || (recoveryMode ? code.length < 8 : code.length < 6)) {
+        return WoxToast.error(recoveryMode ? 'Enter your 10-character recovery code' : 'Enter a 6-digit code');
+      }
 
       btn.disabled = true;
       btn.textContent = 'Verifying...';
@@ -321,7 +345,10 @@
       try {
         const res = await fetch(`${API}/verify-otp`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-csrf-token': getCsrfToken(),
+          },
           credentials: 'include',
           body: JSON.stringify({ ticket: otpTicket, code }),
         });
@@ -342,7 +369,7 @@
           const emailVal = document.getElementById('email')?.value.trim() || data.user?.email;
           if (emailVal) localStorage.setItem('woxmail_remembered_email', emailVal);
           if (window.WoxAccountManager && data.user) {
-            window.WoxAccountManager.saveAccount(data.user, data.token);
+            window.WoxAccountManager.saveAccount(data.user, data.switchToken || data.token);
           }
         } else {
           localStorage.setItem('woxmail_remember_me', 'false');
@@ -364,8 +391,15 @@
       }
     });
 
-    // Auto-submit on 6 digits
+    // Auto-submit on 6-digit TOTP or 10-char recovery code
     document.getElementById('otp-code')?.addEventListener('input', (e) => {
+      if (recoveryMode) {
+        e.target.value = e.target.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 10);
+        if (e.target.value.length === 10) {
+          otpForm.dispatchEvent(new Event('submit'));
+        }
+        return;
+      }
       e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6);
       if (e.target.value.length === 6) {
         otpForm.dispatchEvent(new Event('submit'));
@@ -415,7 +449,7 @@
           inviteStatus.innerHTML = '<span style="color: var(--color-success, #22c55e); font-size: 0.78rem; display: inline-flex; align-items: center; gap: 0.3rem;">✓ Verified active invitation code</span>';
           inviteInput.style.borderColor = 'var(--color-success, #22c55e)';
         } else {
-          inviteStatus.innerHTML = `<span style="color: var(--color-danger, #ef4444); font-size: 0.78rem; display: inline-flex; align-items: center; gap: 0.3rem;">✕ ${data.reason || 'Invalid or expired invite code'}</span>`;
+          inviteStatus.innerHTML = `<span style="color: var(--color-danger, #ef4444); font-size: 0.78rem; display: inline-flex; align-items: center; gap: 0.3rem;">✕ ${escapeHtml(data.reason || 'Invalid or expired invite code')}</span>`;
           inviteInput.style.borderColor = 'var(--color-danger, #ef4444)';
         }
       } catch {
@@ -532,6 +566,16 @@
 
   window.backToLogin = function () {
     otpTicket = null;
+    recoveryMode = false;
+    const otpInput = document.getElementById('otp-code');
+    if (otpInput) {
+      otpInput.maxLength = 6;
+      otpInput.pattern = '[0-9]{6}';
+      otpInput.placeholder = '000000';
+      otpInput.style.letterSpacing = '';
+      otpInput.style.fontSize = '';
+      otpInput.value = '';
+    }
     if (otpForm) otpForm.style.display = 'none';
     if (loginForm) loginForm.style.display = 'flex';
     document.getElementById('password').value = '';
@@ -539,6 +583,7 @@
   };
 
   window.showRecoveryInput = function () {
+    recoveryMode = true;
     const input = document.getElementById('otp-code');
     if (input) {
       input.maxLength = 10;

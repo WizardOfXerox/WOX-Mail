@@ -348,7 +348,7 @@ export default function ProtonUnlockModal({ email, onUnlocked, onClose }) {
                 autoFocus
                 className="input mono"
                 value={totpCode}
-                onChange={(e) => setTotpCode(e.target.value.replace(/\\D/g, ''))}
+                onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ''))}
                 placeholder="123456"
                 style={{
                   fontSize: '1.6rem',

@@ -1,11 +1,20 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 
 export default function UndoSendToast({ dispatchId, delaySeconds = 10, onUndo, onFinish }) {
   const [secondsLeft, setSecondsLeft] = useState(delaySeconds);
+  const finishedRef = useRef(false);
+  const onFinishRef = useRef(onFinish);
+  onFinishRef.current = onFinish;
 
   useEffect(() => {
-    if (secondsLeft <= 0) {
-      onFinish?.();
+    finishedRef.current = false;
+    setSecondsLeft(delaySeconds);
+
+    if (delaySeconds <= 0) {
+      if (!finishedRef.current) {
+        finishedRef.current = true;
+        onFinishRef.current?.();
+      }
       return;
     }
 
@@ -13,7 +22,10 @@ export default function UndoSendToast({ dispatchId, delaySeconds = 10, onUndo, o
       setSecondsLeft((prev) => {
         if (prev <= 1) {
           clearInterval(interval);
-          onFinish?.();
+          if (!finishedRef.current) {
+            finishedRef.current = true;
+            setTimeout(() => onFinishRef.current?.(), 0);
+          }
           return 0;
         }
         return prev - 1;
@@ -21,7 +33,7 @@ export default function UndoSendToast({ dispatchId, delaySeconds = 10, onUndo, o
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [secondsLeft, onFinish]);
+  }, [delaySeconds, dispatchId]);
 
   const percentage = ((delaySeconds - secondsLeft) / delaySeconds) * 100;
 

@@ -34,7 +34,7 @@ export function requireTempAuth(req, res, next) {
  */
 async function validateTempSession(token) {
   const result = await query(
-    `SELECT id, address, tier, status, password_hash, custom_username,
+    `SELECT id, address, tier, status, password_hash, imap_password, custom_username,
             expires_at, created_at, session_token, last_accessed
      FROM temp_addresses
      WHERE session_token = $1

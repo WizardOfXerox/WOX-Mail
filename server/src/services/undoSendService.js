@@ -2,6 +2,8 @@ import { v4 as uuidv4 } from 'uuid';
 import * as smtpService from './smtp.js';
 import * as webhookDispatcher from './webhookDispatcher.js';
 import * as outboxService from './outboxService.js';
+import * as complianceArchiveService from './complianceArchiveService.js';
+import * as imapService from './imap.js';
 import { query } from '../config/database.js';
 import { pino } from 'pino';
 
@@ -9,6 +11,42 @@ const logger = pino({ name: 'woxmail:undo-send' });
 
 // In-memory registry for pending cancellable outbound dispatches
 const pendingDispatches = new Map();
+
+async function learnContacts(userId, recipientsList) {
+  if (!userId || !recipientsList) return;
+  try {
+    const rawList = Array.isArray(recipientsList) ? recipientsList : [recipientsList];
+    for (const item of rawList) {
+      if (!item) continue;
+      for (const p of String(item).split(',')) {
+        const clean = p.trim();
+        if (!clean) continue;
+        let email = clean;
+        let name = null;
+        if (clean.includes('<') && clean.includes('>')) {
+          const match = clean.match(/^(.*?)\s*<([^>]+)>/);
+          if (match) {
+            name = match[1].replace(/["']/g, '').trim() || null;
+            email = match[2].trim().toLowerCase();
+          }
+        } else {
+          email = clean.toLowerCase();
+        }
+        if (email.includes('@') && !email.endsWith('.onion')) {
+          await query(
+            `INSERT INTO contacts (user_id, email, name, last_emailed)
+             VALUES ($1, $2, $3, NOW())
+             ON CONFLICT (user_id, email)
+             DO UPDATE SET last_emailed = NOW(), name = COALESCE(EXCLUDED.name, contacts.name)`,
+            [userId, email, name]
+          );
+        }
+      }
+    }
+  } catch (err) {
+    logger.warn({ err: err.message }, 'Failed to auto-learn recipients in undoSend');
+  }
+}
 
 /**
  * Queue an outbound email with a configurable cancellation buffer.
@@ -18,6 +56,7 @@ const pendingDispatches = new Map();
  * @param {Object} params.emailPayload - Email options (from, to, subject, html, text, attachments, etc.)
  * @param {number} [params.delaySeconds=10] - Delay window in seconds
  * @param {Object} [params.reqMetadata] - IP address, user agent, reverse alias info
+ * @param {number|string|null} [params.accountId=null] - Connected account ID
  * @param {Function} [params.getIMAPConnection] - IMAP connection factory for saving to Sent folder
  * @returns {Promise<{ dispatchId: string, delaySeconds: number, scheduledAt: Date }>}
  */
@@ -26,10 +65,14 @@ export async function queueOutboundMessage({
   emailPayload,
   delaySeconds = 10,
   reqMetadata = {},
+  accountId = null,
   getIMAPConnection = null,
 }) {
   const dispatchId = uuidv4();
-  const clampedDelay = Math.max(0, Math.min(60, Number(delaySeconds) || 10));
+  const parsedDelay = (delaySeconds === 0 || delaySeconds === '0')
+    ? 0
+    : (Number(delaySeconds) || 10);
+  const clampedDelay = Math.max(0, Math.min(60, isNaN(parsedDelay) ? 10 : parsedDelay));
   const scheduledAt = new Date(Date.now() + clampedDelay * 1000);
 
   const dispatchRecord = {
@@ -41,6 +84,7 @@ export async function queueOutboundMessage({
     scheduledAt,
     status: clampedDelay === 0 ? 'sending' : 'queued_undo',
     reqMetadata,
+    accountId,
     getIMAPConnection,
     timer: null,
   };
@@ -123,8 +167,8 @@ export function cancelUndoSend(userId, dispatchId) {
   }
   pendingDispatches.delete(dispatchId);
 
-  // Remove cancelled dispatch from outbox
-  outboxService.deleteOutboxMessage(userId, dispatchId).catch(() => {});
+  // Remove cancelled dispatch from outbox strictly by dispatch_id (never parseInt on UUID)
+  query('DELETE FROM outbox_emails WHERE user_id = $1 AND dispatch_id = $2', [userId, dispatchId]).catch(() => {});
 
   logger.info({ dispatchId, userId }, 'Outbound email successfully cancelled by user');
   return {
@@ -140,13 +184,60 @@ export function cancelUndoSend(userId, dispatchId) {
  */
 async function executeDispatch(record) {
   record.status = 'dispatching';
-  await outboxService.updateOutboxStatus(record.id, { status: 'sending' });
   const { user, emailPayload, reqMetadata, getIMAPConnection } = record;
+  await outboxService.updateOutboxStatus(record.id, { status: 'sending' }, user.id);
 
   try {
-    const { transporter } = await smtpService.getTransporterForUser(user.id, record.accountId);
+    const { transporter, senderEmail: defaultSender, accountId: resolvedAccountId } = await smtpService.getTransporterForUser(user.id, record.accountId);
+    const effectiveAccountId = record.accountId !== undefined && record.accountId !== null ? record.accountId : resolvedAccountId;
 
-    const result = await smtpService.sendEmail(transporter, emailPayload);
+    const rawFrom = String(emailPayload.from || defaultSender || user.email || '');
+    const senderMatch = rawFrom.match(/<([^>]+)>/);
+    const senderEmail = (senderMatch ? senderMatch[1] : rawFrom).trim();
+
+    const isProton = Boolean(
+      transporter?.isProton ||
+      (senderEmail && (
+        senderEmail.endsWith('@proton.me') ||
+        senderEmail.endsWith('@pm.me') ||
+        senderEmail.endsWith('@protonmail.com') ||
+        senderEmail.endsWith('@protonmail.ch')
+      ))
+    );
+
+    let result;
+    if (isProton) {
+      const { sendProtonMail } = await import('./protonServerSync.js');
+      result = await sendProtonMail(senderEmail, {
+        ...emailPayload,
+        from: senderEmail,
+      });
+    } else {
+      result = await smtpService.sendEmail(transporter, emailPayload);
+    }
+
+    await outboxService.updateOutboxStatus(record.id, { status: 'sent', sentAt: new Date() }, user.id);
+    await learnContacts(user.id, [emailPayload.to, emailPayload.cc, emailPayload.bcc]);
+
+    // Record to Domain-Wide Compliance Archive
+    const normList = (val) => (Array.isArray(val) ? val : val ? [val] : []);
+    complianceArchiveService.archiveEmail({
+      direction: 'outbound',
+      mailboxOwnerId: user.id,
+      mailboxOwnerEmail: user.email,
+      senderAddress: senderEmail,
+      senderName: user.display_name || user.username,
+      recipientAddresses: normList(emailPayload.to),
+      ccAddresses: normList(emailPayload.cc),
+      bccAddresses: normList(emailPayload.bcc),
+      subject: emailPayload.subject,
+      bodyHtml: emailPayload.html,
+      bodyText: emailPayload.text,
+      attachments: emailPayload.attachments || [],
+      ipAddress: reqMetadata.ip || null,
+      provider: isProton ? 'proton' : 'woxmail',
+      messageId: result.messageId,
+    }).catch((archErr) => logger.warn({ err: archErr.message }, 'Failed to record compliance archive in undoSend'));
 
     // Dispatch webhook event
     webhookDispatcher.dispatchEvent(user.id, 'mail.sent', {
@@ -168,6 +259,7 @@ async function executeDispatch(record) {
           subject: emailPayload.subject,
           messageId: result.messageId,
           isReverseAlias: !!reqMetadata.reverseMapping,
+          from: emailPayload.from,
         }),
         reqMetadata.ip || null,
       ]
@@ -180,10 +272,10 @@ async function executeDispatch(record) {
        ON CONFLICT (date) DO UPDATE SET emails_sent = daily_stats.emails_sent + 1`
     );
 
-    // Append copy to user's Sent IMAP folder if connection provider is supplied
-    if (getIMAPConnection) {
+    // Append copy to user's Sent IMAP folder & clean up previous draft if applicable
+    if (getIMAPConnection && !isProton) {
       try {
-        const client = await getIMAPConnection(user);
+        const client = await getIMAPConnection(user, effectiveAccountId);
         if (client) {
           await smtpService.saveSentMessage(client, {
             from: emailPayload.from,
@@ -197,6 +289,12 @@ async function executeDispatch(record) {
             messageId: result.messageId,
             date: new Date(),
           });
+          if (reqMetadata.previousDraftUid) {
+            const prevUid = parseInt(reqMetadata.previousDraftUid, 10);
+            if (!isNaN(prevUid)) {
+              await imapService.deleteMessages(client, 'Drafts', [prevUid]).catch(() => {});
+            }
+          }
         }
       } catch (saveErr) {
         logger.warn({ err: saveErr.message }, 'Failed to append sent message to Sent folder');
@@ -205,12 +303,11 @@ async function executeDispatch(record) {
 
     record.status = 'sent';
     record.result = result;
-    await outboxService.updateOutboxStatus(record.id, { status: 'sent', sentAt: new Date() });
     logger.info({ dispatchId: record.id, messageId: result.messageId }, 'Outbound email dispatched to SMTP');
     return result;
   } catch (err) {
     record.status = 'failed';
-    await outboxService.updateOutboxStatus(record.id, { status: 'failed', errorMessage: err.message });
+    await outboxService.updateOutboxStatus(record.id, { status: 'failed', errorMessage: err.message }, user.id);
     logger.error({ err: err.message, dispatchId: record.id }, 'Outbound SMTP dispatch failed');
     throw err;
   }

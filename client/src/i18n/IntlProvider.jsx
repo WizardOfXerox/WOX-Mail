@@ -19,8 +19,6 @@ export function IntlProvider({ children }) {
     try {
       const stored = localStorage.getItem('woxmail_lang');
       if (stored && dictionaries[stored]) return stored;
-      const browserLang = navigator.language?.split('-')[0];
-      if (browserLang && dictionaries[browserLang]) return browserLang;
     } catch {}
     return 'en';
   });

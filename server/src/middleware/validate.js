@@ -28,15 +28,24 @@ export function validate(schema, source = 'body') {
     for (const [field, rules] of Object.entries(schema)) {
       let value = data[field];
 
-      // Apply default
-      if (value === undefined && rules.default !== undefined) {
-        value = rules.default;
-      }
-
       // Required check
       if (rules.required && (value === undefined || value === null || value === '')) {
         errors.push(`${field} is required`);
         continue;
+      }
+
+      // Treat empty string '' as omitted for non-required fields
+      if (value === '' && !rules.required) {
+        if (rules.default !== undefined) {
+          value = rules.default;
+        } else {
+          continue;
+        }
+      }
+
+      // Apply default when omitted
+      if (value === undefined && rules.default !== undefined) {
+        value = rules.default;
       }
 
       // Skip further checks if optional and not provided
@@ -73,6 +82,15 @@ export function validate(schema, source = 'body') {
           break;
 
         case 'number':
+          if (
+            typeof value === 'boolean' ||
+            Array.isArray(value) ||
+            (typeof value === 'object' && value !== null) ||
+            (typeof value === 'string' && value.trim() === '')
+          ) {
+            errors.push(`${field} must be a number`);
+            continue;
+          }
           value = Number(value);
           if (isNaN(value)) {
             errors.push(`${field} must be a number`);
@@ -88,9 +106,16 @@ export function validate(schema, source = 'body') {
 
         case 'boolean':
           if (typeof value === 'string') {
-            value = value === 'true' || value === '1';
-          }
-          if (typeof value !== 'boolean') {
+            const normalized = value.trim().toLowerCase();
+            if (normalized === 'true' || normalized === '1') {
+              value = true;
+            } else if (normalized === 'false' || normalized === '0') {
+              value = false;
+            } else {
+              errors.push(`${field} must be a boolean`);
+              continue;
+            }
+          } else if (typeof value !== 'boolean') {
             errors.push(`${field} must be a boolean`);
             continue;
           }
@@ -106,6 +131,13 @@ export function validate(schema, source = 'body') {
           }
           if (rules.max && value.length > rules.max) {
             errors.push(`${field} must have at most ${rules.max} items`);
+          }
+          break;
+
+        case 'object':
+          if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+            errors.push(`${field} must be an object`);
+            continue;
           }
           break;
       }

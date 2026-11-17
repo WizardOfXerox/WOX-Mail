@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { get, post, put, del } from './api.js';
 import { fetchProtonMessages, fetchProtonMessage } from '../services/protonAdapter.js';
 import { ProtonSessionStore } from '../services/protonSessionStore.js';
+import { cacheMessages, getCachedMessages } from '../services/offlineStore.js';
 
 /**
  * Hook to fetch data from an API endpoint.
@@ -10,12 +11,16 @@ import { ProtonSessionStore } from '../services/protonSessionStore.js';
  */
 export function useApi(path, deps = []) {
   const [data, setData] = useState(null);
+  const [dataPath, setDataPath] = useState(null);
   const [loading, setLoading] = useState(Boolean(path));
   const [error, setError] = useState(null);
+  const reqIdRef = useRef(0);
 
   const refetch = useCallback(async () => {
+    const reqId = ++reqIdRef.current;
     if (!path) {
       setData(null);
+      setDataPath(null);
       setLoading(false);
       return;
     }
@@ -23,21 +28,36 @@ export function useApi(path, deps = []) {
     setError(null);
     try {
       const result = await get(path);
-      setData(result);
+      if (reqId === reqIdRef.current) {
+        setData(result);
+        setDataPath(path);
+      }
     } catch (err) {
-      setError(err.message || 'Failed to fetch data');
-      setData(null);
+      if (reqId === reqIdRef.current) {
+        setError(err.message || 'Failed to fetch data');
+        setData(null);
+        setDataPath(path);
+      }
     } finally {
-      setLoading(false);
+      if (reqId === reqIdRef.current) {
+        setLoading(false);
+      }
     }
   }, [path]);
 
   useEffect(() => {
     setData(null);
+    setDataPath(null);
     refetch();
   }, [refetch, ...deps]);
 
-  return { data, loading, error, refetch };
+  const isStale = Boolean(path) && dataPath !== path;
+  return {
+    data: isStale ? null : data,
+    loading: loading || isStale,
+    error: isStale ? null : error,
+    refetch,
+  };
 }
 
 /**
@@ -70,40 +90,88 @@ export function useMessages(folder, page = 1, activeAccount = null) {
   const [protonError, setProtonError] = useState(null);
   const [allInboxesData, setAllInboxesData] = useState(null);
   const [allInboxesLoading, setAllInboxesLoading] = useState(false);
+  const [cachedFallback, setCachedFallback] = useState(null);
 
   const isProton = activeAccount?.provider === 'proton';
   const isAllInboxes = folder === '__all_inboxes' || folder === 'All Inboxes';
+
+  const normalizeImapMessage = useCallback((m, account = null) => {
+    const accId = account?.id || activeAccount?.id || null;
+    const msgFolder = m.folder || (isAllInboxes ? 'INBOX' : folder) || 'INBOX';
+    return {
+      ...m,
+      folder: msgFolder,
+      provider: m.provider || 'imap',
+      accountId: m.accountId ?? accId,
+      accountEmail: m.accountEmail || account?.email || activeAccount?.email || null,
+      _key: m._key || `${m.provider || 'imap'}:${accId || 'primary'}:${msgFolder}:${m.uid}`,
+      isRead: Boolean(m.isRead ?? m.seen ?? m.flags?.includes('\\Seen')),
+      isStarred: Boolean(m.isStarred ?? m.starred ?? m.flags?.includes('\\Flagged')),
+      hasAttachments: Boolean(m.hasAttachments ?? m.has_attachments ?? (m.attachments?.length > 0)),
+    };
+  }, [activeAccount?.id, activeAccount?.email, folder, isAllInboxes]);
 
   const refetchAllInboxes = useCallback(async () => {
     if (!isAllInboxes) return;
     setAllInboxesLoading(true);
     try {
-      // 1. Fetch Primary / IMAP Inbox
-      const primaryPromise = fetch(`/api/mail/inbox?page=1&limit=50`, { credentials: 'include' })
-        .then((r) => (r.ok ? r.json() : { messages: [] }))
-        .catch(() => ({ messages: [] }));
-
-      // 2. Fetch Proton Inbox ONLY if user has an active logged-in Proton session
-      let protonPromise = Promise.resolve({ messages: [] });
-      try {
-        if (typeof fetchProtonMessages === 'function' && ProtonSessionStore.hasActiveSession()) {
-          protonPromise = fetchProtonMessages('INBOX', 1, 50).catch(() => ({ messages: [] }));
-        }
-      } catch {}
-
-      const [primaryRes, protonRes] = await Promise.all([primaryPromise, protonPromise]);
+      // 1. Fetch Primary IMAP Inbox + linked accounts list
+      const [primaryRes, accountsRes] = await Promise.all([
+        get('/mail/inbox?page=1&limit=50').catch(() => ({ messages: [] })),
+        get('/accounts').catch(() => ({ accounts: [] })),
+      ]);
 
       const primaryMsgs = ((primaryRes && primaryRes.messages) || []).map((m) => ({
-        ...m,
+        ...normalizeImapMessage(m, null),
+        accountId: null,
+        _key: `imap:primary:INBOX:${m.uid}`,
         accountBadge: { name: 'WoxMail', color: '#7c3aed' },
       }));
 
-      const protonMsgs = ((protonRes && protonRes.messages) || []).map((m) => ({
-        ...m,
-        accountBadge: { name: 'Proton', color: '#6d4aff' },
-      }));
+      // 2. Fetch linked external IMAP accounts (non-Proton)
+      const linkedImap = (accountsRes?.accounts || []).filter(
+        (acc) => acc && acc.provider !== 'proton' && acc.type !== 'proton' && !acc.isPrimary
+      );
+      const linkedResults = await Promise.all(
+        linkedImap.map((acc) =>
+          get(`/mail/inbox?page=1&limit=25&accountId=${encodeURIComponent(acc.id)}`)
+            .then((res) =>
+              (res?.messages || []).map((m) => ({
+                ...normalizeImapMessage(m, acc),
+                accountId: acc.id,
+                accountEmail: acc.email,
+                _key: `imap:${acc.id}:INBOX:${m.uid}`,
+                accountBadge: { name: acc.label || acc.email, color: acc.color || '#06b6d4' },
+              }))
+            )
+            .catch(() => [])
+        )
+      );
 
-      const combined = [...primaryMsgs, ...protonMsgs].sort((a, b) => {
+      // 3. Fetch Proton Inbox ONLY if user has an active logged-in Proton session
+      let protonMsgs = [];
+      try {
+        if (typeof fetchProtonMessages === 'function' && ProtonSessionStore.hasActiveSession()) {
+          const protonSession = ProtonSessionStore.getSession();
+          const protonEmail = protonSession?.email || protonSession?.user?.Email || null;
+          const protonRes = await fetchProtonMessages('INBOX', 1, 50, protonEmail).catch(() => ({ messages: [] }));
+          protonMsgs = ((protonRes && protonRes.messages) || []).map((m) => ({
+            ...m,
+            folder: 'INBOX',
+            provider: 'proton',
+            accountEmail: protonEmail || m.accountEmail || '',
+            _key: `proton:${protonEmail || 'proton'}:${m.uid}`,
+            accountBadge: { name: 'Proton', color: '#6d4aff' },
+          }));
+        }
+      } catch {}
+
+      const deduped = new Map();
+      for (const msg of [...primaryMsgs, ...linkedResults.flat(), ...protonMsgs]) {
+        if (!deduped.has(msg._key)) deduped.set(msg._key, msg);
+      }
+
+      const combined = Array.from(deduped.values()).sort((a, b) => {
         const timeA = new Date(a.date || a.received_at || 0).getTime();
         const timeB = new Date(b.date || b.received_at || 0).getTime();
         return timeB - timeA;
@@ -111,14 +179,14 @@ export function useMessages(folder, page = 1, activeAccount = null) {
 
       setAllInboxesData({
         messages: combined,
-        pagination: { page: 1, limit: 50, total: combined.length, pages: 1 },
+        pagination: { page: 1, limit: 50, total: combined.length, pages: 1, totalPages: 1 },
       });
     } catch (err) {
       console.warn('Failed to aggregate all inboxes:', err);
     } finally {
       setAllInboxesLoading(false);
     }
-  }, [isAllInboxes]);
+  }, [isAllInboxes, normalizeImapMessage]);
 
   useEffect(() => {
     if (isAllInboxes) {
@@ -163,6 +231,25 @@ export function useMessages(folder, page = 1, activeAccount = null) {
 
   const { data, loading, error, refetch } = useApi(path, [folder, page, activeAccount?.id]);
 
+  // Cache page-1 IMAP messages for offline reading and recover when offline
+  const cacheFolderKey = `${activeAccount?.id || 'primary'}:${folder || 'INBOX'}`;
+  useEffect(() => {
+    if (isAllInboxes || isProton) return;
+    if (data?.messages && page === 1) {
+      setCachedFallback(null);
+      cacheMessages(cacheFolderKey, data.messages).catch(() => {});
+    }
+  }, [data, page, cacheFolderKey, isAllInboxes, isProton]);
+
+  useEffect(() => {
+    if (isAllInboxes || isProton || data?.messages) return;
+    if (error || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+      getCachedMessages(cacheFolderKey).then((cached) => {
+        if (cached?.length > 0) setCachedFallback(cached);
+      }).catch(() => {});
+    }
+  }, [error, data, cacheFolderKey, isAllInboxes, isProton]);
+
   if (isAllInboxes) {
     return {
       messages: allInboxesData?.messages || [],
@@ -183,11 +270,23 @@ export function useMessages(folder, page = 1, activeAccount = null) {
     };
   }
 
+  const rawPagination = data?.pagination || null;
+  const normalizedPagination = rawPagination
+    ? {
+        ...rawPagination,
+        totalPages: rawPagination.totalPages ?? rawPagination.pages ?? 1,
+        pages: rawPagination.pages ?? rawPagination.totalPages ?? 1,
+      }
+    : null;
+
+  const activeMessages = (data?.messages || cachedFallback || []).map((m) => normalizeImapMessage(m));
+
   return {
-    messages: data?.messages || [],
-    pagination: data?.pagination || null,
+    messages: activeMessages,
+    pagination: normalizedPagination,
     loading,
-    error,
+    error: cachedFallback && activeMessages.length > 0 ? null : error,
+    isOfflineCache: Boolean(!data?.messages && cachedFallback?.length > 0),
     refetch,
   };
 }
@@ -197,15 +296,19 @@ export function useMessages(folder, page = 1, activeAccount = null) {
  * @param {number|string|null} uid
  * @param {string} folder
  * @param {object|null} activeAccount
+ * @param {object|null} selectedMsgMeta - Optional metadata from list item (provider, accountId, folder)
  */
-export function useMessage(uid, folder = 'INBOX', activeAccount = null) {
+export function useMessage(uid, folder = 'INBOX', activeAccount = null, selectedMsgMeta = null) {
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const isProton = activeAccount?.provider === 'proton';
-  const cleanFolder = (folder === '__all_inboxes' || folder === 'All Inboxes' || folder === 'Inboxes') ? 'INBOX' : (folder || 'INBOX');
-  const accountParam = activeAccount?.id ? `&accountId=${encodeURIComponent(activeAccount.id)}` : '';
+  const msgProvider = selectedMsgMeta?.provider || activeAccount?.provider || 'imap';
+  const isProton = msgProvider === 'proton';
+  const effectiveAccountId = !isProton ? (selectedMsgMeta?.accountId ?? activeAccount?.id ?? null) : null;
+  const rawFolder = selectedMsgMeta?.folder || folder || 'INBOX';
+  const cleanFolder = (rawFolder === '__all_inboxes' || rawFolder === 'All Inboxes' || rawFolder === 'Inboxes') ? 'INBOX' : rawFolder;
+  const accountParam = effectiveAccountId ? `&accountId=${encodeURIComponent(effectiveAccountId)}` : '';
 
   useEffect(() => {
     if (!uid) {
@@ -219,10 +322,10 @@ export function useMessage(uid, folder = 'INBOX', activeAccount = null) {
     let active = true;
 
     if (isProton) {
-      const email = activeAccount?.email || localStorage.getItem('woxmail_proton_email') || '';
+      const email = selectedMsgMeta?.accountEmail || activeAccount?.email || localStorage.getItem('woxmail_proton_email') || '';
       fetchProtonMessage(uid, email)
         .then((data) => {
-          if (active) setMessage(data);
+          if (active) setMessage({ ...data, provider: 'proton', folder: cleanFolder });
         })
         .catch((err) => {
           if (active) {
@@ -236,7 +339,7 @@ export function useMessage(uid, folder = 'INBOX', activeAccount = null) {
     } else {
       get(`/mail/message/${uid}?folder=${encodeURIComponent(cleanFolder)}${accountParam}`)
         .then((data) => {
-          if (active) setMessage(data);
+          if (active) setMessage({ ...data, accountId: effectiveAccountId, provider: 'imap' });
         })
         .catch((err) => {
           if (active) {
@@ -252,7 +355,7 @@ export function useMessage(uid, folder = 'INBOX', activeAccount = null) {
     return () => {
       active = false;
     };
-  }, [uid, cleanFolder, isProton, activeAccount?.id]);
+  }, [uid, cleanFolder, isProton, effectiveAccountId, selectedMsgMeta?.accountEmail]);
 
   return { message, loading, error };
 }

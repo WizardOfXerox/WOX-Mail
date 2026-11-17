@@ -79,20 +79,22 @@ export function useExperienceMode() {
   }, []);
 
   const isFeatureVisible = useCallback((featureKey) => {
+    const key = (featureKey || '').toLowerCase();
     // Zen mode keeps only essential personal mail
     if (mode === EXPERIENCE_MODES.ZEN) {
       const allowedInZen = [
-        'inbox', 'sent', 'drafts', 'trash', 'starred', 'archive', 'aliases', 'search', 'compose'
+        'inbox', 'sent', 'drafts', 'trash', 'starred', 'archive', 'aliases', 'search', 'compose',
+        'mail', 'settings', 'support'
       ];
-      return allowedInZen.includes(featureKey.toLowerCase());
+      return allowedInZen.includes(key);
     }
 
-    // Power mode adds screener, snooze, split views, companion dock
+    // Power mode adds screener, snooze, split views, companion dock, kanban, calendar
     if (mode === EXPERIENCE_MODES.POWER) {
       const blockedInPower = [
-        'campaigns', 'drip_automations', 'segments', 'crm_deals', 'developer_keys'
+        'campaigns', 'drip_automations', 'segments', 'crm_deals', 'developer_keys', 'developer'
       ];
-      return !blockedInPower.includes(featureKey.toLowerCase());
+      return !blockedInPower.includes(key);
     }
 
     // Business mode has everything visible

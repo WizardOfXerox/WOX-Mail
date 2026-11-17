@@ -92,6 +92,7 @@
   --color-primary: #7c3aed;
   --color-primary-hover: #6d28d9;
   --color-primary-light: #8b5cf6;
+  --color-on-primary: #ffffff;
   --color-primary-glow: rgba(124, 58, 237, 0.25);
   --color-primary-subtle: rgba(124, 58, 237, 0.12);
   --color-border-focus: #7c3aed;
@@ -152,13 +153,33 @@
   --color-primary: #e5e7eb;
   --color-primary-hover: #d1d5db;
   --color-primary-light: #f3f4f6;
+  --color-on-primary: #09090b;
   --color-primary-glow: rgba(229, 231, 235, 0.2);
   --color-primary-subtle: rgba(229, 231, 235, 0.12);
   --color-border-focus: #9ca3af;
   --shadow-glow: 0 0 30px rgba(229, 231, 235, 0.1);
+}
+
+[data-theme='dark'][data-accent='oled'] {
   --color-bg-page: #000000 !important;
   --color-bg-card: #08080c !important;
   --color-bg-elevated: #0f0f14 !important;
+}
+
+[data-theme='light'][data-accent='oled'] {
+  --color-primary: #18181b;
+  --color-primary-hover: #27272a;
+  --color-primary-light: #3f3f46;
+  --color-on-primary: #ffffff;
+  --color-primary-glow: rgba(24, 24, 27, 0.18);
+  --color-primary-subtle: rgba(24, 24, 27, 0.08);
+  --color-border-focus: #18181b;
+}
+
+/* Native inputs inherit Sovereign accent automatically */
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--color-primary);
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -229,17 +250,19 @@
 .global-theme-modal {
   width: 100%;
   max-width: 560px;
-  max-height: 88vh;
+  max-height: min(90dvh, 740px);
   background: var(--color-bg-card);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
   box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5), 0 0 30px var(--color-primary-glow);
-  padding: 1.5rem;
+  padding: 0 1.25rem 1.5rem;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   z-index: 999999;
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 0.95rem;
   box-sizing: border-box;
 }
 
@@ -251,11 +274,35 @@
 }
 
 .global-theme-modal-header {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--color-bg-card);
   display: flex;
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--color-border);
-  padding-bottom: 0.875rem;
+  padding: 1.15rem 0 0.75rem;
+  margin-bottom: 0.1rem;
+}
+
+[data-theme='light'] .global-theme-modal-header {
+  background: #ffffff;
+}
+
+@media (max-width: 640px) {
+  .global-theme-backdrop {
+    padding: 0.65rem;
+  }
+  .global-theme-modal {
+    max-height: calc(100dvh - 1.3rem);
+    padding: 0 1rem 1.5rem;
+    gap: 0.85rem;
+  }
+  .global-theme-modal .theme-card-option {
+    padding: 0.55rem 0.7rem;
+    gap: 0.55rem;
+  }
 }
 
 .global-theme-modal-title {
@@ -896,14 +943,14 @@ a:hover {
 
 .btn-primary {
   background: var(--color-primary);
-  color: white;
+  color: var(--color-on-primary, #ffffff);
   border-color: var(--color-primary);
 }
 .btn-primary:hover {
   background: var(--color-primary-hover);
   border-color: var(--color-primary-hover);
   box-shadow: 0 0 24px var(--color-primary-glow);
-  color: white;
+  color: var(--color-on-primary, #ffffff);
 }
 
 .btn-secondary {
@@ -1729,7 +1776,7 @@ a:hover {
 
 .compose-modal {
   width: 580px;
-  max-height: 80vh;
+  max-height: min(88vh, 760px);
   display: flex;
   flex-direction: column;
   background: var(--color-bg-elevated);
@@ -1738,6 +1785,7 @@ a:hover {
   box-shadow: var(--shadow-lg);
   animation: composeSlideUp 200ms ease-out;
   overflow: hidden;
+  padding: 0 !important;
 }
 
 @keyframes composeSlideUp {
@@ -1760,6 +1808,7 @@ a:hover {
   display: flex;
   flex-direction: column;
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 
@@ -1837,6 +1886,51 @@ a:hover {
   padding: 0.875rem 1.25rem;
   border-top: 1px solid var(--color-border);
   background: var(--color-bg-card);
+  flex-shrink: 0;
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+}
+
+/* Styled Admin Inputs & Selects (used across Domains, eDiscovery, Governance) */
+.admin-input {
+  padding: 0.55rem 0.85rem;
+  background: var(--color-bg-input);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  line-height: 1.4;
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
+  box-sizing: border-box;
+}
+.admin-input::placeholder {
+  color: var(--color-text-tertiary);
+}
+.admin-input:hover {
+  border-color: var(--color-primary-light);
+}
+.admin-input:focus {
+  border-color: var(--color-border-focus, var(--color-primary));
+  box-shadow: 0 0 0 3px var(--color-primary-glow);
+}
+
+/* Ensure dialogs/modals remain opaque and high-contrast even with Glassmorphism ON */
+[data-glass='true'] .modal-card,
+[data-glass='true'] .qr-modal-card {
+  background: var(--color-bg-card) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+[data-theme='light'][data-glass='true'] .modal-card,
+[data-theme='light'][data-glass='true'] .qr-modal-card,
+[data-theme='light'] .modal-card,
+[data-theme='light'] .qr-modal-card {
+  background: #ffffff !important;
+  color: #1a1a2e !important;
+  border-color: #e2e2ea !important;
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -2019,6 +2113,28 @@ a:hover {
   gap: 0.85rem;
 }
 
+.settings-mobile-hub-wrap {
+  display: none;
+}
+
+.settings-nav-scroll-shell {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+}
+
+.settings-nav-scroll-shell::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 28px;
+  pointer-events: none;
+  background: linear-gradient(to right, transparent, var(--color-bg-page, #0a0a14));
+}
+
 .settings-nav-scroll {
   display: flex;
   align-items: center;
@@ -2026,12 +2142,34 @@ a:hover {
   overflow-x: auto;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
-  padding: 0.2rem 0.1rem;
+  padding: 0.2rem 1.25rem 0.2rem 0.1rem;
   flex: 1 1 auto;
   min-width: 0;
 }
 .settings-nav-scroll::-webkit-scrollbar {
   display: none;
+}
+
+@media (max-width: 640px) {
+  .settings-mobile-hub-wrap {
+    display: block !important;
+    width: 100%;
+  }
+  .settings-mobile-hub-select {
+    width: 100%;
+    font-size: 0.875rem;
+    font-weight: 600;
+    padding: 0.55rem 0.75rem;
+  }
+  .settings-nav-scroll-shell {
+    display: none !important;
+  }
+}
+
+@media (max-width: 1180px) {
+  .viewer-secondary-label {
+    display: none !important;
+  }
 }
 
 @media (max-width: 1080px) {
@@ -4233,6 +4371,25 @@ kbd {
 .admin-table-responsive {
   width: 100%;
   overflow-x: auto;
+  position: relative;
+}
+
+@media (max-width: 1180px) {
+  .admin-sticky-actions-col {
+    position: sticky;
+    right: 0;
+    z-index: 3;
+    background: rgba(16, 16, 32, 0.96) !important;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    box-shadow: -8px 0 16px rgba(0, 0, 0, 0.45);
+    border-left: 1px solid rgba(124, 58, 237, 0.22);
+    white-space: nowrap;
+  }
+  .admin-data-table thead .admin-sticky-actions-col {
+    z-index: 4;
+    background: rgba(26, 26, 52, 0.98) !important;
+  }
 }
 
 .admin-data-table {
@@ -4378,7 +4535,7 @@ kbd {
 }
 
 .landing-title .gradient-text {
-  background: linear-gradient(135deg, #c084fc 0%, #7c3aed 50%, #38bdf8 100%);
+  background: linear-gradient(135deg, var(--color-primary-light) 0%, var(--color-primary) 55%, var(--color-info) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
@@ -6025,6 +6182,7 @@ kbd {
   .viewer-toolbar {
     display: flex !important;
     flex-direction: row !important;
+    flex-wrap: wrap !important;
     align-items: center !important;
     justify-content: space-between !important;
     gap: 0.35rem !important;
@@ -6046,10 +6204,10 @@ kbd {
   .viewer-toolbar-left,
   .viewer-toolbar-right {
     display: inline-flex !important;
-    flex-wrap: nowrap !important;
+    flex-wrap: wrap !important;
     align-items: center !important;
     gap: 0.25rem !important;
-    flex-shrink: 0 !important;
+    max-width: 100% !important;
   }
 
   .viewer-action-btn {

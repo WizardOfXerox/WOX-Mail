@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { get, post } from '../api.js';
 
 /**
  * DualVerificationModal — Sovereign Dual-Mode Verification Component.
@@ -81,8 +82,7 @@ export default function DualVerificationModal({
     const pollInterval = setInterval(async () => {
       if (hasFinishedRef.current) return;
       try {
-        const res = await fetch(`/api/verify/status/${encodeURIComponent(sessionToken)}`);
-        const json = await res.json();
+        const json = await get(`/verify/status/${encodeURIComponent(sessionToken)}`);
         if (json.status === 'verified') {
           handleSuccessTransition({
             sessionToken,
@@ -151,15 +151,7 @@ export default function DualVerificationModal({
     setError('');
 
     try {
-      const res = await fetch('/api/verify/confirm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionToken, code }),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        throw new Error(data.error || 'Verification failed');
-      }
+      const data = await post('/verify/confirm', { sessionToken, code });
       handleSuccessTransition(data);
     } catch (err) {
       setError(err.message);
@@ -193,7 +185,7 @@ export default function DualVerificationModal({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style="color:var(--color-primary-light)"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-primary-light)' }}><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
             <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>{title}</h3>
           </div>
           <button type="button" className="btn btn-ghost btn-xs" onClick={onClose}>✕</button>
@@ -285,7 +277,7 @@ export default function DualVerificationModal({
                   gap: '0.75rem',
                 }}
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style="color:var(--color-primary-light)"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-primary-light)' }}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
                 <div style={{ fontSize: '0.8125rem', color: '#93c5fd', lineHeight: 1.5 }}>
                   <strong>Zero-Friction Option:</strong> Open the email in your mail app and simply <strong>hit Reply</strong> with the code. This screen will verify and unlock automatically!
                 </div>

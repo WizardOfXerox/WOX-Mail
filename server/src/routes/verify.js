@@ -3,7 +3,9 @@
  */
 
 import { Router } from 'express';
+import jwt from 'jsonwebtoken';
 import { validate } from '../middleware/validate.js';
+import { JWT_COOKIE_NAME } from '../config/constants.js';
 import {
   createVerificationSession,
   verifyCode,
@@ -12,6 +14,24 @@ import {
 import { isValidEmail } from '../utils/validators.js';
 
 const router = Router();
+
+function extractAuthUserId(req) {
+  let token = req.cookies?.[JWT_COOKIE_NAME];
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.replace('Bearer ', '').trim();
+  }
+  if (!token || typeof token !== 'string' || token.startsWith('wox_app_')) return null;
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (decoded && decoded.userId && decoded.type !== 'device_switch') {
+      return decoded.userId;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
 
 /**
  * POST /api/verify/start
@@ -35,10 +55,15 @@ router.post('/start',
         return res.status(400).json({ error: 'Invalid verification type' });
       }
 
+      const authUserId = extractAuthUserId(req);
+      if ((type === 'recovery_email' || type === 'step_up') && !authUserId) {
+        return res.status(401).json({ error: 'Authentication required for account verification challenges' });
+      }
+
       const result = await createVerificationSession({
         type,
         targetEmail,
-        userId: req.userId || null,
+        userId: authUserId || null,
         meta: meta || {},
       });
 
@@ -81,7 +106,8 @@ router.post('/confirm',
  */
 router.get('/status/:token', async (req, res, next) => {
   try {
-    const status = await getVerificationStatus(req.params.token);
+    const viewerUserId = extractAuthUserId(req);
+    const status = await getVerificationStatus(req.params.token, viewerUserId);
     res.json(status);
   } catch (err) {
     next(err);

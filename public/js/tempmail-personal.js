@@ -39,7 +39,7 @@
             username: document.getElementById('custom-username').value.trim() || undefined,
             password: document.getElementById('personal-password').value,
             expiryHours: parseInt(document.getElementById('personal-expiry').value, 10),
-            captchaToken: typeof hcaptcha !== 'undefined' ? hcaptcha.getResponse() : 'dev-bypass',
+            captchaToken: typeof hcaptcha !== 'undefined' ? (hcaptcha.getResponse() || '') : '',
           }),
         });
 
@@ -95,7 +95,7 @@
     if (!currentAddress) return;
 
     try {
-      const res = await fetch(`${API}/inbox/${currentAddress}?page=${currentPage}`, { credentials: 'include' });
+      const res = await fetch(`${API}/inbox/${encodeURIComponent(currentAddress)}?page=${currentPage}`, { credentials: 'include' });
       const data = await res.json();
       if (!res.ok) return WoxToast.error(data.error);
 
@@ -111,16 +111,22 @@
   function renderMessages(msgs) {
     const list = document.getElementById('message-list');
     const empty = document.getElementById('empty-state');
+    if (!list) return;
 
-    if (msgs.length === 0) {
-      list.innerHTML = '';
-      list.appendChild(empty);
-      empty.style.display = 'block';
+    list.querySelectorAll('.message-item').forEach((el) => el.remove());
+
+    if (!msgs || msgs.length === 0) {
+      if (empty) {
+        if (empty.parentNode !== list) list.appendChild(empty);
+        empty.style.display = 'block';
+      }
+      updateBatchBar();
       return;
     }
 
-    empty.style.display = 'none';
-    list.innerHTML = msgs.map((msg) => `
+    if (empty) empty.style.display = 'none';
+
+    const itemsHtml = msgs.map((msg) => `
       <div class="message-item ${msg.isRead ? '' : 'unread'} ${msg.isStarred ? 'starred' : ''}" data-uid="${msg.uid}">
         <input type="checkbox" class="message-check" data-uid="${msg.uid}" onclick="event.stopPropagation()">
         <span class="message-star" onclick="event.stopPropagation(); toggleStar(${msg.uid})" style="display:inline-flex;align-items:center;cursor:pointer;">
@@ -135,6 +141,8 @@
         <div class="message-date">${formatDate(msg.date)}</div>
       </div>
     `).join('');
+
+    list.insertAdjacentHTML('beforeend', itemsHtml);
 
     // Show batch bar if any checked
     updateBatchBar();
@@ -214,21 +222,45 @@
     if (uids.length === 0) return;
     if (!confirm(`Delete ${uids.length} message(s)?`)) return;
     WoxToast.info(`Deleting ${uids.length} messages...`);
-    // TODO: batch delete API call
-    messages = messages.filter((m) => !uids.includes(String(m.uid)));
-    renderMessages(messages);
+    try {
+      const res = await fetch(`${API}/personal/batch-delete`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': getCsrfToken(),
+        },
+        credentials: 'include',
+        body: JSON.stringify({ uids }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return WoxToast.error(data.error || 'Failed to delete selected messages');
+      }
+      const deletedSet = new Set((data.deleted || uids).map(String));
+      messages = messages.filter((m) => !deletedSet.has(String(m.uid)));
+      const selectAll = document.getElementById('select-all');
+      if (selectAll) selectAll.checked = false;
+      renderMessages(messages);
+      if (typeof updateBatchBar === 'function') updateBatchBar();
+      WoxToast.success(`Deleted ${deletedSet.size} message(s)`);
+    } catch {
+      WoxToast.error('Failed to delete messages');
+    }
   };
 
   // ─── Star / Read / Forward ───────────────────────────
 
   window.toggleStar = async function (uid) {
+    const targetUid = uid ?? currentMessageUid;
+    if (!targetUid) return;
     try {
-      await fetch(`${API}/personal/star/${uid}`, {
+      const res = await fetch(`${API}/personal/star/${encodeURIComponent(targetUid)}`, {
         method: 'PUT',
         headers: { 'x-csrf-token': getCsrfToken() },
         credentials: 'include'
       });
-      const msg = messages.find((m) => m.uid === uid);
+      if (!res.ok) throw new Error('Star toggle failed');
+      const msg = messages.find((m) => String(m.uid) === String(targetUid));
       if (msg) msg.isStarred = !msg.isStarred;
       renderMessages(messages);
     } catch {
@@ -239,7 +271,7 @@
   window.openMessage = async function (uid) {
     currentMessageUid = uid;
     try {
-      const res = await fetch(`${API}/message/${currentAddress}/${uid}`, { credentials: 'include' });
+      const res = await fetch(`${API}/message/${encodeURIComponent(currentAddress)}/${encodeURIComponent(uid)}`, { credentials: 'include' });
       const data = await res.json();
       if (!res.ok) return WoxToast.error(data.error);
 
@@ -260,7 +292,10 @@
         iframe.contentDocument.open();
         iframe.contentDocument.write(data.html);
         iframe.contentDocument.close();
-        iframe.onload = () => { iframe.style.height = iframe.contentDocument.body.scrollHeight + 'px'; };
+        iframe.onload = () => {
+          const height = iframe.contentDocument?.body?.scrollHeight;
+          if (height) iframe.style.height = height + 'px';
+        };
       } else {
         viewer.textContent = data.text || 'No content';
       }
@@ -284,7 +319,7 @@
   window.forwardEmail = function () {
     const to = prompt('Forward to email:');
     if (!to) return;
-    fetch(`${API}/personal/forward/${currentMessageUid}`, {
+    fetch(`${API}/personal/forward/${encodeURIComponent(currentMessageUid)}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -292,21 +327,34 @@
       },
       credentials: 'include',
       body: JSON.stringify({ to }),
-    }).then(() => WoxToast.success('Forwarded!')).catch(() => WoxToast.error('Forward failed'));
+    }).then(async (res) => {
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || 'Forward failed');
+      }
+      WoxToast.success('Forwarded!');
+    }).catch((err) => WoxToast.error(err.message || 'Forward failed'));
   };
 
   window.printEmail = function () { window.print(); };
-  window.downloadEml = function () { window.open(`${API}/message/${currentAddress}/${currentMessageUid}/eml`, '_blank'); };
+  window.downloadEml = function () { window.open(`${API}/message/${encodeURIComponent(currentAddress)}/${encodeURIComponent(currentMessageUid)}/eml`, '_blank'); };
   window.viewSource = function () {
-    fetch(`${API}/message/${currentAddress}/${currentMessageUid}/source`, { credentials: 'include' })
+    fetch(`${API}/message/${encodeURIComponent(currentAddress)}/${encodeURIComponent(currentMessageUid)}/source`, { credentials: 'include' })
       .then((r) => r.json())
-      .then((d) => { const w = window.open('', '_blank'); w.document.write(`<pre>${escapeHtml(d.source || '')}</pre>`); })
+      .then((d) => {
+        const w = window.open('', '_blank');
+        if (w) {
+          w.document.write(`<pre>${escapeHtml(d.source || '')}</pre>`);
+          w.document.close();
+        }
+      })
       .catch(() => WoxToast.error('Failed'));
   };
 
   // ─── Other Actions ───────────────────────────────────
 
   window.copyAddress = function () {
+    if (!currentAddress) return;
     navigator.clipboard.writeText(currentAddress).then(() => WoxToast.success('Copied!'));
   };
 
@@ -341,7 +389,7 @@
   window.deleteMailbox = async function () {
     if (!confirm('Delete this mailbox permanently?')) return;
     try {
-      await fetch(`${API}/delete/${currentAddress}`, {
+      await fetch(`${API}/delete/${encodeURIComponent(currentAddress)}`, {
         method: 'DELETE',
         headers: { 'x-csrf-token': getCsrfToken() },
         credentials: 'include',

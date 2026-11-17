@@ -4,16 +4,36 @@ import { JWT_COOKIE_NAME } from '../config/constants.js';
 const CSRF_COOKIE = 'woxmail_csrf';
 const CSRF_HEADER = 'x-csrf-token';
 
+const PUBLIC_AUTH_PATHS = new Set([
+  '/api/auth/login',
+  '/api/auth/register',
+  '/api/auth/forgot-password',
+  '/api/auth/reset-password',
+  '/api/auth/recover-with-code',
+  '/api/auth/verify-otp',
+  '/api/auth/passkeys/login-options',
+  '/api/auth/passkeys/login-verify',
+]);
+
+function isRequestHttps(req) {
+  const forwardedProto = String(req.headers['x-forwarded-proto'] || '')
+    .split(',')[0]
+    .trim()
+    .toLowerCase();
+  return Boolean(req.secure || forwardedProto === 'https');
+}
+
 /**
  * CSRF protection using the double-submit cookie pattern.
  *
- * On GET requests: sets a CSRF cookie with a random token.
- * On state-changing requests (POST/PUT/DELETE): validates that
- * the X-CSRF-Token header matches the csrf cookie value.
+ * On GET/HEAD/OPTIONS requests: sets a CSRF cookie with a random token.
+ * On state-changing requests (POST/PUT/DELETE/PATCH): validates that
+ * the X-CSRF-Token header (or _csrf body field) matches the csrf cookie value.
  *
  * Skips CSRF check for:
- * - Requests without an auth cookie (not logged in)
+ * - Unauthenticated stateless requests without auth/CSRF cookies
  * - API requests with Bearer token (assumed to be programmatic)
+ * - Explicitly public unauthenticated endpoints
  */
 export function csrfProtection(req, res, next) {
   const safeMethods = ['GET', 'HEAD', 'OPTIONS'];
@@ -24,7 +44,7 @@ export function csrfProtection(req, res, next) {
       const token = crypto.randomBytes(32).toString('hex');
       res.cookie(CSRF_COOKIE, token, {
         httpOnly: false,    // JS needs to read this
-        secure: process.env.NODE_ENV === 'production',
+        secure: isRequestHttps(req),
         sameSite: 'strict',
         path: '/',
         maxAge: 24 * 60 * 60 * 1000, // 24 hours
@@ -33,25 +53,30 @@ export function csrfProtection(req, res, next) {
     return next();
   }
 
-  // Skip CSRF for unauthenticated requests, Bearer token API calls, or public routes
+  const cleanPath = req.path.length > 1 ? req.path.replace(/\/+$/, '') : req.path;
+
+  // Skip CSRF strictly for public unauthenticated endpoints
   if (
-    req.path.startsWith('/tempmail/nojs') ||
-    req.path.startsWith('/api/tempmail') ||
-    req.path.startsWith('/api/auth') ||
-    req.path.startsWith('/api/mail/secure/unlock') ||
-    req.path.startsWith('/api/secure/unlock') ||
-    req.path.startsWith('/api/secure-attachments/preview') ||
-    req.path.startsWith('/api/secure-attachments/download') ||
-    req.path.startsWith('/api/secure-attachments/status') ||
-    req.path.startsWith('/api/analytics/click') ||
-    req.path.startsWith('/api/analytics/pixel') ||
-    req.path.startsWith('/api/cli') ||
-    req.path.startsWith('/api/futureme') ||
-    req.path === '/api/mail/link-previews' ||
-    req.path === '/mail/link-previews'
+    cleanPath.startsWith('/tempmail/nojs') ||
+    cleanPath === '/api/tempmail/generate' ||
+    cleanPath === '/api/tempmail/personal/login' ||
+    cleanPath === '/api/tempmail/personal/create' ||
+    PUBLIC_AUTH_PATHS.has(cleanPath) ||
+    cleanPath.startsWith('/api/campaigns/subscribe') ||
+    cleanPath.startsWith('/api/campaigns/unsubscribe') ||
+    cleanPath.startsWith('/api/secure/unlock') ||
+    cleanPath.startsWith('/api/mail/secure/unlock') ||
+    cleanPath.startsWith('/api/secure-attachments/') ||
+    cleanPath.startsWith('/api/ephemeral/') ||
+    cleanPath.startsWith('/api/futureme/verify') ||
+    cleanPath.startsWith('/api/futureme/public') ||
+    cleanPath.startsWith('/api/analytics/click') ||
+    cleanPath.startsWith('/api/analytics/pixel') ||
+    (cleanPath === '/api/support/tickets' && !req.cookies?.[JWT_COOKIE_NAME])
   ) {
     return next();
   }
+
   if (!req.cookies?.[JWT_COOKIE_NAME] && !req.cookies?.[CSRF_COOKIE]) {
     return next();
   }
@@ -62,7 +87,7 @@ export function csrfProtection(req, res, next) {
   const cookieToken = req.cookies?.[CSRF_COOKIE];
   const submittedToken = req.headers[CSRF_HEADER] || req.body?._csrf;
 
-  if (!cookieToken || !submittedToken) {
+  if (!cookieToken || !submittedToken || typeof cookieToken !== 'string' || typeof submittedToken !== 'string') {
     return res.status(403).json({ error: 'CSRF token missing' });
   }
 

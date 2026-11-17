@@ -4,39 +4,62 @@
  * (=22, =3C, =3E, =40, =2E), and ensures email headers and snippets are sanitized.
  */
 
+function decodeBytesWithCharset(buffer, charset = 'utf-8') {
+  const raw = String(charset || 'utf-8').trim().toLowerCase();
+  const normalized = raw === 'utf8' ? 'utf-8' : raw === 'us-ascii' || raw === 'ascii' ? 'utf-8' : raw;
+  try {
+    return new TextDecoder(normalized, { fatal: false }).decode(buffer);
+  } catch {
+    try {
+      return new TextDecoder('utf-8', { fatal: false }).decode(buffer);
+    } catch {
+      return buffer.toString('latin1');
+    }
+  }
+}
+
+function decodeQpHeaderArtifacts(str) {
+  if (!str || typeof str !== 'string') return str || '';
+  if (!/=22|=3C|=3E|=40|=2E/i.test(str)) return str;
+  return str
+    .replace(/=22/gi, '"')
+    .replace(/=3C/gi, '<')
+    .replace(/=3E/gi, '>')
+    .replace(/=40/gi, '@')
+    .replace(/=2E/gi, '.');
+}
+
 export function decodeMimeWords(str) {
   if (!str || typeof str !== 'string') return str || '';
 
   // Join adjacent encoded-words separated only by linear whitespace
   let cleaned = str.replace(/(=\?[^?]+\?[bBqQ]\?[^?]*\?=)\s+(=\?[^?]+\?[bBqQ]\?[^?]*\?=)/g, '$1$2');
 
-  cleaned = cleaned.replace(/=\?([^?]+)\?([bBqQ])\?([^?]*)\?=/gi, (match, charset, encoding, text) => {
+  cleaned = cleaned.replace(/=\?([^?]+)\?([bBqQ])\?([^?]*)\?=/g, (match, charset, encoding, text) => {
     try {
       const enc = encoding.toUpperCase();
       if (enc === 'B') {
-        return Buffer.from(text, 'base64').toString(charset.toLowerCase().includes('utf') ? 'utf8' : 'latin1');
+        const bytes = Buffer.from(text, 'base64');
+        return decodeBytesWithCharset(bytes, charset);
       } else if (enc === 'Q') {
-        let q = text.replace(/_/g, ' ');
-        q = q.replace(/=([0-9A-Fa-f]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
-        try {
-          return decodeURIComponent(escape(q));
-        } catch {
-          return q;
+        const qStr = text.replace(/_/g, ' ');
+        const bytes = [];
+        for (let i = 0; i < qStr.length; i++) {
+          if (qStr[i] === '=' && /^[0-9A-Fa-f]{2}$/.test(qStr.slice(i + 1, i + 3))) {
+            bytes.push(parseInt(qStr.slice(i + 1, i + 3), 16));
+            i += 2;
+          } else {
+            const charBytes = Buffer.from(qStr[i], 'utf8');
+            for (const b of charBytes) bytes.push(b);
+          }
         }
+        return decodeBytesWithCharset(Buffer.from(bytes), charset);
       }
     } catch {
       return match;
     }
     return match;
   });
-
-  cleaned = cleaned
-    .replace(/=22/gi, '"')
-    .replace(/=3C/gi, '<')
-    .replace(/=3E/gi, '>')
-    .replace(/=40/gi, '@')
-    .replace(/=2E/gi, '.')
-    .replace(/=20/gi, ' ');
 
   return cleaned;
 }
@@ -46,13 +69,7 @@ export function cleanEmailAddress(addr) {
   const raw = typeof addr === 'object' ? (addr.address || addr.value?.[0]?.address || '') : String(addr);
   if (!raw) return '';
 
-  let str = decodeMimeWords(raw);
-  str = str
-    .replace(/=22/gi, '"')
-    .replace(/=3C/gi, '<')
-    .replace(/=3E/gi, '>')
-    .replace(/=40/gi, '@')
-    .replace(/=2E/gi, '.');
+  let str = decodeQpHeaderArtifacts(decodeMimeWords(raw));
 
   const emailMatch = str.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
   if (emailMatch) {
@@ -67,13 +84,7 @@ export function cleanSenderName(name, fallbackAddress = '') {
     return cleanEmailAddress(fallbackAddress) || '';
   }
 
-  let str = decodeMimeWords(name);
-  str = str
-    .replace(/=22/gi, '"')
-    .replace(/=3C/gi, '<')
-    .replace(/=3E/gi, '>')
-    .replace(/=40/gi, '@')
-    .replace(/=2E/gi, '.');
+  let str = decodeQpHeaderArtifacts(decodeMimeWords(name));
 
   if (str.includes('<') && str.includes('>')) {
     str = str.replace(/<[^>]+>/g, '').trim();
@@ -88,15 +99,12 @@ export function cleanSenderName(name, fallbackAddress = '') {
 export function cleanSnippet(snippet) {
   if (!snippet || typeof snippet !== 'string') return '';
   let str = decodeMimeWords(snippet);
-  str = str
-    .replace(/=22/gi, '"')
-    .replace(/=3C/gi, '<')
-    .replace(/=3E/gi, '>')
-    .replace(/=40/gi, '@')
-    .replace(/=2E/gi, '.');
 
-  str = str.replace(/<=?\?[^>]+[=>]*/g, '').trim();
-  str = str.replace(/^[<>=:\-\s]+/, '').trim();
+  // Strip HTML tags safely without affecting math like "2 < 5"
+  str = str.replace(/<\/?[a-zA-Z!][^>]*>/g, ' ');
+  // Strip truncated/incomplete RFC 2047 encoded-word fragments at snippet boundaries
+  str = str.replace(/(?:<=?\?|(?<![a-zA-Z0-9])=\?)[A-Za-z0-9_-]+\?[bBqQ]\?[^?]*$/g, '');
+  str = str.replace(/\s+/g, ' ').trim();
 
   return str;
 }

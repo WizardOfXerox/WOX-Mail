@@ -35,6 +35,8 @@ export async function fetchProtonMessages(folderName = 'INBOX', page = 1, limit 
     return {
       uid: m.id,
       id: m.id,
+      _key: `proton:${email || 'proton'}:${m.id}`,
+      folder: folderName,
       subject: m.subject || '(No Subject)',
       from: {
         address: fromAddr,
@@ -46,12 +48,16 @@ export async function fetchProtonMessages(folderName = 'INBOX', page = 1, limit 
         name: '',
       }],
       date: m.date,
-      seen: m.seen,
-      starred: m.starred,
+      seen: Boolean(m.seen),
+      starred: Boolean(m.starred),
+      isRead: Boolean(m.seen),
+      isStarred: Boolean(m.starred),
       flags: m.seen ? ['\\Seen'] : [],
-      has_attachments: m.has_attachments,
+      has_attachments: Boolean(m.has_attachments),
+      hasAttachments: Boolean(m.has_attachments),
       preview: '',
       provider: 'proton',
+      accountEmail: email || '',
     };
   });
 
@@ -82,13 +88,16 @@ export async function fetchProtonMessages(folderName = 'INBOX', page = 1, limit 
   }
 
   const total = rawMessages.length;
+  const computedTotal = folderName === 'INBOX' ? result.total : total;
+  const totalPages = Math.ceil(computedTotal / limit) || 1;
   return {
     messages: rawMessages,
     pagination: {
       page,
       limit,
-      total: folderName === 'INBOX' ? result.total : total,
-      pages: Math.ceil((folderName === 'INBOX' ? result.total : total) / limit) || 1,
+      total: computedTotal,
+      pages: totalPages,
+      totalPages,
     }
   };
 }
@@ -126,9 +135,12 @@ export async function fetchProtonMessage(messageId, email = null) {
       filename: a.filename || 'attachment',
       size: a.size || 0,
       contentType: a.mimeType || 'application/octet-stream',
+      keyPackets: a.keyPackets,
       isProton: true,
     })),
+    isRead: true,
     provider: 'proton',
+    accountEmail: email || '',
   };
 }
 

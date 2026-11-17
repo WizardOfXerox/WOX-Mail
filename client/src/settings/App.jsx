@@ -71,13 +71,18 @@ const VALID_SECTIONS = [
 export default function App() {
   const { user, loading, refetch: refetchUser } = useUser();
   const { mode, setMode, metadata, allModes } = useExperienceMode();
-  const [activeSection, setActiveSection] = useState(() => {
-    const hash = window.location.hash.replace('#', '');
-    return VALID_SECTIONS.includes(hash) ? hash : null;
-  });
+  const resolveSettingsSection = () => {
+    const pathSegment = window.location.pathname.replace(/^\/settings\/?/, '').split('/')[0].toLowerCase();
+    if (VALID_SECTIONS.includes(pathSegment)) return pathSegment;
+    const hash = window.location.hash.replace(/^#/, '').toLowerCase();
+    if (VALID_SECTIONS.includes(hash)) return hash;
+    return null;
+  };
+
+  const [activeSection, setActiveSection] = useState(resolveSettingsSection);
   const [selectedHub, setSelectedHub] = useState(() => {
-    const hash = window.location.hash.replace('#', '');
-    const found = SETTINGS_HUBS.find(h => h.sections.includes(hash));
+    const initial = resolveSettingsSection();
+    const found = initial ? SETTINGS_HUBS.find(h => h.sections.includes(initial)) : null;
     return found ? found.id : 'all';
   });
   const [searchQuery, setSearchQuery] = useState('');
@@ -95,27 +100,45 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const handleHash = () => {
-      const hash = window.location.hash.replace('#', '');
-      const valid = VALID_SECTIONS.includes(hash) ? hash : null;
+    // Upgrade legacy /settings#section URLs cleanly to /settings/section
+    const hash = window.location.hash.replace(/^#/, '').toLowerCase();
+    if (VALID_SECTIONS.includes(hash)) {
+      window.history.replaceState(null, '', `/settings/${hash}`);
+      setActiveSection(hash);
+      const found = SETTINGS_HUBS.find(h => h.sections.includes(hash));
+      if (found) setSelectedHub(found.id);
+    }
+
+    const handleRouteChange = () => {
+      const valid = resolveSettingsSection();
       setActiveSection(valid);
       if (valid) {
         const found = SETTINGS_HUBS.find(h => h.sections.includes(valid));
         if (found) setSelectedHub(found.id);
       }
     };
-    window.addEventListener('hashchange', handleHash);
-    return () => window.removeEventListener('hashchange', handleHash);
+    window.addEventListener('popstate', handleRouteChange);
+    window.addEventListener('hashchange', handleRouteChange);
+    return () => {
+      window.removeEventListener('popstate', handleRouteChange);
+      window.removeEventListener('hashchange', handleRouteChange);
+    };
   }, []);
 
   const selectSection = (id) => {
-    setActiveSection(id);
-    if (id) {
-      window.location.hash = id;
-      const found = SETTINGS_HUBS.find(h => h.sections.includes(id));
+    const valid = id && VALID_SECTIONS.includes(id) ? id : null;
+    setActiveSection(valid);
+    if (valid) {
+      const nextUrl = `/settings/${valid}`;
+      if (window.location.pathname !== nextUrl || window.location.hash) {
+        window.history.pushState(null, '', nextUrl);
+      }
+      const found = SETTINGS_HUBS.find(h => h.sections.includes(valid));
       if (found) setSelectedHub(found.id);
     } else {
-      history.pushState('', document.title, window.location.pathname + window.location.search);
+      if (window.location.pathname !== '/settings' || window.location.hash) {
+        window.history.pushState(null, '', '/settings');
+      }
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -250,6 +273,10 @@ export default function App() {
         return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>;
       case 'sessions':
         return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>;
+      case 'contacts':
+        return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>;
+      case 'history':
+        return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>;
       case 'danger':
         return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>;
       default:
@@ -282,6 +309,8 @@ export default function App() {
     { id: 'webhooks', title: 'Webhooks & Zapier', desc: 'Real-time JSON event dispatch' },
     { id: 'signature', title: 'Email Signature', desc: 'Rich-text & HTML signatures' },
     { id: 'filters', title: 'Rules & Filters', desc: 'Server-side mailbox automation rules' },
+    { id: 'contacts', title: 'Contacts & Address Book', desc: 'Saved contacts, quick recipients, and autocomplete entries' },
+    { id: 'history', title: 'Login History', desc: 'Recent authentication attempts, IP addresses, and status logs' },
     { id: 'sessions', title: 'Active Sessions', desc: 'Manage logged-in devices and revoke access' },
     { id: 'danger', title: 'Danger Zone / Deletion', desc: 'Schedule permanent self-deletion with 14-day recovery grace period' },
   ];
@@ -356,31 +385,54 @@ export default function App() {
         <div>
           {/* Navigation Bar & Live Filter */}
           <div className="settings-nav-wrapper">
-            <div className="settings-nav-scroll">
-              <button
-                type="button"
-                className={`settings-tab-btn ${selectedHub === 'all' && !cleanQuery ? 'active' : ''}`}
-                onClick={() => { setSelectedHub('all'); setSearchQuery(''); }}
+            {/* Compact Mobile Category Dropdown (< 640px) */}
+            <div className="settings-mobile-hub-wrap">
+              <label htmlFor="settings-hub-select" className="sr-only">Filter settings category</label>
+              <select
+                id="settings-hub-select"
+                className="input settings-mobile-hub-select"
+                value={cleanQuery ? 'all' : selectedHub}
+                onChange={(e) => { setSelectedHub(e.target.value); setSearchQuery(''); }}
               >
-                <span>All Hubs</span>
-                <span className="settings-tab-badge">{cards.length}</span>
-              </button>
-              {SETTINGS_HUBS.map((hub) => {
-                const count = cards.filter(c => hub.sections.includes(c.id)).length;
-                const isSelected = selectedHub === hub.id && !cleanQuery;
-                return (
-                  <button
-                    key={hub.id}
-                    type="button"
-                    className={`settings-tab-btn ${isSelected ? 'active' : ''}`}
-                    onClick={() => { setSelectedHub(hub.id); setSearchQuery(''); }}
-                  >
-                    <span>{hub.icon}</span>
-                    <span>{hub.shortTitle || hub.title}</span>
-                    <span className="settings-tab-badge">{count}</span>
-                  </button>
-                );
-              })}
+                <option value="all">All Hubs ({cards.length})</option>
+                {SETTINGS_HUBS.map((hub) => {
+                  const count = cards.filter(c => hub.sections.includes(c.id)).length;
+                  return (
+                    <option key={hub.id} value={hub.id}>
+                      {hub.icon} {hub.shortTitle || hub.title} ({count})
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+
+            <div className="settings-nav-scroll-shell">
+              <div className="settings-nav-scroll">
+                <button
+                  type="button"
+                  className={`settings-tab-btn ${selectedHub === 'all' && !cleanQuery ? 'active' : ''}`}
+                  onClick={() => { setSelectedHub('all'); setSearchQuery(''); }}
+                >
+                  <span>All Hubs</span>
+                  <span className="settings-tab-badge">{cards.length}</span>
+                </button>
+                {SETTINGS_HUBS.map((hub) => {
+                  const count = cards.filter(c => hub.sections.includes(c.id)).length;
+                  const isSelected = selectedHub === hub.id && !cleanQuery;
+                  return (
+                    <button
+                      key={hub.id}
+                      type="button"
+                      className={`settings-tab-btn ${isSelected ? 'active' : ''}`}
+                      onClick={() => { setSelectedHub(hub.id); setSearchQuery(''); }}
+                    >
+                      <span>{hub.icon}</span>
+                      <span>{hub.shortTitle || hub.title}</span>
+                      <span className="settings-tab-badge">{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             <div className="settings-search-wrapper">
@@ -595,7 +647,7 @@ export default function App() {
           {activeSection === 'language' && <LanguageSection />}
           {activeSection === 'migration' && <MigrationSection />}
           {activeSection === 'profile' && <ProfileSection user={user} onUpdate={refetchUser} />}
-          {activeSection === 'security' && <SecuritySection user={user} onUpdate={refetchUser} />}
+          {activeSection === 'security' && <SecuritySection user={user} onUpdate={refetchUser} onNavigateDanger={() => selectSection('danger')} />}
           {activeSection === 'autoconfig' && <DeviceSetupSection user={user} />}
           {activeSection === 'deadman' && <DeadManSection />}
           {activeSection === 'rss' && <FeedRssSection />}
@@ -721,7 +773,7 @@ function ExperienceSection() {
       <div style={{ padding: '1rem 1.15rem', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--color-border-subtle)', fontSize: '0.84rem', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
         <span style={{ fontSize: '1.1rem' }}>💡</span>
         <span>
-          You can toggle personas on the fly anywhere using the <strong>9-dot WoxApp launcher</strong> in the sidebar header or pressing <kbd style={{ padding: '2px 5px', background: 'rgba(255,255,255,0.1)', borderRadius: '4px' }}>Ctrl+.</kbd>.
+          You can toggle personas on the fly anywhere using the <strong>9-dot WoxApp launcher</strong> in the sidebar header or pressing <kbd style={{ padding: '2px 5px', background: 'rgba(255,255,255,0.1)', borderRadius: '4px' }}>Alt+A</kbd>.
         </span>
       </div>
     </div>
@@ -740,28 +792,50 @@ function ProfileSection({ user, onUpdate }) {
   const [msg, setMsg] = useState('');
   const [verifySession, setVerifySession] = useState(null);
 
+  useEffect(() => {
+    setForm({
+      displayName: user?.display_name || '',
+      recoveryEmail: user?.recovery_email || '',
+      timezone: user?.timezone || 'UTC',
+      language: user?.language || 'en',
+    });
+  }, [user]);
+
+  const startRecoveryVerification = async (email) => {
+    const res = await post('/verify/start', {
+      type: 'recovery_email',
+      targetEmail: email,
+    });
+    setVerifySession({
+      sessionToken: res.sessionToken,
+      targetEmail: res.targetEmail,
+    });
+  };
+
   const handleSave = async (e) => {
     e.preventDefault();
     setSaving(true);
+    setMsg('');
     try {
-      // Check if recovery email changed and requires dual verification
       const cleanNew = (form.recoveryEmail || '').trim();
       const currentEmail = (user?.recovery_email || '').trim();
+      const baseProfilePayload = {
+        displayName: form.displayName,
+        timezone: form.timezone,
+        language: form.language,
+      };
 
+      // Check if recovery email changed and requires dual verification
       if (cleanNew && cleanNew !== currentEmail) {
-        const res = await post('/verify/start', {
-          type: 'recovery_email',
-          targetEmail: cleanNew,
-        });
-        setVerifySession({
-          sessionToken: res.sessionToken,
-          targetEmail: res.targetEmail,
-        });
-        setSaving(false);
+        await put('/settings/profile', baseProfilePayload);
+        onUpdate();
+        await startRecoveryVerification(cleanNew);
+        setMsg('Profile details saved! Complete verification to attach your new recovery email.');
         return;
       }
 
-      await put('/settings/profile', form);
+      const payload = cleanNew ? { ...baseProfilePayload, recoveryEmail: cleanNew } : baseProfilePayload;
+      await put('/settings/profile', payload);
       setMsg('Profile updated!');
       onUpdate();
       setTimeout(() => setMsg(''), 3000);
@@ -826,6 +900,7 @@ function ProfileSection({ user, onUpdate }) {
           targetEmail={verifySession.targetEmail}
           title="Verify Recovery Email"
           description="To link this recovery address, enter the 6-digit code or simply reply to the email:"
+          onResend={() => startRecoveryVerification(verifySession.targetEmail)}
           onVerified={() => {
             setVerifySession(null);
             setMsg('Recovery email verified and attached to your account!');
@@ -840,7 +915,7 @@ function ProfileSection({ user, onUpdate }) {
 }
 
 // ─── Security Section ─────────────────────────
-function SecuritySection({ user, onUpdate }) {
+function SecuritySection({ user, onUpdate, onNavigateDanger }) {
   const [passwords, setPasswords] = useState({ currentPassword: '', newPassword: '' });
   const [msg, setMsg] = useState('');
   const [saving, setSaving] = useState(false);
@@ -861,17 +936,21 @@ function SecuritySection({ user, onUpdate }) {
     }
   };
 
+  const startStepUpChallenge = async () => {
+    const res = await post('/verify/start', {
+      type: 'step_up',
+      targetEmail: user?.email || '',
+      meta: { action: 'disable_2fa' },
+    });
+    setStepUpSession({
+      sessionToken: res.sessionToken,
+      targetEmail: res.targetEmail,
+    });
+  };
+
   const handleDisable2FAClick = async () => {
     try {
-      const res = await post('/verify/start', {
-        type: 'step_up',
-        targetEmail: user?.email || '',
-        meta: { action: 'disable_2fa' },
-      });
-      setStepUpSession({
-        sessionToken: res.sessionToken,
-        targetEmail: res.targetEmail,
-      });
+      await startStepUpChallenge();
     } catch (err) {
       alert('Security challenge failed: ' + err.message);
     }
@@ -986,14 +1065,40 @@ function SecuritySection({ user, onUpdate }) {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
                 <span>JavaScript & Dynamic Content</span>
               </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.8125rem' }}>
-                <input
-                  type="checkbox"
-                  checked={privacyPrefs.allowScripts}
-                  onChange={(e) => updatePrivacyPref('allowScripts', e.target.checked)}
-                />
-                <span><strong>Enable JavaScript in Sandboxed Viewer</strong> (Default is Blocked)</span>
-              </label>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', padding: '0.65rem 0.85rem', borderRadius: 'var(--radius-md)', background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border)' }}>
+                <span style={{ fontSize: '0.8125rem' }}><strong>Enable JavaScript in Sandboxed Viewer</strong> <span className="text-secondary">(Default is Blocked)</span></span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={!!privacyPrefs.allowScripts}
+                  aria-label="Enable JavaScript in Sandboxed Viewer"
+                  onClick={() => updatePrivacyPref('allowScripts', !privacyPrefs.allowScripts)}
+                  style={{
+                    width: 44,
+                    height: 24,
+                    borderRadius: 9999,
+                    border: '1px solid var(--color-border)',
+                    background: privacyPrefs.allowScripts ? 'var(--color-primary)' : 'var(--color-bg-input)',
+                    position: 'relative',
+                    cursor: 'pointer',
+                    flexShrink: 0,
+                    transition: 'background 0.2s ease',
+                    padding: 0,
+                  }}
+                >
+                  <span style={{
+                    position: 'absolute',
+                    top: 2,
+                    left: privacyPrefs.allowScripts ? 22 : 2,
+                    width: 18,
+                    height: 18,
+                    borderRadius: '50%',
+                    background: privacyPrefs.allowScripts ? 'var(--color-on-primary, #ffffff)' : 'var(--color-text-secondary)',
+                    transition: 'left 0.2s ease',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                  }} />
+                </button>
+              </div>
             </div>
 
             <div>
@@ -1001,14 +1106,41 @@ function SecuritySection({ user, onUpdate }) {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
                 <span>Link Safety & Phishing Protection</span>
               </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.8125rem' }}>
-                <input
-                  type="checkbox"
-                  checked={privacyPrefs.interceptLinks}
-                  onChange={(e) => updatePrivacyPref('interceptLinks', e.target.checked)}
-                />
-                <span><strong>Intercept external links with domain inspection & preview</strong> (Recommended)</span>
-              </label>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', padding: '0.65rem 0.85rem', borderRadius: 'var(--radius-md)', background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border)' }}>
+                <span style={{ fontSize: '0.8125rem' }}><strong>Intercept external links with domain inspection & preview</strong> <span className="text-secondary">(Recommended)</span></span>
+                <button
+                  type="button"
+                  id="intercept-external-links-chk"
+                  role="switch"
+                  aria-checked={!!privacyPrefs.interceptLinks}
+                  aria-label="Intercept external links with domain inspection and preview"
+                  onClick={() => updatePrivacyPref('interceptLinks', !privacyPrefs.interceptLinks)}
+                  style={{
+                    width: 44,
+                    height: 24,
+                    borderRadius: 9999,
+                    border: '1px solid var(--color-border)',
+                    background: privacyPrefs.interceptLinks ? 'var(--color-primary)' : 'var(--color-bg-input)',
+                    position: 'relative',
+                    cursor: 'pointer',
+                    flexShrink: 0,
+                    transition: 'background 0.2s ease',
+                    padding: 0,
+                  }}
+                >
+                  <span style={{
+                    position: 'absolute',
+                    top: 2,
+                    left: privacyPrefs.interceptLinks ? 22 : 2,
+                    width: 18,
+                    height: 18,
+                    borderRadius: '50%',
+                    background: privacyPrefs.interceptLinks ? 'var(--color-on-primary, #ffffff)' : 'var(--color-text-secondary)',
+                    transition: 'left 0.2s ease',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                  }} />
+                </button>
+              </div>
             </div>
 
             <div>
@@ -1061,6 +1193,7 @@ function SecuritySection({ user, onUpdate }) {
           targetEmail={stepUpSession.targetEmail}
           title="Security Step-Up Authorization"
           description="High-security action: Enter the 6-digit code or reply to the email to confirm disabling 2FA:"
+          onResend={startStepUpChallenge}
           onVerified={async (data) => {
             setStepUpSession(null);
             try {
@@ -1078,9 +1211,36 @@ function SecuritySection({ user, onUpdate }) {
         />
       )}
 
-      {/* Danger Zone: Account Deletion */}
-      <div style={{ marginTop: '2.5rem' }}>
-        <DangerZoneSection user={user} onUpdate={onUpdate} />
+      {/* Danger Zone Jump Callout */}
+      <div
+        style={{
+          marginTop: '2.5rem',
+          padding: '1.25rem',
+          borderRadius: 'var(--radius-md)',
+          border: '1px solid rgba(239, 68, 68, 0.35)',
+          background: 'rgba(239, 68, 68, 0.06)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '1rem',
+        }}
+      >
+        <div>
+          <h3 style={{ margin: '0 0 0.25rem', fontSize: '1rem', color: 'var(--color-error)' }}>
+            Account & Mailbox Deletion
+          </h3>
+          <p className="text-secondary" style={{ margin: 0, fontSize: '0.8125rem' }}>
+            Schedule permanent account deletion with a 14-day recovery grace period or cancel an active deletion request.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="btn btn-danger btn-sm"
+          onClick={() => onNavigateDanger && onNavigateDanger()}
+        >
+          Go to Account Deletion & Danger Zone
+        </button>
       </div>
     </div>
   );
@@ -1344,20 +1504,41 @@ function DangerZoneSection({ user, onUpdate }) {
 function SessionsSection() {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const fetchSessions = async () => {
+    try {
+      const d = await get('/settings/sessions');
+      setSessions(d.sessions || []);
+      setError('');
+    } catch (err) {
+      setError(err.message || 'Failed to load sessions');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    get('/settings/sessions').then((d) => setSessions(d.sessions || [])).finally(() => setLoading(false));
+    fetchSessions();
   }, []);
 
   const revoke = async (id) => {
-    await del(`/settings/sessions/${id}`);
-    setSessions((prev) => prev.filter((s) => s.id !== id));
+    try {
+      await del(`/settings/sessions/${id}`);
+      setSessions((prev) => prev.filter((s) => s.id !== id));
+    } catch (err) {
+      setError(err.message || 'Failed to revoke session');
+    }
   };
 
   const revokeAll = async () => {
     if (!confirm('Revoke all other sessions?')) return;
-    await del('/settings/sessions');
-    setSessions([]);
+    try {
+      await del('/settings/sessions');
+      await fetchSessions();
+    } catch (err) {
+      setError(err.message || 'Failed to revoke other sessions');
+    }
   };
 
   return (
@@ -1366,6 +1547,7 @@ function SessionsSection() {
         <h2>Active Sessions</h2>
         <button className="btn btn-danger btn-sm" onClick={revokeAll}>Revoke All Others</button>
       </div>
+      {error && <div className="toast toast-error" style={{ position: 'static', marginBottom: '1rem' }}>{error}</div>}
       {loading ? <p className="text-secondary">Loading...</p> : sessions.length === 0 ? (
         <p className="text-secondary">No active sessions</p>
       ) : (
@@ -1373,11 +1555,16 @@ function SessionsSection() {
           {sessions.map((s) => (
             <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
               <div>
-                <div style={{ fontSize: '0.875rem' }}>{s.ip_address}</div>
+                <div style={{ fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <span>{s.ip_address}</span>
+                  {s.current && <span className="badge badge-green" style={{ fontSize: '0.6875rem' }}>Current</span>}
+                </div>
                 <div className="text-secondary" style={{ fontSize: '0.75rem' }}>{s.user_agent?.slice(0, 60)}</div>
                 <div className="text-tertiary" style={{ fontSize: '0.6875rem' }}>{new Date(s.created_at).toLocaleString()}</div>
               </div>
-              <button className="btn btn-ghost btn-xs" onClick={() => revoke(s.id)}>Revoke</button>
+              {!s.current && (
+                <button className="btn btn-ghost btn-xs" onClick={() => revoke(s.id)}>Revoke</button>
+              )}
             </div>
           ))}
         </div>
@@ -1392,45 +1579,68 @@ function ContactsSection() {
   const [search, setSearch] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newName, setNewName] = useState('');
+  const [error, setError] = useState('');
 
   useEffect(() => {
     const q = search ? `?q=${encodeURIComponent(search)}` : '';
-    get(`/settings/contacts${q}`).then((d) => setContacts(d.contacts || []));
+    get(`/settings/contacts${q}`)
+      .then((d) => {
+        setContacts(d.contacts || []);
+        setError('');
+      })
+      .catch((err) => setError(err.message || 'Failed to load contacts'));
   }, [search]);
 
   const addContact = async (e) => {
     e.preventDefault();
     if (!newEmail) return;
-    const result = await post('/settings/contacts', { email: newEmail, name: newName || undefined });
-    setContacts((prev) => [result.contact, ...prev]);
-    setNewEmail('');
-    setNewName('');
+    try {
+      setError('');
+      const result = await post('/settings/contacts', { email: newEmail, name: newName || undefined });
+      setContacts((prev) => [result.contact, ...prev.filter((c) => c.is_alias || c.id !== result.contact.id)]);
+      setNewEmail('');
+      setNewName('');
+    } catch (err) {
+      setError(err.message || 'Failed to add contact');
+    }
   };
 
-  const deleteContact = async (id) => {
-    await del(`/settings/contacts/${id}`);
-    setContacts((prev) => prev.filter((c) => c.id !== id));
+  const deleteContact = async (contact) => {
+    if (!contact || contact.is_alias) return;
+    try {
+      setError('');
+      await del(`/settings/contacts/${contact.id}`);
+      setContacts((prev) => prev.filter((c) => c.is_alias || c.id !== contact.id));
+    } catch (err) {
+      setError(err.message || 'Failed to delete contact');
+    }
   };
 
   return (
     <div className="card" style={{ padding: '1.5rem' }}>
       <h2 style={{ marginBottom: '1rem' }}>Contacts</h2>
+      {error && <div className="toast toast-error" style={{ position: 'static', marginBottom: '1rem' }}>{error}</div>}
       <input className="input" placeholder="Search contacts..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ marginBottom: '1rem' }} />
 
       <form onSubmit={addContact} style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
-        <input className="input" placeholder="Email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} required style={{ flex: 1 }} />
+        <input className="input" type="email" placeholder="Email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} required style={{ flex: 1 }} />
         <input className="input" placeholder="Name (optional)" value={newName} onChange={(e) => setNewName(e.target.value)} style={{ flex: 1 }} />
         <button type="submit" className="btn btn-primary btn-sm">Add</button>
       </form>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
         {contacts.map((c) => (
-          <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0.75rem', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
+          <div key={c.is_alias ? `alias-${c.id}` : `contact-${c.id}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0.75rem', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
             <div>
-              <div style={{ fontSize: '0.875rem' }}>{c.name || c.email}</div>
+              <div style={{ fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <span>{c.name || c.email}</span>
+                {c.is_alias && <span className="badge badge-purple" style={{ fontSize: '0.6875rem' }}>Alias</span>}
+              </div>
               {c.name && <div className="text-secondary" style={{ fontSize: '0.75rem' }}>{c.email}</div>}
             </div>
-            <button className="btn btn-ghost btn-xs" onClick={() => deleteContact(c.id)}>✕</button>
+            {!c.is_alias && (
+              <button className="btn btn-ghost btn-xs" onClick={() => deleteContact(c)}>✕</button>
+            )}
           </div>
         ))}
         {contacts.length === 0 && <p className="text-secondary">No contacts yet</p>}
@@ -1493,6 +1703,7 @@ function AliasesSection({ user }) {
   const [domainChoice, setDomainChoice] = useState('main');
   const [availability, setAvailability] = useState(null);
   const [msg, setMsg] = useState(null);
+  const baseDomain = user?.email?.includes('@') ? user.email.split('@')[1] : 'wox.world';
 
   const fetchAliases = () => {
     get('/aliases').then((d) => setAliases(d.aliases || [])).finally(() => setLoading(false));
@@ -1655,7 +1866,7 @@ function AliasesSection({ user }) {
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  @{domainChoice === 'subdomain' ? `${user?.username || 'user'}.wox.world` : 'wox.world'}
+                  @{domainChoice === 'subdomain' ? `${user?.username || 'user'}.${baseDomain}` : baseDomain}
                 </span>
               </div>
 
@@ -1665,8 +1876,8 @@ function AliasesSection({ user }) {
                 onChange={(e) => setDomainChoice(e.target.value)}
                 style={{ width: 200 }}
               >
-                <option value="main">@wox.world (Root Domain)</option>
-                <option value="subdomain">@{user?.username || 'user'}.wox.world (Subdomain)</option>
+                <option value="main">@{baseDomain} (Root Domain)</option>
+                <option value="subdomain">@{user?.username || 'user'}.{baseDomain} (Subdomain)</option>
               </select>
             </div>
 
@@ -1692,7 +1903,7 @@ function AliasesSection({ user }) {
         )}
       </form>
 
-      <div style={{ overflowX: 'auto' }}>
+      <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', maxWidth: '100%' }}>
         <table style={{ width: '100%', fontSize: '0.875rem', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '2px solid var(--color-border)', textAlign: 'left' }}>
@@ -1935,6 +2146,8 @@ function FiltersSection() {
   const [operator, setOperator] = useState('contains');
   const [value, setValue] = useState('');
   const [action, setAction] = useState('star');
+  const [actionValue, setActionValue] = useState('');
+  const needsActionValue = ['move', 'label', 'forward'].includes(action);
 
   const fetchFilters = () => {
     get('/settings/filters').then((d) => setFilters(d.filters || [])).finally(() => setLoading(false));
@@ -1946,15 +2159,20 @@ function FiltersSection() {
 
   const handleCreate = async (e) => {
     e.preventDefault();
+    if (needsActionValue && !actionValue.trim()) {
+      alert(`Please enter a ${action === 'forward' ? 'forwarding email address' : action === 'label' ? 'label name' : 'target folder'}.`);
+      return;
+    }
     try {
       await post('/settings/filters', {
-        name,
+        name: name.trim(),
         condition_field: field,
         condition_operator: operator,
         condition_value: value,
         action,
+        action_value: needsActionValue ? actionValue.trim() : undefined,
       });
-      setName(''); setValue('');
+      setName(''); setValue(''); setActionValue('');
       fetchFilters();
     } catch (err) {
       alert(err.message);
@@ -1974,13 +2192,14 @@ function FiltersSection() {
     <div className="card" style={{ padding: '1.5rem' }}>
       <h2 style={{ marginBottom: '0.5rem' }}>Inbox Rules & Sorting Filters</h2>
       <p className="text-secondary" style={{ fontSize: '0.875rem', marginBottom: '1.5rem' }}>
-        Automatically categorize, star, label, or move incoming emails matching specific criteria.
+        Automatically categorize, star, label, move, or forward incoming emails matching specific criteria.
       </p>
 
       <form onSubmit={handleCreate} style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
         <input className="input" placeholder="Rule Name" value={name} onChange={(e) => setName(e.target.value)} required style={{ minWidth: 140, flex: 1 }} />
         <select className="input" value={field} onChange={(e) => setField(e.target.value)} style={{ width: 110 }}>
           <option value="from">From</option>
+          <option value="to">To</option>
           <option value="subject">Subject</option>
           <option value="body">Body</option>
         </select>
@@ -1988,17 +2207,49 @@ function FiltersSection() {
           <option value="contains">Contains</option>
           <option value="equals">Equals</option>
           <option value="starts_with">Starts with</option>
+          <option value="regex">Regex</option>
         </select>
         <input className="input" placeholder="Value to match" value={value} onChange={(e) => setValue(e.target.value)} required style={{ minWidth: 140, flex: 1 }} />
-        <select className="input" value={action} onChange={(e) => setAction(e.target.value)} style={{ width: 130 }}>
+        <select
+          className="input"
+          value={action}
+          onChange={(e) => {
+            const nextAction = e.target.value;
+            setAction(nextAction);
+            if (!['move', 'label', 'forward'].includes(nextAction)) {
+              setActionValue('');
+            }
+          }}
+          style={{ width: 145 }}
+        >
           <option value="star">Star Email</option>
           <option value="read">Mark as Read</option>
+          <option value="move">Move to Folder</option>
+          <option value="label">Apply Label</option>
+          <option value="forward">Forward To</option>
           <option value="delete">Delete</option>
         </select>
+        {needsActionValue && (
+          <input
+            className="input"
+            type={action === 'forward' ? 'email' : 'text'}
+            placeholder={
+              action === 'forward'
+                ? 'Forwarding email (e.g. archive@domain.com)'
+                : action === 'label'
+                  ? 'Label name (e.g. Receipts)'
+                  : 'Folder name (e.g. Archive)'
+            }
+            value={actionValue}
+            onChange={(e) => setActionValue(e.target.value)}
+            required
+            style={{ minWidth: 170, flex: 1 }}
+          />
+        )}
         <button type="submit" className="btn btn-primary btn-sm">+ Add Rule</button>
       </form>
 
-      <div style={{ overflowX: 'auto' }}>
+      <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', maxWidth: '100%' }}>
         <table style={{ width: '100%', fontSize: '0.875rem', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '2px solid var(--color-border)', textAlign: 'left' }}>
@@ -2018,7 +2269,10 @@ function FiltersSection() {
                 <tr key={f.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
                   <td style={{ padding: '0.5rem', fontWeight: 600 }}>{f.name}</td>
                   <td style={{ padding: '0.5rem' }} className="text-secondary">If <strong>{f.condition_field}</strong> {f.condition_operator} "{f.condition_value}"</td>
-                  <td style={{ padding: '0.5rem' }}><span className="badge badge-purple">{f.action}</span></td>
+                  <td style={{ padding: '0.5rem' }}>
+                    <span className="badge badge-purple">{f.action}</span>
+                    {f.action_value && <span className="text-secondary" style={{ marginLeft: '0.4rem' }}>→ {f.action_value}</span>}
+                  </td>
                   <td style={{ padding: '0.5rem', textAlign: 'right' }}>
                     <button className="btn btn-ghost btn-xs text-error" onClick={() => handleDelete(f.id)}>Delete</button>
                   </td>
@@ -2101,7 +2355,7 @@ function ScreenerRulesSection() {
         <button type="submit" className="btn btn-primary btn-sm">+ Save Rule</button>
       </form>
 
-      <div style={{ overflowX: 'auto' }}>
+      <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', maxWidth: '100%' }}>
         <table style={{ width: '100%', fontSize: '0.875rem', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '2px solid var(--color-border)', textAlign: 'left' }}>
@@ -2217,7 +2471,7 @@ function WebhooksSection() {
         <button type="submit" className="btn btn-primary btn-sm">+ Create Webhook</button>
       </form>
 
-      <div style={{ overflowX: 'auto' }}>
+      <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', maxWidth: '100%' }}>
         <table style={{ width: '100%', fontSize: '0.875rem', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '2px solid var(--color-border)', textAlign: 'left' }}>
@@ -2310,7 +2564,7 @@ function ReverseAliasesSection() {
         Cryptographic reply targets that let you reply to external senders using your alias identities without revealing your real personal email.
       </p>
 
-      <div style={{ overflowX: 'auto' }}>
+      <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', maxWidth: '100%' }}>
         <table style={{ width: '100%', fontSize: '0.875rem', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '2px solid var(--color-border)', textAlign: 'left' }}>
@@ -2350,6 +2604,8 @@ function PgpSection() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
+  const [exportedPrivateKey, setExportedPrivateKey] = useState(null);
+  const [keyCopied, setKeyCopied] = useState(false);
 
   useEffect(() => {
     get('/settings/pgp').then((d) => {
@@ -2386,12 +2642,48 @@ function PgpSection() {
       setEnabled(true);
       setFingerprint(res.fingerprint);
       setMsg({ type: 'success', text: 'New PGP keypair generated! Make sure to save your private key.' });
-      prompt('COPY YOUR PRIVATE KEY SAFELY (Do not lose it):', res.privateKey);
+      if (res.privateKey) {
+        setExportedPrivateKey(res.privateKey);
+        setKeyCopied(false);
+      }
     } catch (err) {
       setMsg({ type: 'error', text: err.message });
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleCopyPrivateKey = async () => {
+    if (!exportedPrivateKey) return;
+    try {
+      await navigator.clipboard.writeText(exportedPrivateKey);
+      setKeyCopied(true);
+      setTimeout(() => setKeyCopied(false), 2500);
+    } catch {
+      const el = document.getElementById('pgp-private-key-export');
+      if (el) {
+        el.focus();
+        el.select();
+        try {
+          document.execCommand('copy');
+          setKeyCopied(true);
+          setTimeout(() => setKeyCopied(false), 2500);
+        } catch { /* ignore */ }
+      }
+    }
+  };
+
+  const handleDownloadPrivateKey = () => {
+    if (!exportedPrivateKey) return;
+    const blob = new Blob([exportedPrivateKey], { type: 'application/pgp-keys' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `woxmail-pgp-private-${(fingerprint || 'key').slice(0, 8)}.asc`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -2442,6 +2734,64 @@ function PgpSection() {
           {saving ? 'Saving...' : 'Save PGP Key'}
         </button>
       </form>
+
+      {exportedPrivateKey && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="pgp-export-title"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.7)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem',
+          }}
+        >
+          <div
+            className="card"
+            style={{
+              width: '100%',
+              maxWidth: 640,
+              padding: '1.5rem',
+              border: '1px solid var(--color-border)',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.45)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+              <h3 id="pgp-export-title" style={{ margin: 0 }}>Save Your OpenPGP Private Key</h3>
+              <button type="button" className="btn btn-ghost btn-xs" onClick={() => setExportedPrivateKey(null)} aria-label="Close modal">✕</button>
+            </div>
+            <div className="toast toast-warning" style={{ position: 'static', marginBottom: '1rem', fontSize: '0.8125rem' }}>
+              Store this private key in a secure password manager or offline backup. For your security, it is shown only once.
+            </div>
+            <textarea
+              id="pgp-private-key-export"
+              className="input mono"
+              readOnly
+              rows={12}
+              value={exportedPrivateKey}
+              onClick={(e) => e.target.select()}
+              style={{ width: '100%', fontSize: '0.75rem', lineHeight: 1.4, marginBottom: '1rem', whiteSpace: 'pre' }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={handleDownloadPrivateKey}>
+                Download .asc
+              </button>
+              <button type="button" className="btn btn-primary btn-sm" onClick={handleCopyPrivateKey}>
+                {keyCopied ? 'Copied!' : 'Copy Private Key'}
+              </button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setExportedPrivateKey(null)}>
+                I Have Saved It
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

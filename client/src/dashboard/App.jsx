@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { useUser, useFolders, useMessages, useMessage, useKeyboard } from '../shared/hooks.js';
+import { useIntl } from '../i18n/IntlProvider.jsx';
 import { post, put } from '../shared/api.js';
 import Sidebar from './components/Sidebar.jsx';
 import MessageList from './components/MessageList.jsx';
@@ -29,6 +30,17 @@ import '../shared/styles/globals.css';
 
 export default function App() {
   const { user, loading: userLoading } = useUser();
+  const { t, locale, setLocale } = useIntl();
+
+  // Sync locale with user preference
+  useEffect(() => {
+    if (user && user.language) {
+      const stored = localStorage.getItem('woxmail_lang');
+      if (user.language && (!stored || stored !== user.language)) {
+        setLocale(user.language);
+      }
+    }
+  }, [user?.language]);
   const [activeFolder, setActiveFolder] = useState('INBOX');
   const [page, setPage] = useState(1);
   const [selectedUid, setSelectedUid] = useState(null);
@@ -66,7 +78,8 @@ export default function App() {
   const [announcements, setAnnouncements] = useState([]);
   const [dismissedAnnouncements, setDismissedAnnouncements] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem('woxmail_dismissed_announcements') || '[]');
+      const parsed = JSON.parse(localStorage.getItem('woxmail_dismissed_announcements') || '[]');
+      return Array.isArray(parsed) ? parsed.map(String) : [];
     } catch {
       return [];
     }
@@ -84,22 +97,28 @@ export default function App() {
   }, []);
 
   const handleDismissAnnouncement = (id) => {
-    const next = [...dismissedAnnouncements, id];
-    setDismissedAnnouncements(next);
-    try {
-      localStorage.setItem('woxmail_dismissed_announcements', JSON.stringify(next));
-    } catch {}
+    const key = String(id);
+    setDismissedAnnouncements((prev) => {
+      const next = Array.from(new Set([...prev.map(String), key]));
+      try {
+        localStorage.setItem('woxmail_dismissed_announcements', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
   };
 
   const handleDismissAllAnnouncements = (ids) => {
-    const next = Array.from(new Set([...dismissedAnnouncements, ...ids]));
-    setDismissedAnnouncements(next);
-    try {
-      localStorage.setItem('woxmail_dismissed_announcements', JSON.stringify(next));
-    } catch {}
+    const normalized = (ids || []).map(String);
+    setDismissedAnnouncements((prev) => {
+      const next = Array.from(new Set([...prev.map(String), ...normalized]));
+      try {
+        localStorage.setItem('woxmail_dismissed_announcements', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
   };
 
-  const visibleAnnouncements = announcements.filter((a) => !dismissedAnnouncements.includes(a.id));
+  const visibleAnnouncements = announcements.filter((a) => !dismissedAnnouncements.includes(String(a.id)));
 
   useEffect(() => {
     // Restore persistent Proton session on load if available
@@ -164,11 +183,17 @@ export default function App() {
   }, [user]);
 
   useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)');
     const handleResize = () => {
-      setIsMobile(window.innerWidth <= 768);
+      setIsMobile(mq.matches || window.innerWidth <= 768);
     };
+    handleResize();
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    if (mq.addEventListener) mq.addEventListener('change', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (mq.removeEventListener) mq.removeEventListener('change', handleResize);
+    };
   }, []);
 
   const knownMsgUidsRef = React.useRef(new Set());
@@ -346,11 +371,11 @@ export default function App() {
 
   const handleFolderChange = (folder) => {
     setShowKanban(false);
+    setSidebarOpen(false);
     if (folder === activeFolder) return;
     setActiveFolder(folder);
     setSelectedUid(null);
     setPage(1);
-    setSidebarOpen(false);
     setActiveFilterLabel('');
   };
 
@@ -374,7 +399,7 @@ export default function App() {
     } else if (appId === 'futureme') {
       window.location.href = '/futureme';
     } else if (appId === 'developer') {
-      window.location.href = '/settings#developer';
+      window.location.href = '/settings/developer';
     } else if (appId === 'settings') {
       window.location.href = '/settings';
     }
@@ -775,15 +800,47 @@ export default function App() {
         <span className="dashboard-mobile-title">
           {activeFolder === 'INBOX' ? 'Inbox' : activeFolder === '__all_inboxes' || activeFolder === 'All Inboxes' ? 'All Inboxes' : activeFolder.replace('__', '').replace(/_/g, ' ')}
         </span>
-        <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center', flexShrink: 0 }}>
+          {user?.is_admin && (
+            <a
+              href="/admin"
+              className="btn btn-ghost btn-icon"
+              title="Admin Control Panel"
+              aria-label="Admin Control Panel"
+              style={{ color: 'var(--color-primary-light)' }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            </a>
+          )}
+          <a
+            href="/settings"
+            className="btn btn-ghost btn-icon"
+            title="Settings"
+            aria-label="Settings"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </a>
           <button
             type="button"
             className="btn btn-ghost btn-icon"
-            onClick={() => setShowThemeModal(true)}
-            title="Themes & Shaders"
-            aria-label="Theme customizer"
+            onClick={() => setAccountSwitcherOpen(true)}
+            title="Switch Account"
+            aria-label="Switch Account"
           >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 0 20z"/></svg>
+            <span style={{
+              width: 22,
+              height: 22,
+              borderRadius: '50%',
+              background: 'linear-gradient(135deg, #7c3aed, #3b82f6)',
+              color: '#fff',
+              fontSize: '0.7rem',
+              fontWeight: 800,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+              {(user?.username || user?.email || 'U').slice(0, 1).toUpperCase()}
+            </span>
           </button>
           <button
             type="button"
@@ -823,15 +880,16 @@ export default function App() {
         onToggleCollapse={toggleSidebarCollapse}
         onClose={() => setSidebarOpen(false)}
         onFolderChange={handleFolderChange}
-        onOpenSupport={() => setShowSupportModal(true)}
-        onOpenTheme={() => setShowThemeModal(true)}
+        onOpenSupport={() => { setShowSupportModal(true); setSidebarOpen(false); }}
+        onOpenTheme={() => { setShowThemeModal(true); setSidebarOpen(false); }}
+        onOpenAccountSwitcher={() => { setAccountSwitcherOpen(true); setSidebarOpen(false); }}
         onCompose={() => { setReplyData(null); setComposing(true); setSidebarOpen(false); }}
         onUnlockProton={() => setShowProtonUnlock(true)}
         onSelectApp={handleSelectApp}
       />
 
       {/* Main Content Area */}
-      <div className="dashboard-main-content" style={{ display: 'flex', flexDirection: 'column', flex: 1, height: '100vh', overflow: 'hidden' }}>
+      <div className="dashboard-main-content" style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, maxWidth: '100%', height: isMobile ? 'calc(100vh - 56px)' : '100vh', overflow: 'hidden' }}>
         {/* Global System Announcement Banner (Anti-Spam Consolidated with 5s Auto-Dismiss) */}
         <GlobalAnnouncements
           announcements={announcements}
@@ -858,7 +916,9 @@ export default function App() {
                 display: 'flex',
                 flexDirection: 'column',
                 flex: 1,
-                width: '100vw',
+                width: '100%',
+                maxWidth: '100%',
+                minWidth: 0,
                 height: 'calc(100vh - 56px)',
                 overflow: 'hidden',
               }}
@@ -899,6 +959,8 @@ export default function App() {
                     onLayoutChange={changeLayoutMode}
                     dockOpen={dockOpen}
                     onToggleDock={toggleDock}
+                    user={user}
+                    onOpenShortcuts={() => setShowShortcutsModal(true)}
                     onClearFilter={() => { setActiveFilterLabel(''); refetchMessages(); }}
                     onSelect={setSelectedUid}
                     onStar={handleStar}
@@ -973,6 +1035,8 @@ export default function App() {
                       onLayoutChange={changeLayoutMode}
                       dockOpen={dockOpen}
                       onToggleDock={toggleDock}
+                      user={user}
+                      onOpenShortcuts={() => setShowShortcutsModal(true)}
                       onClearFilter={() => { setActiveFilterLabel(''); refetchMessages(); }}
                       onSelect={setSelectedUid}
                       onStar={handleStar}
@@ -1027,6 +1091,8 @@ export default function App() {
                       onLayoutChange={changeLayoutMode}
                       dockOpen={dockOpen}
                       onToggleDock={toggleDock}
+                      user={user}
+                      onOpenShortcuts={() => setShowShortcutsModal(true)}
                       onClearFilter={() => { setActiveFilterLabel(''); refetchMessages(); }}
                       onSelect={setSelectedUid}
                       onStar={handleStar}
@@ -1109,8 +1175,8 @@ export default function App() {
         <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
       </svg>
     </div>
-                        <h3>No Conversation Selected</h3>
-                        <p>Choose an email from the list to preview its contents and private notes.</p>
+                        <h3>{t('mail.noConversation', 'No Conversation Selected')}</h3>
+                        <p>{t('mail.chooseEmail', 'Choose an email from the list to preview its contents and private notes.')}</p>
                         <div className="keyboard-shortcuts-pill">
                           <span><kbd>J</kbd> / <kbd>K</kbd> Navigate</span>
                           <span><kbd>Enter</kbd> Open</span>

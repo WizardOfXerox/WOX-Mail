@@ -24,6 +24,7 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
   const [pgpPassphrase, setPgpPassphrase] = useState('');
   const [showPgpModal, setShowPgpModal] = useState(false);
   const toRef = useRef(null);
+  const subjectRef = useRef(null);
   const fileInputRef = useRef(null);
   const editorRef = useRef(null);
   const scheduleBtnRef = useRef(null);
@@ -585,7 +586,27 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
 
         {error && <div className="compose-error">{error}</div>}
 
-        <form onSubmit={(e) => handleFormSubmit(e)} className="compose-form">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+              e.preventDefault();
+              handleFormSubmit(null);
+              return;
+            }
+            if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && e.target.tagName === 'INPUT') {
+              e.preventDefault();
+              const focusables = Array.from(e.currentTarget.querySelectorAll('input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), [contenteditable="true"]'));
+              const idx = focusables.indexOf(e.target);
+              if (idx >= 0 && focusables[idx + 1]) {
+                focusables[idx + 1].focus();
+              }
+            }
+          }}
+          className="compose-form"
+        >
           {/* Sender Identity (Primary or Alias) */}
           <div className="compose-field" style={{ position: 'relative', alignItems: 'center' }}>
             <label className="compose-label">From:</label>
@@ -699,6 +720,13 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
               value={to}
               onChange={setTo}
               placeholder="recipient@example.com"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  subjectRef.current?.focus();
+                }
+              }}
               required
             />
             {recipientVerification && (
@@ -773,10 +801,18 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
           <div className="compose-field">
             <label className="compose-label">Subject:</label>
             <input
+              ref={subjectRef}
               className="compose-input"
               type="text"
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  editorRef.current?.focus();
+                }
+              }}
               placeholder="Subject line"
             />
           </div>
@@ -1291,7 +1327,7 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
                   fontSize: '0.75rem',
                   padding: '0.35rem 0.65rem',
                   borderRadius: 'var(--radius-pill)',
-                  border: (trackOpens || remindIfNoReply || pgpEncrypt) ? '1px solid rgba(124, 58, 237, 0.4)' : undefined,
+                  border: (trackOpens || remindIfNoReply || pgpEncrypt) ? '1px solid var(--color-primary)' : undefined,
                   color: (trackOpens || remindIfNoReply || pgpEncrypt) ? 'var(--color-primary-light)' : 'var(--color-text-secondary)',
                 }}
                 title="Toggle tracking, auto-reminders, deliverability check, and PGP encryption"
@@ -1302,7 +1338,7 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
                   <span
                     style={{
                       background: 'var(--color-primary)',
-                      color: '#fff',
+                      color: 'var(--color-on-primary, #ffffff)',
                       fontSize: '0.65rem',
                       fontWeight: 700,
                       padding: '1px 5px',
@@ -1324,7 +1360,8 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
               {/* Split Button: Send + Schedule Popover */}
               <div style={{ display: 'inline-flex', position: 'relative' }}>
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={(e) => handleFormSubmit(e)}
                   className="btn btn-primary btn-sm"
                   disabled={sending}
                   style={{ borderTopRightRadius: 0, borderBottomRightRadius: 0 }}

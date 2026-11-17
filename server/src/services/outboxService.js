@@ -1,7 +1,17 @@
 import { query } from '../config/database.js';
+import { sanitizeEmail } from './emailSanitizer.js';
 import { pino } from 'pino';
 
 const logger = pino({ name: 'woxmail:outbox' });
+
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 /**
  * Creates a new outbox entry when an email is submitted to send, queued, or scheduled.
@@ -18,11 +28,33 @@ export async function createOutboxEntry({
     const ccAddrs = Array.isArray(emailPayload.cc) ? emailPayload.cc : (emailPayload.cc ? [emailPayload.cc] : []);
     const bccAddrs = Array.isArray(emailPayload.bcc) ? emailPayload.bcc : (emailPayload.bcc ? [emailPayload.bcc] : []);
 
-    const safeAttachments = (emailPayload.attachments || []).map((a) => ({
-      filename: a.filename || a.name || 'attachment',
-      contentType: a.contentType || a.type || 'application/octet-stream',
-      size: a.content ? (typeof a.content === 'string' ? a.content.length : a.content.byteLength || 0) : 0,
-    }));
+    const safeAttachments = (emailPayload.attachments || []).map((a) => {
+      let rawBuf = null;
+      if (Buffer.isBuffer(a.content)) {
+        rawBuf = a.content;
+      } else if (typeof a.content === 'string') {
+        if (a.content.includes('base64,')) {
+          rawBuf = Buffer.from(a.content.split('base64,')[1], 'base64');
+        } else {
+          rawBuf = Buffer.from(a.content, 'utf8');
+        }
+      } else if (typeof a.contentBase64 === 'string') {
+        rawBuf = Buffer.from(a.contentBase64, 'base64');
+      }
+
+      const size = rawBuf ? rawBuf.byteLength : (Number(a.size) || 0);
+      // Preserve base64 payload up to 10MB per attachment so retries work cleanly
+      const contentBase64 = rawBuf && rawBuf.byteLength <= 10 * 1024 * 1024
+        ? rawBuf.toString('base64')
+        : null;
+
+      return {
+        filename: a.filename || a.name || 'attachment',
+        contentType: a.contentType || a.type || 'application/octet-stream',
+        size,
+        ...(contentBase64 ? { contentBase64 } : {}),
+      };
+    });
 
     const res = await query(
       `INSERT INTO outbox_emails (
@@ -54,15 +86,17 @@ export async function createOutboxEntry({
 }
 
 /**
- * Updates status of an outbox message by dispatch_id or numeric ID.
+ * Updates status of an outbox message by dispatch_id or numeric ID (optionally scoped by userId).
  */
-export async function updateOutboxStatus(dispatchIdOrId, { status, sentAt = null, errorMessage = null }) {
+export async function updateOutboxStatus(dispatchIdOrId, { status, sentAt = null, errorMessage = null }, userId = null) {
   try {
-    const isNumeric = typeof dispatchIdOrId === 'number' || /^\d+$/.test(String(dispatchIdOrId));
+    const cleanKey = String(dispatchIdOrId).replace(/^outbox_/, '');
+    const isNumeric = /^\d+$/.test(cleanKey);
+    const targetValue = isNumeric ? parseInt(cleanKey, 10) : cleanKey;
     const whereClause = isNumeric ? 'id = $1' : 'dispatch_id = $1';
 
     const sets = ['status = $2', 'updated_at = NOW()'];
-    const params = [dispatchIdOrId, status];
+    const params = [targetValue, status];
     let pIdx = 3;
 
     if (sentAt !== undefined && sentAt !== null) {
@@ -77,7 +111,13 @@ export async function updateOutboxStatus(dispatchIdOrId, { status, sentAt = null
       sets.push('retry_count = retry_count + 1');
     }
 
-    const sql = `UPDATE outbox_emails SET ${sets.join(', ')} WHERE ${whereClause} RETURNING *`;
+    let userScope = '';
+    if (userId !== null && userId !== undefined) {
+      userScope = ` AND user_id = $${pIdx++}`;
+      params.push(userId);
+    }
+
+    const sql = `UPDATE outbox_emails SET ${sets.join(', ')} WHERE ${whereClause}${userScope} RETURNING *`;
     const res = await query(sql, params);
     return res.rows[0] || null;
   } catch (err) {
@@ -106,7 +146,7 @@ export async function getOutboxCount(userId) {
 /**
  * Formats an outbox row into a message object compatible with WoxMail's MessageList and MessageView.
  */
-export function formatOutboxMessage(row) {
+export function formatOutboxMessage(row, { includeAttachmentContent = false } = {}) {
   if (!row) return null;
   const toList = (row.to_addresses || []).map((a) => ({ address: a, name: a }));
   const ccList = (row.cc_addresses || []).map((a) => ({ address: a, name: a }));
@@ -128,6 +168,21 @@ export function formatOutboxMessage(row) {
     }
   }
 
+  const sanitizedHtml = row.body_html
+    ? sanitizeEmail(row.body_html, { loadImages: true }).html
+    : `<pre style="white-space:pre-wrap;font-family:inherit;">${escapeHtml(row.body_text || '')}</pre>`;
+
+  const rawAttachments = Array.isArray(row.attachments) ? row.attachments : [];
+  const attachments = rawAttachments.map((a) => ({
+    filename: a.filename || 'attachment',
+    contentType: a.contentType || 'application/octet-stream',
+    size: Number(a.size) || 0,
+    hasContent: Boolean(a.contentBase64 || a.content),
+    ...(includeAttachmentContent && a.contentBase64
+      ? { content: Buffer.from(a.contentBase64, 'base64') }
+      : {}),
+  }));
+
   return {
     uid: `outbox_${row.id}`,
     outboxId: row.id,
@@ -144,10 +199,10 @@ export function formatOutboxMessage(row) {
     subject: row.subject || '(no subject)',
     date: row.created_at,
     snippet: cleanSnippet,
-    html: row.body_html || `<pre style="white-space:pre-wrap;font-family:inherit;">${row.body_text || ''}</pre>`,
+    html: sanitizedHtml,
     text: row.body_text || '',
-    attachments: Array.isArray(row.attachments) ? row.attachments : [],
-    hasAttachments: Array.isArray(row.attachments) && row.attachments.length > 0,
+    attachments,
+    hasAttachments: attachments.length > 0,
     status: row.status,
     errorMessage: row.error_message,
     scheduledAt: row.scheduled_at,
@@ -184,7 +239,7 @@ export async function getOutboxMessages(userId, { page = 1, limit = 25, filter =
     const total = countRes.rows[0]?.total || 0;
 
     const listRes = await query(querySql, [userId, limit, offset]);
-    const messages = listRes.rows.map(formatOutboxMessage);
+    const messages = listRes.rows.map((row) => formatOutboxMessage(row));
 
     return {
       messages,
@@ -199,18 +254,20 @@ export async function getOutboxMessages(userId, { page = 1, limit = 25, filter =
 }
 
 /**
- * Get a single outbox message by its numeric id or string representation.
+ * Get a single outbox message by its numeric id, outbox_ prefixed id, or dispatch_id.
  */
-export async function getOutboxMessageById(userId, outboxIdOrUid) {
+export async function getOutboxMessageById(userId, outboxIdOrUid, { includeAttachmentContent = false } = {}) {
   try {
     const rawId = String(outboxIdOrUid).replace(/^outbox_/, '');
-    const id = parseInt(rawId, 10);
-    if (isNaN(id)) return null;
+    if (!rawId) return null;
 
-    const res = await query('SELECT * FROM outbox_emails WHERE user_id = $1 AND id = $2', [userId, id]);
+    const isNumeric = /^\d+$/.test(rawId);
+    const res = isNumeric
+      ? await query('SELECT * FROM outbox_emails WHERE user_id = $1 AND id = $2', [userId, parseInt(rawId, 10)])
+      : await query('SELECT * FROM outbox_emails WHERE user_id = $1 AND dispatch_id = $2', [userId, rawId]);
+
     if (res.rows.length === 0) return null;
-
-    return formatOutboxMessage(res.rows[0]);
+    return formatOutboxMessage(res.rows[0], { includeAttachmentContent });
   } catch (err) {
     logger.error({ err: err.message, userId, outboxIdOrUid }, 'Failed to fetch outbox message by ID');
     return null;
@@ -218,15 +275,18 @@ export async function getOutboxMessageById(userId, outboxIdOrUid) {
 }
 
 /**
- * Deletes an outbox entry.
+ * Deletes an outbox entry by numeric id, outbox_ prefixed id, or dispatch_id.
  */
 export async function deleteOutboxMessage(userId, outboxIdOrUid) {
   try {
     const rawId = String(outboxIdOrUid).replace(/^outbox_/, '');
-    const id = parseInt(rawId, 10);
-    if (isNaN(id)) return false;
+    if (!rawId) return false;
 
-    const res = await query('DELETE FROM outbox_emails WHERE user_id = $1 AND id = $2 RETURNING id', [userId, id]);
+    const isNumeric = /^\d+$/.test(rawId);
+    const res = isNumeric
+      ? await query('DELETE FROM outbox_emails WHERE user_id = $1 AND id = $2 RETURNING id', [userId, parseInt(rawId, 10)])
+      : await query('DELETE FROM outbox_emails WHERE user_id = $1 AND dispatch_id = $2 RETURNING id', [userId, rawId]);
+
     return res.rows.length > 0;
   } catch (err) {
     logger.error({ err: err.message, userId, outboxIdOrUid }, 'Failed to delete outbox message');

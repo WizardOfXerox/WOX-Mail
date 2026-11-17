@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { query } from '../config/database.js';
+import { redis } from '../config/redis.js';
 
 // In-memory rate limiting map: apiKeyId -> Array of timestamps
 const rateLimitWindows = new Map();
@@ -63,6 +64,9 @@ export async function revokeApiKey(userId, keyId) {
   );
   if (res.rows.length > 0) {
     rateLimitWindows.delete(keyId);
+    if (redis && redis.status === 'ready') {
+      redis.del(`ratelimit:apikey:${keyId}`).catch(() => {});
+    }
     return true;
   }
   return false;
@@ -99,23 +103,58 @@ export async function authenticateApiKey(rawKey) {
 
   // Check rate limit: sliding 1-hour window
   const now = Date.now();
-  if (now - lastSweep > SWEEP_INTERVAL) {
-    lastSweep = now;
-    pruneRateLimitWindows(now);
-  }
-
   const windowMs = 3600 * 1000;
-  let timestamps = rateLimitWindows.get(key.id) || [];
-  timestamps = timestamps.filter(t => now - t < windowMs);
+  let handledByRedis = false;
 
-  if (timestamps.length >= key.rate_limit) {
-    const error = new Error(`Rate limit exceeded (${key.rate_limit} requests/hour)`);
-    error.status = 429;
-    throw error;
+  if (redis && redis.status === 'ready') {
+    try {
+      const redisKey = `ratelimit:apikey:${key.id}`;
+      const windowStart = now - windowMs;
+      const member = `${now}:${crypto.randomUUID ? crypto.randomUUID() : Math.random()}`;
+
+      // Atomic sliding window check using Redis pipeline
+      const pipeline = redis.pipeline();
+      pipeline.zremrangebyscore(redisKey, 0, windowStart);
+      pipeline.zcard(redisKey);
+      pipeline.expire(redisKey, 3600);
+      const results = await pipeline.exec();
+
+      const count = results && results[1] ? results[1][1] : 0;
+      if (count >= key.rate_limit) {
+        const error = new Error(`Rate limit exceeded (${key.rate_limit} requests/hour)`);
+        error.status = 429;
+        throw error;
+      }
+
+      await redis.zadd(redisKey, now, member);
+      handledByRedis = true;
+    } catch (err) {
+      if (err.status === 429) {
+        throw err;
+      }
+      // If Redis is offline or pipeline fails, fall back to in-memory store
+      handledByRedis = false;
+    }
   }
 
-  timestamps.push(now);
-  rateLimitWindows.set(key.id, timestamps);
+  if (!handledByRedis) {
+    if (now - lastSweep > SWEEP_INTERVAL) {
+      lastSweep = now;
+      pruneRateLimitWindows(now);
+    }
+
+    let timestamps = rateLimitWindows.get(key.id) || [];
+    timestamps = timestamps.filter(t => now - t < windowMs);
+
+    if (timestamps.length >= key.rate_limit) {
+      const error = new Error(`Rate limit exceeded (${key.rate_limit} requests/hour)`);
+      error.status = 429;
+      throw error;
+    }
+
+    timestamps.push(now);
+    rateLimitWindows.set(key.id, timestamps);
+  }
 
   // Update last_used_at asynchronously
   query(`UPDATE api_keys SET last_used_at = NOW() WHERE id = $1`, [key.id]).catch(() => {});

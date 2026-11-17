@@ -6,7 +6,8 @@ import {
   connectAccount,
   deleteAccount,
   setDefaultAccount,
-  testConnection
+  testConnection,
+  evictConnectionCache
 } from '../services/accountService.js';
 
 const router = Router();
@@ -60,11 +61,12 @@ router.post('/test', async (req, res) => {
     const preset = PROVIDER_PRESETS[provider] || PROVIDER_PRESETS.custom;
 
     const testResults = await testConnection({
+      provider,
       imap_host: imap_host || preset.imap_host,
-      imap_port: imap_port || preset.imap_port,
+      imap_port: imap_port !== undefined && imap_port !== null && imap_port !== '' ? imap_port : preset.imap_port,
       imap_secure: imap_secure !== undefined ? imap_secure : preset.imap_secure,
       smtp_host: smtp_host || preset.smtp_host,
-      smtp_port: smtp_port || preset.smtp_port,
+      smtp_port: smtp_port !== undefined && smtp_port !== null && smtp_port !== '' ? smtp_port : preset.smtp_port,
       smtp_secure: smtp_secure !== undefined ? smtp_secure : preset.smtp_secure,
       email,
       password
@@ -82,10 +84,16 @@ router.post('/test', async (req, res) => {
  */
 router.put('/:id/default', async (req, res) => {
   try {
-    const account = await setDefaultAccount(req.user.id, parseInt(req.params.id, 10));
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id) || !/^\d+$/.test(String(req.params.id))) {
+      return res.status(400).json({ error: 'Invalid account ID.' });
+    }
+
+    const account = await setDefaultAccount(req.user.id, id);
     if (!account) {
       return res.status(404).json({ error: 'Account not found.' });
     }
+    await evictConnectionCache(req.user.id, id);
     res.json({ message: 'Default account updated.', account });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Failed to set default account.' });
@@ -98,10 +106,16 @@ router.put('/:id/default', async (req, res) => {
  */
 router.delete('/:id', async (req, res) => {
   try {
-    const deleted = await deleteAccount(req.user.id, parseInt(req.params.id, 10));
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id) || !/^\d+$/.test(String(req.params.id))) {
+      return res.status(400).json({ error: 'Invalid account ID.' });
+    }
+
+    const deleted = await deleteAccount(req.user.id, id);
     if (!deleted) {
       return res.status(404).json({ error: 'Account not found.' });
     }
+    await evictConnectionCache(req.user.id, id);
     res.json({ message: 'Account disconnected successfully.' });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Failed to disconnect account.' });

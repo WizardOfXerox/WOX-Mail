@@ -1,6 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { get } from '../../shared/api.js';
 
+function parseLocalDate(dateInput) {
+  if (!dateInput) return new Date(NaN);
+  const str = String(dateInput).trim();
+  const ymdOnly = str.match(/^(\d{4})-(\d{2})-(\d{2})(?:$|T00:00:00(?:\.000)?Z?$)/i);
+  if (ymdOnly) {
+    const [, y, m, d] = ymdOnly;
+    return new Date(Number(y), Number(m) - 1, Number(d));
+  }
+  return new Date(str);
+}
+
 export default function AnalyticsSection() {
   const [data, setData] = useState(null);
   const [trackingList, setTrackingList] = useState([]);
@@ -8,15 +19,21 @@ export default function AnalyticsSection() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    Promise.all([
-      get('/api/analytics/overview').catch(() => null),
-      get('/api/analytics/tracking?limit=30').catch(() => null),
+    Promise.allSettled([
+      get('/api/analytics/overview'),
+      get('/api/analytics/tracking?limit=30'),
     ])
       .then(([overviewRes, trackingRes]) => {
-        if (overviewRes) setData(overviewRes);
-        if (trackingRes && trackingRes.tracking) setTrackingList(trackingRes.tracking);
+        if (overviewRes.status === 'fulfilled' && overviewRes.value) {
+          setData(overviewRes.value);
+        }
+        if (trackingRes.status === 'fulfilled' && trackingRes.value?.tracking) {
+          setTrackingList(trackingRes.value.tracking);
+        }
+        if (overviewRes.status === 'rejected' && trackingRes.status === 'rejected') {
+          setError(overviewRes.reason?.message || 'Failed to load analytics.');
+        }
       })
-      .catch((err) => setError(err.message || 'Failed to load analytics.'))
       .finally(() => setLoading(false));
   }, []);
 
@@ -104,7 +121,7 @@ export default function AnalyticsSection() {
                   <strong style={{ fontSize: '0.875rem' }}>{r.recipient_email}</strong>
                 </div>
                 <div className="text-secondary" style={{ fontSize: '0.8125rem' }}>
-                  {r.sent_count} sent · {r.opened_count} opened ({Math.round((r.opened_count / r.sent_count) * 100)}%)
+                  {r.sent_count} sent · {r.opened_count} opened ({r.sent_count > 0 ? Math.round((r.opened_count / r.sent_count) * 100) : 0}%)
                 </div>
               </div>
             ))}
@@ -118,36 +135,53 @@ export default function AnalyticsSection() {
         {dailyTrend.length === 0 ? (
           <p className="text-secondary" style={{ fontSize: '0.875rem' }}>No recent dispatch events.</p>
         ) : (
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.5rem', height: '140px', paddingTop: '1rem' }}>
-            {dailyTrend.map((d) => (
-              <div
-                key={d.date}
-                style={{
-                  flex: 1,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  height: '100%',
-                  justifyContent: 'flex-end'
-                }}
-              >
-                <div
-                  style={{
-                    width: '100%',
-                    maxWidth: 24,
-                    height: `${Math.min(100, Math.max(15, (d.sent_count / 10) * 100))}%`,
-                    backgroundColor: 'var(--color-primary)',
-                    borderRadius: '4px 4px 0 0',
-                    transition: 'height 0.3s ease'
-                  }}
-                  title={`${new Date(d.date).toLocaleDateString()}: ${d.sent_count} sent, ${d.opened_count} opened`}
-                />
-                <div className="text-secondary" style={{ fontSize: '0.625rem', marginTop: '0.35rem' }}>
-                  {new Date(d.date).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' })}
-                </div>
+          (() => {
+            const maxSent = Math.max(1, ...dailyTrend.map((item) => Number(item.sent_count) || 0));
+            return (
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.5rem', height: '140px', paddingTop: '1rem' }}>
+                {dailyTrend.map((d) => {
+                  const localDate = parseLocalDate(d.date);
+                  const sentCount = Number(d.sent_count) || 0;
+                  const heightPct = sentCount === 0 ? 4 : Math.min(100, Math.max(12, Math.round((sentCount / maxSent) * 100)));
+                  const dateLabel = isNaN(localDate.getTime())
+                    ? String(d.date)
+                    : localDate.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' });
+                  const fullDateLabel = isNaN(localDate.getTime())
+                    ? String(d.date)
+                    : localDate.toLocaleDateString();
+
+                  return (
+                    <div
+                      key={d.date}
+                      style={{
+                        flex: 1,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        height: '100%',
+                        justifyContent: 'flex-end'
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: '100%',
+                          maxWidth: 24,
+                          height: `${heightPct}%`,
+                          backgroundColor: 'var(--color-primary)',
+                          borderRadius: '4px 4px 0 0',
+                          transition: 'height 0.3s ease'
+                        }}
+                        title={`${fullDateLabel}: ${sentCount} sent, ${d.opened_count} opened`}
+                      />
+                      <div className="text-secondary" style={{ fontSize: '0.625rem', marginTop: '0.35rem' }}>
+                        {dateLabel}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            ))}
-          </div>
+            );
+          })()
         )}
       </div>
 

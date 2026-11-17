@@ -36,7 +36,7 @@
   <!-- Styles -->
   <link rel="stylesheet" href="/css/style.css?v=2.0.1">
   <link rel="stylesheet" href="/css/backgrounds.css?v=2.0.1">
-  <link rel="stylesheet" href="/css/globals.css?v=2.8.1">
+  <link rel="stylesheet" href="/dist/assets/style.css?v=3.0.1">
   <link rel="stylesheet" href="/css/print.css?v=2.0.1" media="print">
 
   <!-- PWA & Mobile Web App Meta -->
@@ -422,6 +422,9 @@
           <a href="/login" class="nav-link <%= typeof currentPath !== 'undefined' && currentPath === '/login' ? 'nav-link--active' : '' %>">
             <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
             <span>Login</span>
+          </a>
+          <a href="/register" class="btn btn-primary btn-xs" style="margin-left: 0.25rem; border-radius: var(--radius-pill); padding: 0.35rem 0.85rem;">
+            <span>Create Account</span>
           </a>
         <% } %>
       </div>
@@ -817,10 +820,14 @@
             Open Inbox
           </a>
         <% } else { %>
-          <a href="/login" class="btn btn-primary btn-sm" onclick="closeMobileMenu()" style="display:flex;align-items:center;gap:0.35rem;">
-            <span>Sign In</span>
-            <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-          </a>
+          <div style="display:flex;gap:0.5rem;width:100%;">
+            <a href="/login" class="btn btn-secondary btn-sm" onclick="closeMobileMenu()" style="flex:1;justify-content:center;display:flex;align-items:center;gap:0.35rem;">
+              <span>Sign In</span>
+            </a>
+            <a href="/register" class="btn btn-primary btn-sm" onclick="closeMobileMenu()" style="flex:1;justify-content:center;display:flex;align-items:center;gap:0.35rem;">
+              <span>Create Account</span>
+            </a>
+          </div>
         <% } %>
       </div>
     </div>
@@ -1032,9 +1039,14 @@
 
     async function handleSignOut() {
       try {
+        var csrfMatch = document.cookie.match(/(?:^|;\s*)woxmail_csrf=([^;]+)/);
+        var csrfToken = csrfMatch ? decodeURIComponent(csrfMatch[1]) : '';
         await fetch('/api/auth/logout', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-csrf-token': csrfToken
+          },
           credentials: 'include'
         });
       } catch (err) {}
@@ -1059,17 +1071,17 @@
     </div>
   </div>
 
-  <script src="/js/account-manager.js"></script>
+  <script src="/js/account-manager.js?v=3.0.1"></script>
   <% if (typeof user !== 'undefined' && user) { %>
   <script>
     if (window.WoxAccountManager) {
-      window.WoxAccountManager.syncCurrentSession({
-        id: <%= user.id %>,
-        email: '<%= user.email || user.username + "@wox.world" %>',
-        username: '<%= user.username %>',
-        displayName: '<%= user.display_name || user.username %>',
-        is_admin: <%= user.is_admin ? 'true' : 'false' %>
-      });
+      window.WoxAccountManager.syncCurrentSession(<%- JSON.stringify({
+        id: user.id,
+        email: user.email || `${user.username}@wox.world`,
+        username: user.username,
+        displayName: user.display_name || user.username,
+        is_admin: !!user.is_admin,
+      }).replace(/</g, '\\u003c') %>);
     }
   </script>
   <% } %>

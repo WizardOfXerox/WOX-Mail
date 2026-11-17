@@ -7,7 +7,8 @@ import FolderMovePopover from './FolderMovePopover.jsx';
 import ContextMenu from './ContextMenu.jsx';
 import EmailPrivacyModal, { getStoredPrivacyPrefs, saveStoredPrivacyPrefs } from './EmailPrivacyModal.jsx';
 import QuotedTextFolder from './QuotedTextFolder.jsx';
-import { cleanEmailAddress, cleanSenderName } from '../../shared/utils/mimeDecoder.js';
+import { cleanEmailAddress, cleanSenderName, decodeMimeWords, cleanSnippet } from '../../shared/utils/mimeDecoder.js';
+import { formatDate } from '../../shared/utils/formatters.js';
 
 const NOTE_COLORS = [
   { id: 'purple', bg: 'rgba(124, 58, 237, 0.08)', text: '#f3e8ff', border: 'rgba(124, 58, 237, 0.35)', accent: '#a78bfa', dot: '#a78bfa', label: 'Amethyst' },
@@ -44,7 +45,7 @@ export default function MessageView({
   const [showSnooze, setShowSnooze] = useState(false);
   const [showMove, setShowMove] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
-  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth < 768 : false);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth <= 768 : false);
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [privacyPrefs, setPrivacyPrefs] = useState(() => getStoredPrivacyPrefs());
   const [allowImagesThisEmail, setAllowImagesThisEmail] = useState(false);
@@ -55,6 +56,82 @@ export default function MessageView({
   const snoozeBtnRef = useRef(null);
   const moveBtnRef = useRef(null);
   const moreMenuRef = useRef(null);
+
+  // Active Thread / Conversation Grouping State
+  const [activeThread, setActiveThread] = useState(() => {
+    if (typeof window !== 'undefined' && window.__woxmail_active_thread) {
+      return window.__woxmail_active_thread;
+    }
+    try {
+      const raw = sessionStorage.getItem('woxmail_active_thread');
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return null;
+  });
+
+  const [expandedThreadUids, setExpandedThreadUids] = useState(() => new Set());
+  const [threadDetailsMap, setThreadDetailsMap] = useState({});
+
+  useEffect(() => {
+    const handleThreadChange = (e) => {
+      setActiveThread(e.detail);
+    };
+    window.addEventListener('woxmail:active-thread-change', handleThreadChange);
+    return () => window.removeEventListener('woxmail:active-thread-change', handleThreadChange);
+  }, []);
+
+  const isThreadConversation = Boolean(
+    activeThread &&
+    activeThread.count > 1 &&
+    (activeThread.uids?.includes(message?.uid) || activeThread.messages?.some((m) => m.uid === message?.uid))
+  );
+
+  // Expand the selected or latest message by default
+  useEffect(() => {
+    if (isThreadConversation && activeThread?.messages) {
+      const targetUid = message?.uid || activeThread.latestMessage?.uid || activeThread.messages[activeThread.messages.length - 1]?.uid;
+      setExpandedThreadUids((prev) => {
+        const next = new Set(prev);
+        if (targetUid) next.add(targetUid);
+        return next;
+      });
+    }
+  }, [isThreadConversation, message?.uid, activeThread?.messages]);
+
+  const toggleExpandThreadMessage = async (msgUid, msgFolder) => {
+    setExpandedThreadUids((prev) => {
+      const next = new Set(prev);
+      if (next.has(msgUid)) {
+        next.delete(msgUid);
+      } else {
+        next.add(msgUid);
+      }
+      return next;
+    });
+
+    if (msgUid !== message?.uid && !threadDetailsMap[msgUid]) {
+      try {
+        const targetFolder = msgFolder || message?.folder || 'INBOX';
+        const res = await fetch(`/api/mail/folder/${encodeURIComponent(targetFolder)}/message/${msgUid}`, { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          setThreadDetailsMap((prev) => ({ ...prev, [msgUid]: data.message || data }));
+        }
+      } catch (err) {
+        console.warn('Failed to load thread message body:', err);
+      }
+    }
+  };
+
+  const handleExpandAllThread = () => {
+    if (!activeThread?.messages) return;
+    setExpandedThreadUids(new Set(activeThread.messages.map((m) => m.uid)));
+  };
+
+  const handleCollapseAllThread = () => {
+    const targetUid = message?.uid || activeThread?.latestMessage?.uid;
+    setExpandedThreadUids(new Set(targetUid ? [targetUid] : []));
+  };
 
   // Native OpenPGP State
   const [showPgpModal, setShowPgpModal] = useState(false);
@@ -158,9 +235,15 @@ export default function MessageView({
   };
 
   useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    const mq = window.matchMedia('(max-width: 768px)');
+    const handleResize = () => setIsMobile(mq.matches || window.innerWidth <= 768);
+    handleResize();
     window.addEventListener('resize', handleResize, { passive: true });
-    return () => window.removeEventListener('resize', handleResize);
+    if (mq.addEventListener) mq.addEventListener('change', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (mq.removeEventListener) mq.removeEventListener('change', handleResize);
+    };
   }, []);
 
   useEffect(() => {
@@ -629,15 +712,294 @@ export default function MessageView({
     );
   }
 
+  if (isThreadConversation && activeThread?.messages) {
+    return (
+      <section className={`dashboard-viewer ${embedded ? 'dashboard-viewer-embedded' : ''}`} aria-label="Conversation thread viewer">
+        <div className="viewer-content-wrapper">
+          {/* Thread Header Toolbar */}
+          <div className="viewer-toolbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.35rem', minHeight: '44px', padding: '0.35rem 0.65rem', borderBottom: '1px solid var(--color-border)', background: 'var(--color-bg-card)', position: 'sticky', top: 0, zIndex: 100 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              {onBack && (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-xs viewer-back-btn"
+                  onClick={onBack}
+                  title="Back to Message List"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.35rem 0.65rem', fontWeight: 600 }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                  <span>Back</span>
+                </button>
+              )}
+              <span className="badge badge-purple" style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.15rem 0.5rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                <span>Conversation ({activeThread.messages.length})</span>
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <button
+                type="button"
+                className="btn btn-ghost btn-xs"
+                onClick={expandedThreadUids.size === activeThread.messages.length ? handleCollapseAllThread : handleExpandAllThread}
+                title={expandedThreadUids.size === activeThread.messages.length ? 'Collapse All' : 'Expand All'}
+                style={{ fontSize: '0.75rem', fontWeight: 600, padding: '0.25rem 0.55rem' }}
+              >
+                {expandedThreadUids.size === activeThread.messages.length ? 'Collapse All' : 'Expand All'}
+              </button>
+              {onArchive && (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs viewer-action-btn"
+                  onClick={() => onArchive(message?.uid)}
+                  title="Archive Conversation"
+                  style={{ padding: '0.35rem 0.45rem' }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>
+                </button>
+              )}
+              {onDelete && (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs viewer-action-btn text-error"
+                  onClick={() => onDelete(message?.uid)}
+                  title="Delete Conversation"
+                  style={{ padding: '0.35rem 0.45rem', color: 'var(--color-error)' }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Conversation Body & Message Stack */}
+          <div className="viewer-scroll-container" style={{ padding: '1rem', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            {/* Conversation Subject & Participants Header */}
+            <div style={{ marginBottom: '0.5rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--color-border)' }}>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 0.5rem', color: 'var(--color-text-primary)' }}>
+                {decodeMimeWords(activeThread.subject) || '(No Subject)'}
+              </h2>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--color-text-tertiary)', fontWeight: 600 }}>Participants:</span>
+                {activeThread.participants.map((p, idx) => (
+                  <span key={idx} className="badge badge-purple" style={{ fontSize: '0.7rem', padding: '0.1rem 0.4rem', borderRadius: 'var(--radius-pill)' }}>
+                    {p}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Stack of Messages (Chronological) */}
+            {activeThread.messages.map((m, index) => {
+              const isExpanded = expandedThreadUids.has(m.uid);
+              const isCurrent = m.uid === message?.uid;
+              const detail = isCurrent ? message : (threadDetailsMap[m.uid] || m);
+              const senderAddr = cleanEmailAddress(m.from?.address || (typeof m.from === 'string' ? m.from : ''));
+              const senderName = cleanSenderName(m.from?.name, senderAddr) || senderAddr || 'Unknown';
+              const initial = (senderName || 'U').charAt(0).toUpperCase();
+
+              if (!isExpanded) {
+                // Collapsed Strip View
+                return (
+                  <div
+                    key={m.uid || index}
+                    onClick={() => toggleExpandThreadMessage(m.uid, m.folder)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.75rem',
+                      padding: '0.65rem 0.85rem',
+                      background: 'var(--color-bg-card, rgba(18, 14, 30, 0.75))',
+                      border: '1px solid var(--color-border)',
+                      borderRadius: 'var(--radius-md)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                    title="Click to expand message"
+                  >
+                    <div
+                      style={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: '50%',
+                        background: 'linear-gradient(135deg, var(--color-primary), #6d28d9)',
+                        color: '#fff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {initial}
+                    </div>
+                    <span style={{ fontWeight: 600, fontSize: '0.85rem', minWidth: '120px', color: 'var(--color-text-primary)' }}>
+                      {senderName}
+                    </span>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--color-text-tertiary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {cleanSnippet(m.snippet || m.preview || '')}
+                    </span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-tertiary)', flexShrink: 0 }}>
+                      {formatDate(m.date)}
+                    </span>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-text-tertiary)', flexShrink: 0 }}>
+                      <polyline points="6 9 12 15 18 9"/>
+                    </svg>
+                  </div>
+                );
+              }
+
+              // Expanded Full Message Card
+              return (
+                <div
+                  key={m.uid || index}
+                  style={{
+                    background: 'var(--color-bg-card, rgba(18, 14, 30, 0.75))',
+                    border: isCurrent ? '1px solid var(--color-primary, #7c3aed)' : '1px solid var(--color-border)',
+                    borderRadius: 'var(--radius-md)',
+                    overflow: 'hidden',
+                    boxShadow: isCurrent ? '0 0 15px rgba(124, 58, 237, 0.15)' : 'none',
+                  }}
+                >
+                  {/* Card Header */}
+                  <div
+                    onClick={() => toggleExpandThreadMessage(m.uid, m.folder)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '0.75rem 1rem',
+                      background: 'rgba(255, 255, 255, 0.03)',
+                      borderBottom: '1px solid var(--color-border)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                      <div
+                        style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: '50%',
+                          background: 'linear-gradient(135deg, var(--color-primary), #6d28d9)',
+                          color: '#fff',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '0.85rem',
+                          fontWeight: 700,
+                          flexShrink: 0,
+                        }}
+                      >
+                        {initial}
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--color-text-primary)' }}>
+                          {senderName}
+                          {senderAddr && <span style={{ fontWeight: 400, color: 'var(--color-text-tertiary)', fontSize: '0.78rem', marginLeft: '0.4rem' }}>&lt;{senderAddr}&gt;</span>}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-tertiary)' }}>
+                          to {Array.isArray(m.to) ? m.to.map((t) => (typeof t === 'string' ? t : t.name || t.address)).join(', ') : (m.to || 'Me')}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--color-text-tertiary)' }}>
+                        {formatDate(m.date)}
+                      </span>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-text-tertiary)' }}>
+                        <polyline points="18 15 12 9 6 15"/>
+                      </svg>
+                    </div>
+                  </div>
+
+                  {/* Card Content Body */}
+                  <div style={{ padding: '1rem', fontSize: '0.9rem', lineHeight: 1.6, color: 'var(--color-text-primary)' }}>
+                    {detail?.html ? (
+                      <div
+                        className="email-body-html"
+                        style={{ overflowX: 'auto' }}
+                        dangerouslySetInnerHTML={{ __html: detail.html }}
+                      />
+                    ) : detail?.text ? (
+                      <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', margin: 0 }}>
+                        {detail.text}
+                      </pre>
+                    ) : m.snippet ? (
+                      <p style={{ margin: 0, color: 'var(--color-text-secondary)' }}>{cleanSnippet(m.snippet)}</p>
+                    ) : (
+                      <p style={{ margin: 0, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>Loading email content...</p>
+                    )}
+                  </div>
+
+                  {/* Card Attachments if present */}
+                  {detail?.attachments && detail.attachments.length > 0 && (
+                    <div style={{ padding: '0.5rem 1rem', borderTop: '1px solid var(--color-border)', background: 'rgba(0,0,0,0.15)', display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      {detail.attachments.map((att, attIdx) => (
+                        <a
+                          key={attIdx}
+                          href={att.url || `/api/mail/attachment/${att.id || att.filename}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="btn btn-secondary btn-xs"
+                          style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                          <span>{att.filename || 'Attachment'}</span>
+                        </a>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Card Quick Action Footer */}
+                  <div style={{ padding: '0.5rem 1rem', borderTop: '1px solid var(--color-border)', display: 'flex', gap: '0.4rem', background: 'rgba(255, 255, 255, 0.02)' }}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs"
+                      onClick={() => onReply && onReply(m)}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem' }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
+                      <span>Reply</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs"
+                      onClick={() => onReplyAll && onReplyAll(m)}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem' }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="7 17 2 12 7 7"/><polyline points="12 17 7 12 12 7"/><path d="M22 18v-2a4 4 0 0 0-4-4H7"/></svg>
+                      <span>Reply All</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs"
+                      onClick={() => onForward && onForward(m)}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem' }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg>
+                      <span>Forward</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   const currentColorObj = NOTE_COLORS.find((c) => c.id === noteColor) || NOTE_COLORS[0];
 
   return (
     <section className={`dashboard-viewer ${embedded ? 'dashboard-viewer-embedded' : ''}`} aria-label="Message content viewer">
       <div className="viewer-content-wrapper">
         {/* Actions toolbar — Sleek Compact Design */}
-        <div className="viewer-toolbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.35rem', flexWrap: 'nowrap', minHeight: '44px', padding: '0.35rem 0.65rem', position: 'relative', zIndex: 100, overflow: 'visible' }}>
+        <div className="viewer-toolbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.35rem', rowGap: '0.35rem', flexWrap: 'wrap', minHeight: '44px', padding: '0.35rem 0.65rem', position: 'relative', zIndex: 100, overflow: 'visible', width: '100%', boxSizing: 'border-box' }}>
           {/* Left Group: Navigation & Primary Composition */}
-          <div className="viewer-toolbar-left" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexShrink: 0 }}>
+          <div className="viewer-toolbar-left" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap', minWidth: 0, maxWidth: '100%' }}>
             {onBack && (
               <button
                 type="button"
@@ -660,7 +1022,7 @@ export default function MessageView({
             )}
 
             {!isMobile && (
-              <div style={{ display: 'inline-flex', background: 'var(--color-bg-elevated)', borderRadius: 'var(--radius-pill)', padding: '2px', border: '1px solid var(--color-border)' }}>
+              <div style={{ display: 'inline-flex', background: 'var(--color-bg-elevated)', borderRadius: 'var(--radius-pill)', padding: '2px', border: '1px solid var(--color-border)', flexShrink: 0 }}>
                 <button
                   type="button"
                   className="btn btn-ghost btn-xs"
@@ -669,7 +1031,7 @@ export default function MessageView({
                   style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}
                 >
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
-                  <span>Reply</span>
+                  <span className="viewer-reply-label">Reply</span>
                 </button>
                 <button
                   type="button"
@@ -679,7 +1041,7 @@ export default function MessageView({
                   style={{ padding: '0.25rem 0.45rem', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}
                 >
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="7 17 2 12 7 7"/><polyline points="12 17 7 12 12 7"/><path d="M22 18v-2a4 4 0 0 0-4-4H7"/></svg>
-                  <span className="hide-mobile">All</span>
+                  <span className="hide-mobile viewer-secondary-label">All</span>
                 </button>
                 <button
                   type="button"
@@ -689,14 +1051,14 @@ export default function MessageView({
                   style={{ padding: '0.25rem 0.45rem', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}
                 >
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg>
-                  <span className="hide-mobile">Fwd</span>
+                  <span className="hide-mobile viewer-secondary-label">Fwd</span>
                 </button>
               </div>
             )}
           </div>
 
           {/* Right Group: Key Actions + More Menu */}
-          <div className="viewer-toolbar-right" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexShrink: 0 }}>
+          <div className="viewer-toolbar-right" style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', flexWrap: 'wrap', maxWidth: '100%' }}>
             {/* On Mobile: Quick Reply button */}
             {isMobile && (
               <button
@@ -1509,7 +1871,7 @@ export default function MessageView({
                 <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>Images are blocked to prevent the sender from tracking your location and IP. You can safely load them below.</p>
               </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap', maxWidth: '100%' }}>
               <button
                 type="button"
                 className="btn btn-primary btn-xs"
@@ -1524,6 +1886,7 @@ export default function MessageView({
                   className="btn btn-secondary btn-xs"
                   onClick={handleTrustSender}
                   title={`Always load remote images from ${senderEmail}`}
+                  style={{ maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                 >
                   Always trust {senderEmail.length > 22 ? senderEmail.slice(0, 19) + '…' : senderEmail}
                 </button>

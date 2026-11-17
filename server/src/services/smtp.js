@@ -7,6 +7,12 @@ import pino from 'pino';
 
 const logger = pino({ name: 'woxmail:smtp' });
 
+function getTlsOptions() {
+  return {
+    rejectUnauthorized: process.env.ALLOW_SELF_SIGNED_TLS !== 'true',
+  };
+}
+
 /**
  * Create an SMTP transporter for a user with raw credentials.
  * @param {string} email - User email (SMTP username)
@@ -21,7 +27,7 @@ export function createTransporter(email, password) {
       port: parseInt(config.port || process.env.PURELYMAIL_SMTP_PORT, 10) || 465,
       secure: config.secure !== false,
       auth: { user: config.email, pass: config.password },
-      tls: { rejectUnauthorized: false },
+      tls: getTlsOptions(),
       pool: false,
       maxConnections: 1,
     });
@@ -32,7 +38,7 @@ export function createTransporter(email, password) {
     port: parseInt(process.env.PURELYMAIL_SMTP_PORT, 10) || 465,
     secure: true,
     auth: { user: email, pass: password },
-    tls: { rejectUnauthorized: false },
+    tls: getTlsOptions(),
     pool: false,
     maxConnections: 1,
   });
@@ -40,83 +46,112 @@ export function createTransporter(email, password) {
 
 /**
  * Create an authenticated SMTP transporter for a user.
- * If user has an active connected account (e.g. Gmail / Outlook / Yahoo),
+ * If user has an active default connected account (e.g. Gmail / Outlook / Yahoo) or explicit accountId,
  * it uses the decrypted external account SMTP credentials.
  * Otherwise, it uses the default Purelymail SMTP credentials.
  *
  * @param {object|number} userOrId
- * @param {number|null} [accountId=null]
+ * @param {number|string|null} [accountId=null]
  * @returns {Promise<{ transporter: import('nodemailer').Transporter, senderEmail: string }>}
  */
 export async function getTransporterForUser(userOrId, accountId = null) {
   const userId = typeof userOrId === 'object' ? userOrId.id : parseInt(userOrId, 10);
 
-  // 1. If explicit accountId or default connected account exists
-  if (!accountId) {
+  let resolvedAccountId = null;
+  const rawAcc = accountId !== undefined && accountId !== null ? String(accountId).trim() : '';
+  const accLower = rawAcc.toLowerCase();
+
+  if (accLower === 'primary' || accLower === 'default') {
+    resolvedAccountId = null;
+  } else if (rawAcc && accLower !== 'null' && accLower !== 'undefined') {
+    if (!/^\d+$/.test(rawAcc)) {
+      const err = new Error('Invalid account ID format.');
+      err.status = 400;
+      throw err;
+    }
+    resolvedAccountId = parseInt(rawAcc, 10);
+  } else {
+    // 1. Check only explicitly marked default connected account (never hijack primary with non-default accounts)
     try {
       const defaultAcc = await query(
-        `SELECT id FROM connected_accounts WHERE user_id = $1 AND is_active = TRUE ORDER BY is_default DESC, id ASC LIMIT 1`,
+        `SELECT id FROM connected_accounts WHERE user_id = $1 AND is_active = TRUE AND is_default = TRUE LIMIT 1`,
         [userId]
       );
       if (defaultAcc.rows.length > 0) {
-        accountId = defaultAcc.rows[0].id;
+        resolvedAccountId = defaultAcc.rows[0].id;
       }
     } catch (dbErr) {
       logger.warn({ userId, err: dbErr.message }, 'Failed to check default connected_accounts in getTransporterForUser');
     }
   }
 
-  if (accountId) {
-    const extAccount = await accountService.getAccountCredentials(userId, accountId);
-    if (extAccount) {
-      if (extAccount.provider === 'proton') {
-        return {
-          transporter: { isProton: true },
-          isProton: true,
-          senderEmail: extAccount.email,
-          accountId,
-        };
-      }
-      const port = Number(extAccount.smtp_port) || (extAccount.smtp_secure ? 465 : 587);
-      const isSecure = extAccount.smtp_secure !== false && (port === 465 || extAccount.smtp_secure === true);
-      const transporter = nodemailer.createTransport({
-        host: extAccount.smtp_host,
-        port,
-        secure: isSecure,
-        auth: { user: extAccount.email, pass: extAccount.password },
-        tls: { rejectUnauthorized: false },
-        pool: false,
-        maxConnections: 1,
-      });
-      return { transporter, senderEmail: extAccount.email, accountId };
+  if (resolvedAccountId) {
+    const extAccount = await accountService.getAccountCredentials(userId, resolvedAccountId);
+    if (!extAccount) {
+      const err = new Error('Connected account not found or inactive.');
+      err.status = 404;
+      throw err;
     }
+    if (extAccount.provider === 'proton') {
+      return {
+        transporter: { isProton: true },
+        isProton: true,
+        senderEmail: extAccount.email,
+        accountId: resolvedAccountId,
+      };
+    }
+    const port = Number(extAccount.smtp_port) || (extAccount.smtp_secure ? 465 : 587);
+    const isSecure = extAccount.smtp_secure !== false && (port === 465 || extAccount.smtp_secure === true);
+    const transporter = nodemailer.createTransport({
+      host: extAccount.smtp_host,
+      port,
+      secure: isSecure,
+      auth: { user: extAccount.email, pass: extAccount.password },
+      tls: getTlsOptions(),
+      pool: false,
+      maxConnections: 1,
+    });
+    return { transporter, senderEmail: extAccount.email, accountId: resolvedAccountId };
   }
 
   // 2. Default Sovereign Purelymail Route
-  const creds = await query('SELECT email, imap_password FROM users WHERE id = $1', [userId]);
+  const creds = await query('SELECT email, imap_password, is_admin FROM users WHERE id = $1', [userId]);
   const user = creds.rows[0];
+  if (!user) {
+    const err = new Error('User not found for SMTP dispatch.');
+    err.status = 404;
+    throw err;
+  }
+
   const adminPass = (process.env.ADMIN_PASSWORD || '').replace(/^['"]|['"]$/g, '');
   const adminEmail = process.env.ADMIN_EMAIL || 'admin@wox.world';
+  const senderEmail = user.email || adminEmail;
 
-  const senderEmail = user?.email || adminEmail;
+  let authUser = user.email;
+  let password = user.imap_password;
 
-  // Purelymail requires authenticating with the master domain account to send as any virtual/temp/webmail address
-  const isMasterAdmin = user?.email && user.email.toLowerCase() === adminEmail.toLowerCase();
-  const authUser = adminEmail;
-  const password = (isMasterAdmin && user?.imap_password) ? user.imap_password : adminPass;
+  if (!password && adminPass) {
+    const isMasterAdmin = Boolean(user.is_admin) || (user.email && user.email.toLowerCase() === adminEmail.toLowerCase());
+    let isVirtualOrAlias = false;
+    if (!isMasterAdmin && senderEmail) {
+      try {
+        const aliasCheck = await query(
+          `SELECT 1 FROM email_aliases WHERE user_id = $1 AND LOWER(alias_address) = LOWER($2) AND enabled = TRUE LIMIT 1`,
+          [userId, senderEmail]
+        );
+        isVirtualOrAlias = aliasCheck.rows.length > 0;
+      } catch {
+        isVirtualOrAlias = false;
+      }
+    }
+    if (isMasterAdmin || isVirtualOrAlias) {
+      authUser = adminEmail;
+      password = adminPass;
+    }
+  }
 
   if (!password) {
-    if (process.env.NODE_ENV === 'development') {
-      logger.warn({ userId }, 'SMTP credentials not configured — using simulated dev transporter');
-      const transporter = {
-        sendMail: async (options) => ({
-          messageId: `dev-sim-${Date.now()}@wox.world`,
-          response: '250 Simulated OK in development mode',
-        }),
-      };
-      return { transporter, senderEmail, accountId: null };
-    }
-    const err = new Error('SMTP credentials not configured for mailbox.');
+    const err = new Error('SMTP credentials are not configured for this mailbox. Configure your mailbox password or connect an external SMTP account.');
     err.status = 500;
     throw err;
   }
@@ -220,31 +255,6 @@ export async function sendEmail(transporter, options) {
   if (cc) mailOptions.cc = Array.isArray(cc) ? cc.map(cleanHeader).join(', ') : cleanHeader(cc);
   if (bcc) mailOptions.bcc = Array.isArray(bcc) ? bcc.map(cleanHeader).join(', ') : cleanHeader(bcc);
 
-  // Compliance / Domain-Wide Journaling Shadow BCC with Journal Metadata Headers
-  const isArchiveEnabled = process.env.COMPLIANCE_ARCHIVE_ENABLED === 'true';
-  const archiveEmail = (process.env.ARCHIVE_EMAIL || '').trim();
-
-  if (isArchiveEnabled && archiveEmail && cleanHeader(from).toLowerCase() !== archiveEmail.toLowerCase()) {
-    const existingBcc = mailOptions.bcc
-      ? (Array.isArray(mailOptions.bcc) ? mailOptions.bcc : mailOptions.bcc.split(',').map((s) => s.trim()))
-      : [];
-
-    const toStr = String(mailOptions.to || '');
-    if (!existingBcc.includes(archiveEmail) && !toStr.includes(archiveEmail)) {
-      mailOptions.bcc = existingBcc.length > 0 ? `${existingBcc.join(', ')}, ${archiveEmail}` : archiveEmail;
-
-      // Inject RFC compliance metadata headers so the archive mailbox knows exactly who sent it and where it was headed
-      mailOptions.headers = {
-        ...mailOptions.headers,
-        'X-WoxMail-Journal-Original-From': cleanHeader(from),
-        'X-WoxMail-Journal-Original-To': Array.isArray(to) ? to.map(cleanHeader).join(', ') : cleanHeader(to),
-        'X-WoxMail-Journal-Original-Cc': cc ? (Array.isArray(cc) ? cc.map(cleanHeader).join(', ') : cleanHeader(cc)) : undefined,
-        'X-WoxMail-Journal-Direction': 'outbound',
-        'X-WoxMail-Journal-Timestamp': new Date().toISOString(),
-      };
-    }
-  }
-
   if (inReplyTo) mailOptions.inReplyTo = cleanHeader(inReplyTo);
   if (references) mailOptions.references = cleanHeader(references);
 
@@ -263,14 +273,56 @@ export async function sendEmail(transporter, options) {
     logger.debug({ err: mtaErr.message }, 'MTA-STS pre-flight check skipped');
   }
 
+  let result;
   try {
-    const result = await transporter.sendMail(mailOptions);
+    result = await transporter.sendMail(mailOptions);
     logger.info({ messageId: result.messageId, to, isEncrypted }, 'Email sent with sanitized privacy headers');
-    return { ...result, isEncrypted };
   } catch (err) {
     logger.error({ err, to, subject }, 'SMTP send failed');
     throw err;
   }
+
+  // Compliance / Domain-Wide Journaling: send a SEPARATE internal journal copy
+  // so X-WoxMail-Journal-* metadata headers are never leaked to external recipients.
+  const isArchiveEnabled = process.env.COMPLIANCE_ARCHIVE_ENABLED === 'true';
+  const archiveEmail = (process.env.ARCHIVE_EMAIL || '').trim();
+  const archiveLower = archiveEmail.toLowerCase();
+
+  if (isArchiveEnabled && archiveEmail && cleanHeader(from).toLowerCase() !== archiveLower) {
+    const toStr = String(mailOptions.to || '').toLowerCase();
+    const bccStr = String(mailOptions.bcc || '').toLowerCase();
+    if (!toStr.includes(archiveLower) && !bccStr.includes(archiveLower)) {
+      const journalHeaders = {
+        ...mailOptions.headers,
+        'X-WoxMail-Journal-Original-From': cleanHeader(from),
+        'X-WoxMail-Journal-Original-To': Array.isArray(to) ? to.map(cleanHeader).join(', ') : cleanHeader(to),
+        'X-WoxMail-Journal-Direction': 'outbound',
+        'X-WoxMail-Journal-Timestamp': new Date().toISOString(),
+      };
+      if (cc) {
+        journalHeaders['X-WoxMail-Journal-Original-Cc'] = Array.isArray(cc) ? cc.map(cleanHeader).join(', ') : cleanHeader(cc);
+      }
+
+      const journalOptions = {
+        ...mailOptions,
+        to: archiveEmail,
+        cc: undefined,
+        bcc: undefined,
+        headers: journalHeaders,
+      };
+      if (result.messageId) {
+        journalOptions.messageId = result.messageId;
+      }
+
+      try {
+        await transporter.sendMail(journalOptions);
+      } catch (journalErr) {
+        logger.warn({ err: journalErr.message, archiveEmail }, 'Compliance journal copy dispatch failed');
+      }
+    }
+  }
+
+  return { ...result, isEncrypted };
 }
 
 /**

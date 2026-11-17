@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { protonClient } from '../../services/protonAPI.js';
 
 export default function AttachmentPreviewModal({
   attachment,
   messageUid,
   folder = 'INBOX',
+  accountId = null,
   onClose,
 }) {
   const [textContent, setTextContent] = useState(null);
@@ -17,6 +19,8 @@ export default function AttachmentPreviewModal({
   const [calculatingHash, setCalculatingHash] = useState(false);
   const [hashCopied, setHashCopied] = useState(false);
   const [sheetSearch, setSheetSearch] = useState('');
+  const [protonBlobUrl, setProtonBlobUrl] = useState(null);
+  const [protonError, setProtonError] = useState(null);
 
   // Touch gesture refs for mobile pinch-to-zoom & pan
   const touchStartDistRef = useRef(0);
@@ -24,12 +28,13 @@ export default function AttachmentPreviewModal({
   const touchStartPosRef = useRef({ x: 0, y: 0 });
   const isDraggingRef = useRef(false);
 
-  if (!attachment) return null;
-
-  const filename = attachment.filename || 'attachment';
+  const isProtonAttachment = Boolean(attachment?.isProton);
+  const filename = attachment?.filename || 'attachment';
   const ext = filename.split('.').pop()?.toLowerCase() || '';
-  const contentType = (attachment.contentType || '').toLowerCase();
-  const index = attachment.index !== undefined ? attachment.index : filename;
+  const contentType = (attachment?.contentType || '').toLowerCase();
+  const index = attachment?.index !== undefined ? attachment.index : filename;
+  const effectiveAccountId = accountId || attachment?.accountId || null;
+  const accQuery = effectiveAccountId ? `&accountId=${encodeURIComponent(effectiveAccountId)}` : '';
 
   const isImage = contentType.startsWith('image/') || ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(ext);
   const isPdf = contentType === 'application/pdf' || ext === 'pdf';
@@ -40,11 +45,46 @@ export default function AttachmentPreviewModal({
   const isPptx = ['pptx', 'ppt'].includes(ext) || contentType.includes('presentationml');
   const isText = contentType.startsWith('text/') || ['txt', 'json', 'csv', 'tsv', 'log', 'dat', 'xml', 'md', 'html', 'js', 'ts', 'css', 'py', 'sh', 'env', 'yml', 'yaml', 'ini', 'conf'].includes(ext);
 
-  const previewUrl = `/api/mail/message/${messageUid}/attachment/${encodeURIComponent(index)}?preview=true&folder=${encodeURIComponent(folder)}`;
-  const downloadUrl = `/api/mail/message/${messageUid}/attachment/${encodeURIComponent(index)}?download=true&folder=${encodeURIComponent(folder)}`;
+  const serverPreviewUrl = `/api/mail/message/${encodeURIComponent(messageUid || '')}/attachment/${encodeURIComponent(index)}?preview=true&folder=${encodeURIComponent(folder)}${accQuery}`;
+  const serverDownloadUrl = `/api/mail/message/${encodeURIComponent(messageUid || '')}/attachment/${encodeURIComponent(index)}?download=true&folder=${encodeURIComponent(folder)}${accQuery}`;
+
+  const previewUrl = isProtonAttachment ? (protonBlobUrl || '') : serverPreviewUrl;
+  const downloadUrl = isProtonAttachment ? (protonBlobUrl || '#') : serverDownloadUrl;
+
+  // Resolve Proton encrypted attachment into a temporary object URL when viewing Proton mail
+  useEffect(() => {
+    if (!attachment || !isProtonAttachment) {
+      setProtonBlobUrl(null);
+      setProtonError(null);
+      return;
+    }
+    let objectUrl = null;
+    let active = true;
+    setProtonError(null);
+    if (!attachment.id) {
+      setProtonError('Missing Proton attachment ID');
+      return;
+    }
+    protonClient
+      .downloadAttachment(attachment.id)
+      .then((blob) => {
+        if (!active) return;
+        objectUrl = URL.createObjectURL(blob);
+        setProtonBlobUrl(objectUrl);
+      })
+      .catch((err) => {
+        if (active) setProtonError(err.message || 'Failed to load Proton attachment');
+      });
+
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [attachment?.id, isProtonAttachment]);
 
   // Fetch text/dat/log content if text-like or CSV
   useEffect(() => {
+    if (!attachment || !previewUrl) return;
     if ((isText || ext === 'csv' || ext === 'tsv') && !isImage && !isPdf && !isDocx && !isPptx && ext !== 'xlsx' && ext !== 'xls') {
       setLoadingText(true);
       fetch(previewUrl, { credentials: 'include' })
@@ -56,13 +96,14 @@ export default function AttachmentPreviewModal({
         .catch((err) => setTextContent(`Error loading preview: ${err.message}`))
         .finally(() => setLoadingText(false));
     }
-  }, [previewUrl, isText, isImage, isPdf, isDocx, isPptx, ext]);
+  }, [attachment, previewUrl, isText, isImage, isPdf, isDocx, isPptx, ext]);
 
   // Fetch structured Office document extraction from server
   useEffect(() => {
+    if (!attachment || isProtonAttachment) return;
     if (isDocx || isXlsx || isPptx) {
       setLoadingOffice(true);
-      fetch(`${previewUrl}&extract=true`, { credentials: 'include' })
+      fetch(`${serverPreviewUrl}&extract=true`, { credentials: 'include' })
         .then((res) => {
           if (!res.ok) throw new Error('Failed to extract document');
           return res.json();
@@ -79,11 +120,11 @@ export default function AttachmentPreviewModal({
         })
         .finally(() => setLoadingOffice(false));
     }
-  }, [previewUrl, isDocx, isXlsx, isPptx]);
+  }, [attachment, isProtonAttachment, serverPreviewUrl, isDocx, isXlsx, isPptx]);
 
   // Compute SHA-256 integrity hash on demand or on mount if requested
   const handleCalculateHash = async () => {
-    if (sha256Hash || calculatingHash) return;
+    if (sha256Hash || calculatingHash || !previewUrl) return;
     setCalculatingHash(true);
     try {
       const res = await fetch(previewUrl, { credentials: 'include' });
@@ -101,10 +142,10 @@ export default function AttachmentPreviewModal({
   };
 
   useEffect(() => {
-    if (attachment.showChecksumInitial) {
+    if (attachment?.showChecksumInitial && previewUrl) {
       handleCalculateHash();
     }
-  }, [attachment.showChecksumInitial]);
+  }, [attachment?.showChecksumInitial, previewUrl]);
 
   // Keyboard close
   useEffect(() => {
@@ -114,6 +155,8 @@ export default function AttachmentPreviewModal({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
+
+  if (!attachment) return null;
 
   // Touch zoom & pan handlers
   const handleTouchStart = (e) => {

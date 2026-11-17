@@ -129,10 +129,11 @@ export default function KanbanBoard({ onClose, onOpenEmail }) {
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: `repeat(${columns.length}, 1fr)`,
+          gridTemplateColumns: `repeat(${columns.length}, minmax(260px, 1fr))`,
           gap: '1rem',
           padding: '1.25rem',
           flex: 1,
+          minHeight: 0,
           overflowX: 'auto'
         }}
       >
@@ -150,7 +151,7 @@ export default function KanbanBoard({ onClose, onOpenEmail }) {
                 borderRadius: 'var(--radius-md)',
                 border: '1px solid var(--color-border)',
                 height: '100%',
-                maxHeight: 'calc(100vh - 180px)',
+                minHeight: 0,
                 overflow: 'hidden'
               }}
             >

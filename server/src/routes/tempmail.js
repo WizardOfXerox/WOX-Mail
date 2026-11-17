@@ -2,12 +2,12 @@ import { Router } from 'express';
 import { query } from '../config/database.js';
 import { claimAddress } from '../services/pool.js';
 import { createUser, deleteUser } from '../services/purelymail.js';
-import { createConnection, fetchMessages, fetchMessage, getInboxMessageCount } from '../services/imap.js';
+import { createConnection, fetchMessages, fetchMessage, getInboxMessageCount, deleteMessages, toggleFlag } from '../services/imap.js';
 import { createTransporter, sendEmail } from '../services/smtp.js';
 import { simpleParser } from 'mailparser';
 import { sanitizeEmail } from '../services/emailSanitizer.js';
 import { hashPassword, verifyPassword, generateToken } from '../utils/crypto.js';
-import { validateUsername } from '../utils/validators.js';
+import { validateUsername, isValidEmail } from '../utils/validators.js';
 import { parsePagination, paginationMeta, isPurelymailWelcomeEmail } from '../utils/helpers.js';
 import { verifyCaptcha } from '../middleware/captcha.js';
 import { requireTempAuth } from '../middleware/tempAuth.js';
@@ -20,6 +20,14 @@ import pino from 'pino';
 
 const logger = pino({ name: 'woxmail:tempmail' });
 const router = Router();
+
+function isHttpsRequest(req) {
+  return !!(req.secure || req.headers['x-forwarded-proto'] === 'https');
+}
+
+function normalizeIp(ip) {
+  return String(ip || '').replace(/^::ffff:/, '').trim();
+}
 
 /**
  * Verify caller possesses the valid session token if the address is a personal tier mailbox.
@@ -116,7 +124,6 @@ router.get('/session', async (req, res, next) => {
  */
 router.post('/generate',
   tempGenerateLimiter,
-  verifyCaptcha,
   validate({
     expiryHours: { type: 'number', default: 24, min: 1, max: 72 },
     forceNew: { type: 'boolean', default: false },
@@ -167,7 +174,7 @@ router.post('/generate',
       // Set session cookie
       res.cookie(TEMP_COOKIE_NAME, address.session_token, {
         httpOnly: true,
-        secure: false,
+        secure: isHttpsRequest(req),
         sameSite: 'lax',
         maxAge: (address.expiryHours || expiryHours) * 60 * 60 * 1000,
         path: '/',
@@ -182,6 +189,33 @@ router.post('/generate',
         isCustom: Boolean(address.isCustom),
         tier: 'public',
       });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * POST /api/tempmail/personal/batch-delete
+ * Batch delete selected messages from personal temp mailbox.
+ */
+router.post('/personal/batch-delete',
+  requireTempAuth,
+  validate({
+    uids: { type: 'array', required: true, items: { type: 'number' } },
+  }),
+  async (req, res, next) => {
+    try {
+      const { uids } = req.body;
+      const { tempUser } = req;
+      if (!tempUser || tempUser.tier !== 'personal') {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+
+      const client = await getTempIMAPConnection(tempUser.address, tempUser.imap_password);
+      const deletedCount = await deleteMessages(client, 'INBOX', uids);
+
+      res.json({ success: true, deletedCount });
     } catch (err) {
       next(err);
     }
@@ -529,17 +563,43 @@ router.get('/message/:address/:uid/eml', async (req, res, next) => {
 router.post('/extend', async (req, res, next) => {
   try {
     const { address, addHours = 1 } = req.body;
-    const token = req.cookies?.[TEMP_COOKIE_NAME] || req.signedCookies?.[TEMP_COOKIE_NAME];
+    const token = req.cookies?.[TEMP_COOKIE_NAME] || req.signedCookies?.[TEMP_COOKIE_NAME] || req.headers['x-temp-token'] || req.headers['x-session-token'];
     if (!token && !address) return res.status(400).json({ error: 'Session or address required' });
+
+    const lookupRes = address
+      ? await query(
+          `SELECT id, address, tier, session_token, ip_address FROM temp_addresses
+           WHERE LOWER(address) = LOWER($1) AND status = 'active'`,
+          [String(address).trim()]
+        )
+      : await query(
+          `SELECT id, address, tier, session_token, ip_address FROM temp_addresses
+           WHERE session_token = $1 AND status = 'active'`,
+          [token]
+        );
+
+    if (lookupRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Active address not found' });
+    }
+
+    const row = lookupRes.rows[0];
+    const hasTokenMatch = Boolean(token && row.session_token && token === row.session_token);
+    if (row.tier === 'personal') {
+      if (!hasTokenMatch) {
+        return res.status(401).json({ error: 'Authentication required to extend personal temp mailbox' });
+      }
+    } else if (!hasTokenMatch && normalizeIp(row.ip_address) !== normalizeIp(req.ip)) {
+      return res.status(403).json({ error: 'Forbidden: cannot extend another session mailbox' });
+    }
 
     const hours = Math.min(72, Math.max(0.1, parseFloat(addHours) || 1));
     const result = await query(
       `UPDATE temp_addresses SET
          expires_at = GREATEST(expires_at, NOW()) + ($1 * INTERVAL '1 hour'),
          updated_at = NOW()
-       WHERE (session_token = $2 OR address = $3) AND status = 'active'
+       WHERE id = $2 AND status = 'active'
        RETURNING id, address, expires_at`,
-      [hours, token || '', address || '']
+      [hours, row.id]
     );
 
     if (result.rows.length === 0) return res.status(404).json({ error: 'Active address not found' });
@@ -598,20 +658,43 @@ router.delete('/delete/:address', async (req, res, next) => {
   try {
     const { address } = req.params;
     const cleanAddr = (address || '').trim();
-    const token = req.cookies?.[TEMP_COOKIE_NAME] || req.signedCookies?.[TEMP_COOKIE_NAME];
+    const token = req.cookies?.[TEMP_COOKIE_NAME] || req.signedCookies?.[TEMP_COOKIE_NAME] || req.headers['x-temp-token'] || req.headers['x-session-token'];
 
-    // Invalidate the session in database and delete row
-    await query(
-      `DELETE FROM temp_addresses 
-       WHERE address = $1 
-          OR LOWER(address) = LOWER($1)
-          OR ($2::text IS NOT NULL AND session_token = $2)`,
-      [cleanAddr, token || null]
+    const existingRes = await query(
+      `SELECT id, address, tier, session_token, password_hash, ip_address
+       FROM temp_addresses
+       WHERE LOWER(address) = LOWER($1)
+       LIMIT 1`,
+      [cleanAddr]
     );
+
+    if (existingRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Mailbox not found' });
+    }
+
+    const row = existingRes.rows[0];
+    const tokenMatches = Boolean(token && row.session_token && token === row.session_token);
+
+    if (row.tier === 'personal') {
+      let passwordMatches = false;
+      if (!tokenMatches && req.body?.password && row.password_hash) {
+        passwordMatches = await verifyPassword(row.password_hash, String(req.body.password));
+      }
+      if (!tokenMatches && !passwordMatches) {
+        return res.status(401).json({ error: 'Authentication required to delete personal temp mailbox' });
+      }
+    } else {
+      const sameCreatorIp = !token && normalizeIp(row.ip_address) === normalizeIp(req.ip);
+      if (!tokenMatches && !sameCreatorIp) {
+        return res.status(403).json({ error: 'Forbidden: cannot delete another session mailbox' });
+      }
+    }
+
+    await query('DELETE FROM temp_addresses WHERE id = $1', [row.id]);
 
     // Delete user from Purelymail if provisioned there
     try {
-      await deleteUser(cleanAddr);
+      await deleteUser(row.address);
     } catch (err) {
       // Ignored if user only existed locally or was already deleted
     }
@@ -622,7 +705,7 @@ router.delete('/delete/:address', async (req, res, next) => {
     res.clearCookie(TEMP_COOKIE_NAME, { path: '/' });
     res.cookie(TEMP_COOKIE_NAME, '', { path: '/', maxAge: 0, expires: new Date(0), httpOnly: true, sameSite: 'lax' });
 
-    res.json({ message: 'Mailbox deleted', address: cleanAddr });
+    res.json({ message: 'Mailbox deleted', address: row.address });
   } catch (err) {
     next(err);
   }
@@ -689,8 +772,8 @@ router.get('/export/:address', async (req, res, next) => {
   try {
     const { address } = req.params;
     const addr = await query(
-      `SELECT id, address, imap_password, created_at, expires_at FROM temp_addresses
-       WHERE address = $1 AND status IN ('active', 'available') AND expires_at > NOW()`,
+      `SELECT id, address, tier, session_token, imap_password, created_at, expires_at FROM temp_addresses
+       WHERE LOWER(address) = LOWER($1) AND status IN ('active', 'available') AND expires_at > NOW()`,
       [address]
     );
 
@@ -698,10 +781,14 @@ router.get('/export/:address', async (req, res, next) => {
       return res.status(404).json({ error: 'Address not found or expired' });
     }
 
+    if (!verifyPersonalAccess(req, addr.rows[0])) {
+      return res.status(401).json({ error: 'Personal temp mail authentication required' });
+    }
+
     let client;
     let result;
     try {
-      client = await createConnection(address, addr.rows[0].imap_password);
+      client = await createConnection(addr.rows[0].address, addr.rows[0].imap_password);
       result = await fetchMessages(client, 'INBOX', { page: 1, limit: 100 });
     } finally {
       if (client) await client.logout().catch(() => {});
@@ -716,8 +803,9 @@ router.get('/export/:address', async (req, res, next) => {
       messages: result.messages || [],
     };
 
+    const safeFilename = String(addr.rows[0].address || 'export').replace(/[^a-zA-Z0-9._@-]/g, '_');
     res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Content-Disposition', `attachment; filename="woxmail-${address}.json"`);
+    res.setHeader('Content-Disposition', `attachment; filename="woxmail-${safeFilename}.json"`);
     res.send(JSON.stringify(exportData, null, 2));
   } catch (err) {
     next(err);
@@ -847,16 +935,16 @@ router.post('/personal/create',
       // Store in database
       const result = await query(
         `INSERT INTO temp_addresses
-         (address, tier, status, password_hash, custom_username, session_token, ip_address, expires_at, activated_at, last_accessed)
-         VALUES ($1, 'personal', 'active', $2, $3, $4, $5, NOW() + INTERVAL '1 hour' * $6, NOW(), NOW())
+         (address, tier, status, password_hash, imap_password, custom_username, session_token, ip_address, expires_at, activated_at, last_accessed)
+         VALUES ($1, 'personal', 'active', $2, $3, $4, $5, $6, NOW() + INTERVAL '1 hour' * $7, NOW(), NOW())
          RETURNING *`,
-        [address, passwordHash, username.toLowerCase(), sessionToken, req.ip, expiryHours]
+        [address, passwordHash, imapPassword, username.toLowerCase(), sessionToken, req.ip, expiryHours]
       );
 
       // Set session cookie
       res.cookie(TEMP_COOKIE_NAME, sessionToken, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
+        secure: isHttpsRequest(req),
         sameSite: 'strict',
         maxAge: expiryHours * 60 * 60 * 1000,
         path: '/',
@@ -866,7 +954,6 @@ router.post('/personal/create',
         address: result.rows[0].address,
         expiresAt: result.rows[0].expires_at,
         tier: 'personal',
-        recoveryToken: sessionToken.slice(0, 8), // Partial token for re-login
       });
     } catch (err) {
       next(err);
@@ -919,7 +1006,7 @@ router.post('/personal/login',
       const remaining = new Date(addr.expires_at) - Date.now();
       res.cookie(TEMP_COOKIE_NAME, newToken, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
+        secure: isHttpsRequest(req),
         sameSite: 'strict',
         maxAge: remaining,
         path: '/',
@@ -935,9 +1022,21 @@ router.post('/personal/login',
 /**
  * POST /api/tempmail/personal/logout
  */
-router.post('/personal/logout', (req, res) => {
-  res.clearCookie(TEMP_COOKIE_NAME, { path: '/' });
-  res.json({ message: 'Logged out' });
+router.post('/personal/logout', async (req, res, next) => {
+  try {
+    const token = req.cookies?.[TEMP_COOKIE_NAME] || req.headers['x-temp-token'] || req.headers['x-session-token'];
+    if (token) {
+      await query(
+        `UPDATE temp_addresses SET session_token = $1 WHERE session_token = $2 AND tier = 'personal'`,
+        [generateToken(16), token]
+      );
+    }
+    res.clearCookie(TEMP_COOKIE_NAME, { path: '/', httpOnly: true, sameSite: 'strict' });
+    res.clearCookie(TEMP_COOKIE_NAME, { path: '/' });
+    res.json({ message: 'Logged out' });
+  } catch (err) {
+    next(err);
+  }
 });
 
 /**
@@ -967,9 +1066,17 @@ router.post('/personal/extend',
       }
 
       await query(
-        'UPDATE temp_addresses SET expires_at = $1 WHERE id = $2',
+        'UPDATE temp_addresses SET expires_at = $1, updated_at = NOW() WHERE id = $2',
         [newExpiry, req.tempUser.id]
       );
+
+      res.cookie(TEMP_COOKIE_NAME, req.tempUser.session_token, {
+        httpOnly: true,
+        secure: isHttpsRequest(req),
+        sameSite: 'strict',
+        maxAge: Math.max(0, newExpiry.getTime() - Date.now()),
+        path: '/',
+      });
 
       res.json({ expiresAt: newExpiry });
     } catch (err) {
@@ -982,13 +1089,82 @@ router.post('/personal/extend',
  * PUT /api/tempmail/personal/star/:uid
  */
 router.put('/personal/star/:uid', requireTempAuth, async (req, res, next) => {
+  let client;
   try {
     const uid = parseInt(req.params.uid, 10);
-    res.json({ message: 'Star toggled', uid });
+    if (!Number.isInteger(uid) || uid <= 0) {
+      return res.status(400).json({ error: 'Invalid message UID' });
+    }
+
+    const addrRes = await query('SELECT imap_password FROM temp_addresses WHERE id = $1', [req.tempUser.id]);
+    const imapPassword = addrRes.rows[0]?.imap_password;
+    if (!imapPassword) {
+      return res.status(400).json({ error: 'Mailbox IMAP credentials not configured' });
+    }
+
+    client = await createConnection(req.tempUser.address, imapPassword);
+    let nextStarred;
+    if (typeof req.body?.starred === 'boolean') {
+      nextStarred = req.body.starred;
+    } else {
+      const msg = await fetchMessage(client, 'INBOX', uid);
+      if (!msg) {
+        return res.status(404).json({ error: 'Message not found' });
+      }
+      const currentlyFlagged = msg.flags instanceof Set
+        ? msg.flags.has('\\Flagged')
+        : Array.isArray(msg.flags) && msg.flags.includes('\\Flagged');
+      nextStarred = !currentlyFlagged;
+    }
+
+    await toggleFlag(client, 'INBOX', [uid], '\\Flagged', nextStarred);
+    res.json({ message: 'Star updated', uid, isStarred: nextStarred });
   } catch (err) {
     next(err);
+  } finally {
+    if (client) await client.logout().catch(() => {});
   }
 });
+
+/**
+ * POST /api/tempmail/personal/batch-delete
+ * Delete multiple messages from a personal temp mailbox.
+ */
+router.post('/personal/batch-delete',
+  requireTempAuth,
+  validate({ uids: { type: 'array', required: true, min: 1, max: 100 } }),
+  async (req, res, next) => {
+    let client;
+    try {
+      const validUids = req.body.uids
+        .map((u) => parseInt(u, 10))
+        .filter((u) => Number.isInteger(u) && u > 0);
+
+      if (validUids.length === 0) {
+        return res.status(400).json({ error: 'No valid message UIDs provided' });
+      }
+
+      const addrRes = await query('SELECT imap_password FROM temp_addresses WHERE id = $1', [req.tempUser.id]);
+      const imapPassword = addrRes.rows[0]?.imap_password;
+      if (!imapPassword) {
+        return res.status(400).json({ error: 'Mailbox IMAP credentials not configured' });
+      }
+
+      client = await createConnection(req.tempUser.address, imapPassword);
+      await deleteMessages(client, 'INBOX', validUids);
+
+      res.json({
+        success: true,
+        deletedCount: validUids.length,
+        uids: validUids,
+      });
+    } catch (err) {
+      next(err);
+    } finally {
+      if (client) await client.logout().catch(() => {});
+    }
+  }
+);
 
 /**
  * POST /api/tempmail/personal/change-password
@@ -1025,15 +1201,31 @@ router.post('/personal/forward/:uid',
   requireTempAuth,
   validate({ to: { type: 'string', required: true } }),
   async (req, res, next) => {
+    let client;
     try {
-      const { to } = req.body;
-      const uid = parseInt(req.params.uid, 10);
+      const to = String(req.body.to || '').trim();
+      if (!isValidEmail(to)) {
+        return res.status(400).json({ error: 'Invalid recipient email address' });
+      }
 
-      // Fetch message body
-      const msg = await fetchMessage(req.tempUser.address, req.tempUser.imap_password, uid);
-      if (!msg) {
+      const uid = parseInt(req.params.uid, 10);
+      if (!Number.isInteger(uid) || uid <= 0) {
+        return res.status(400).json({ error: 'Invalid message UID' });
+      }
+
+      const addrRes = await query('SELECT imap_password FROM temp_addresses WHERE id = $1', [req.tempUser.id]);
+      const imapPassword = addrRes.rows[0]?.imap_password;
+      if (!imapPassword) {
+        return res.status(400).json({ error: 'Mailbox IMAP credentials not configured' });
+      }
+
+      client = await createConnection(req.tempUser.address, imapPassword);
+      const msg = await fetchMessage(client, 'INBOX', uid);
+      if (!msg || !msg.source) {
         return res.status(404).json({ error: 'Message not found' });
       }
+
+      const parsed = await simpleParser(msg.source);
 
       const adminEmail = process.env.ADMIN_EMAIL;
       const adminPass = (process.env.ADMIN_PASSWORD || '').replace(/^['"]|['"]$/g, '');
@@ -1045,13 +1237,16 @@ router.post('/personal/forward/:uid',
       await sendEmail(transporter, {
         from: `"${req.tempUser.address} via WoxMail" <${adminEmail}>`,
         to,
-        subject: `Fwd: ${msg.subject || 'Disposable Email'}`,
-        text: `--- Forwarded from ${req.tempUser.address} ---\n\n${msg.text || ''}`,
+        subject: `Fwd: ${parsed.subject || 'Disposable Email'}`,
+        text: `--- Forwarded from ${req.tempUser.address} ---\n\n${parsed.text || ''}`,
+        html: parsed.html || undefined,
       });
 
       res.json({ message: `Message forwarded to ${to}` });
     } catch (err) {
       next(err);
+    } finally {
+      if (client) await client.logout().catch(() => {});
     }
   }
 );

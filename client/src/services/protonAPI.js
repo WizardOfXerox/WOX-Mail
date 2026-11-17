@@ -41,6 +41,7 @@ class ProtonAPIClient {
    * Dispatch authenticated request to Proton proxy.
    */
   async request(path, options = {}) {
+    const method = (options.method || 'GET').toUpperCase();
     const headers = {
       'Content-Type': 'application/json',
       ...(options.headers || {}),
@@ -52,10 +53,16 @@ class ProtonAPIClient {
     if (this.uid) {
       headers['x-pm-uid'] = this.uid;
     }
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+      const csrfToken = getCsrfToken();
+      if (csrfToken) headers['x-csrf-token'] = csrfToken;
+    }
 
-    const res = await fetch(`${PROTON_PROXY_BASE}${path}`, {
+    let res = await fetch(`${PROTON_PROXY_BASE}${path}`, {
       ...options,
+      method,
       headers,
+      credentials: 'include',
     });
 
     // Handle Token Expiry & Automatic Refresh
@@ -63,11 +70,16 @@ class ProtonAPIClient {
       const refreshed = await this.refreshAuthToken();
       if (refreshed) {
         headers['Authorization'] = `Bearer ${this.accessToken}`;
-        return fetch(`${PROTON_PROXY_BASE}${path}`, { ...options, headers });
+        res = await fetch(`${PROTON_PROXY_BASE}${path}`, {
+          ...options,
+          method,
+          headers,
+          credentials: 'include',
+        });
       }
     }
 
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       throw new Error(data.Error || data.error || `Proton API error (${res.status})`);
     }
@@ -114,14 +126,19 @@ class ProtonAPIClient {
       console.warn('Proton Direct Server Login error, trying client SRP fallback:', serverErr);
     }
 
+    const csrfToken = getCsrfToken();
+    const srpHeaders = { 'Content-Type': 'application/json' };
+    if (csrfToken) srpHeaders['x-csrf-token'] = csrfToken;
+
     // 1. Fetch SRP auth challenge
     const infoRes = await fetch(`${PROTON_PROXY_BASE}/auth/v4/info`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: srpHeaders,
+      credentials: 'include',
       body: JSON.stringify({ Username: username }),
     });
 
-    const info = await infoRes.json();
+    const info = await infoRes.json().catch(() => ({}));
     if (!infoRes.ok) {
       throw new Error(info.Error || info.error || (info.Details?.HumanVerificationMethods ? 'Proton verification required' : 'Failed to initiate Proton authentication.'));
     }
@@ -132,7 +149,8 @@ class ProtonAPIClient {
     // 3. Submit proof to /auth/v4
     const authRes = await fetch(`${PROTON_PROXY_BASE}/auth/v4`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: srpHeaders,
+      credentials: 'include',
       body: JSON.stringify({
         Username: info.Username || username,
         ClientEphemeral: srp.clientEphemeral,
@@ -226,24 +244,30 @@ class ProtonAPIClient {
    */
   async refreshAuthToken() {
     try {
+      const headers = {
+        'Content-Type': 'application/json',
+        'x-pm-uid': this.uid,
+      };
+      const csrfToken = getCsrfToken();
+      if (csrfToken) headers['x-csrf-token'] = csrfToken;
+
       const res = await fetch(`${PROTON_PROXY_BASE}/auth/v4/refresh`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-pm-uid': this.uid,
-        },
+        headers,
+        credentials: 'include',
         body: JSON.stringify({
           RefreshToken: this.refreshToken,
           ResponseType: 'token',
           GrantType: 'refresh_token',
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok && data.AccessToken) {
         this.accessToken = data.AccessToken;
         this.refreshToken = data.RefreshToken || this.refreshToken;
         ProtonSessionStore.saveSession({
           uid: this.uid,
+          email: this.email || this.username,
           accessToken: this.accessToken,
           refreshToken: this.refreshToken,
           user: this.user,
@@ -267,7 +291,9 @@ class ProtonAPIClient {
     const email = accountEmail || this.email || this.username || stored?.email || (typeof window !== 'undefined' && (window.__WOXMAIL_USER__?.email || localStorage.getItem('woxmail_proton_email'))) || '';
     try {
       if (email) {
-        const syncRes = await fetch(`${PROTON_PROXY_BASE}/sync/messages?email=${encodeURIComponent(email)}&LabelID=${labelId}&Page=${page}&PageSize=${pageSize}`);
+        const syncRes = await fetch(`${PROTON_PROXY_BASE}/sync/messages?email=${encodeURIComponent(email)}&LabelID=${labelId}&Page=${page}&PageSize=${pageSize}`, {
+          credentials: 'include',
+        });
         if (syncRes.ok) {
           const payload = await syncRes.json();
           data = payload.data || payload;
@@ -328,7 +354,9 @@ class ProtonAPIClient {
     const email = accountEmail || this.email || this.username || stored?.email || (typeof window !== 'undefined' && (window.__WOXMAIL_USER__?.email || localStorage.getItem('woxmail_proton_email'))) || '';
     try {
       if (email) {
-        const syncRes = await fetch(`${PROTON_PROXY_BASE}/sync/messages/${encodeURIComponent(id)}?email=${encodeURIComponent(email)}`);
+        const syncRes = await fetch(`${PROTON_PROXY_BASE}/sync/messages/${encodeURIComponent(id)}?email=${encodeURIComponent(email)}`, {
+          credentials: 'include',
+        });
         if (syncRes.ok) {
           const payload = await syncRes.json();
           messageData = payload.data || payload;
@@ -426,7 +454,9 @@ class ProtonAPIClient {
     try {
       const email = this.username || this.uid;
       if (email) {
-        const res = await fetch(`${PROTON_PROXY_BASE}/addresses?email=${encodeURIComponent(email)}`);
+        const res = await fetch(`${PROTON_PROXY_BASE}/addresses?email=${encodeURIComponent(email)}`, {
+          credentials: 'include',
+        });
         if (res.ok) {
           const data = await res.json();
           if (data.addresses) {
@@ -437,6 +467,92 @@ class ProtonAPIClient {
       }
     } catch {}
     return this.addresses || [];
+  }
+
+  hasDirectApiToken() {
+    return Boolean(this.accessToken && this.accessToken !== 'proton-session-token' && this.uid);
+  }
+
+  async markRead(ids = [], read = true) {
+    const idList = (Array.isArray(ids) ? ids : [ids]).map(String).filter(Boolean);
+    if (idList.length === 0) return;
+    if (!this.hasDirectApiToken()) {
+      throw new Error('Proton read state sync requires direct Proton API session token');
+    }
+    return this.request(read ? '/mail/v4/messages/mark/read' : '/mail/v4/messages/mark/unread', {
+      method: 'PUT',
+      body: JSON.stringify({ IDs: idList }),
+    });
+  }
+
+  async starMessages(ids = [], starred = true) {
+    const idList = (Array.isArray(ids) ? ids : [ids]).map(String).filter(Boolean);
+    if (idList.length === 0) return;
+    if (!this.hasDirectApiToken()) {
+      throw new Error('Proton star sync requires direct Proton API session token');
+    }
+    return this.request(starred ? '/mail/v4/messages/label' : '/mail/v4/messages/unlabel', {
+      method: 'PUT',
+      body: JSON.stringify({ LabelID: '10', IDs: idList }),
+    });
+  }
+
+  async moveMessages(ids = [], targetFolder = 'Archive') {
+    const idList = (Array.isArray(ids) ? ids : [ids]).map(String).filter(Boolean);
+    if (idList.length === 0) return;
+    if (!this.hasDirectApiToken()) {
+      throw new Error('Proton folder move requires direct Proton API session token');
+    }
+    const labelMap = {
+      INBOX: '0',
+      Inbox: '0',
+      Drafts: '1',
+      Sent: '2',
+      Trash: '3',
+      Spam: '4',
+      Junk: '4',
+      Archive: '6',
+      Starred: '10',
+    };
+    const labelId = labelMap[targetFolder] || '6';
+    return this.request('/mail/v4/messages/label', {
+      method: 'PUT',
+      body: JSON.stringify({ LabelID: labelId, IDs: idList }),
+    });
+  }
+
+  async deleteMessages(ids = [], permanent = false) {
+    const idList = (Array.isArray(ids) ? ids : [ids]).map(String).filter(Boolean);
+    if (idList.length === 0) return;
+    if (!this.hasDirectApiToken()) {
+      throw new Error('Proton message deletion requires direct Proton API session token');
+    }
+    if (permanent) {
+      return this.request('/mail/v4/messages/delete', {
+        method: 'PUT',
+        body: JSON.stringify({ IDs: idList }),
+      });
+    }
+    return this.moveMessages(idList, 'Trash');
+  }
+
+  async downloadAttachment(attachmentId) {
+    if (!this.hasDirectApiToken()) {
+      throw new Error('Proton encrypted attachment download requires a direct Proton API token');
+    }
+    const headers = {
+      Authorization: `Bearer ${this.accessToken}`,
+      'x-pm-uid': this.uid,
+    };
+    const res = await fetch(`${PROTON_PROXY_BASE}/mail/v4/attachments/${encodeURIComponent(attachmentId)}`, {
+      method: 'GET',
+      headers,
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to fetch Proton attachment (${res.status})`);
+    }
+    return res.blob();
   }
 
   /**

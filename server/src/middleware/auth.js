@@ -49,6 +49,19 @@ export async function authenticate(req, res, next) {
   // 2. Standard JWT verification
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (decoded.jti && !decoded.impersonated) {
+      const sessRes = await query(
+        'SELECT is_revoked, expires_at FROM user_sessions WHERE id = $1',
+        [decoded.jti]
+      );
+      if (
+        sessRes.rows.length === 0 ||
+        sessRes.rows[0].is_revoked === true ||
+        new Date(sessRes.rows[0].expires_at) <= new Date()
+      ) {
+        return res.status(401).json({ error: 'Session revoked or expired' });
+      }
+    }
     req.userId = decoded.userId;
     req.tokenType = decoded.type || 'access';
     req.jwtPayload = decoded;

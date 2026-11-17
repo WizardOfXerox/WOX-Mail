@@ -1,9 +1,10 @@
 import { Router } from 'express';
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import dns from 'dns/promises';
 import { query } from '../config/database.js';
-import { redis, setex as redisSetex, get as redisGet, del as redisDel } from '../config/redis.js';
+import { setex as redisSetex, get as redisGet, del as redisDel } from '../config/redis.js';
 import { hashPassword, verifyPassword, generateToken, generateRecoveryCodes } from '../utils/crypto.js';
 import { isValidEmail, validateUsername, validatePassword, isValidInviteCode } from '../utils/validators.js';
 import { authenticate, requireAuth } from '../middleware/auth.js';
@@ -11,13 +12,77 @@ import { loginLimiter } from '../middleware/rateLimit.js';
 import { validate } from '../middleware/validate.js';
 import { JWT_COOKIE_NAME } from '../config/constants.js';
 import * as otpService from '../services/otp.js';
-import { createUser } from '../services/purelymail.js';
+import { createUser, modifyUser } from '../services/purelymail.js';
 import { sendWoxWelcomeEmail } from '../services/welcomeService.js';
-import { testConnection, connectAccount, PROVIDER_PRESETS } from '../services/accountService.js';
+import { testConnection, connectAccount, encryptCredentials, decryptCredentials, PROVIDER_PRESETS } from '../services/accountService.js';
+import { createTransporter, sendEmail } from '../services/smtp.js';
+import pino from 'pino';
 
+const logger = pino({ name: 'woxmail:auth' });
 const router = Router();
 
 // ─── Helpers ─────────────────────────────────────────────
+
+function isHttpsRequest(req) {
+  return !!(req.secure || req.headers['x-forwarded-proto'] === 'https');
+}
+
+function getSwitchJwtSecret() {
+  if (!process.env.JWT_SECRET) {
+    throw new Error('JWT_SECRET is not configured on the server');
+  }
+  return crypto.createHash('sha256').update(`woxmail-device-switch:${process.env.JWT_SECRET}`).digest('hex');
+}
+
+function mintSwitchToken(user) {
+  return jwt.sign(
+    { userId: user.id, type: 'device_switch', email: user.email },
+    getSwitchJwtSecret(),
+    { expiresIn: process.env.JWT_REMEMBER_EXPIRES_IN || '30d' }
+  );
+}
+
+function verifySwitchToken(candidateToken) {
+  try {
+    const decoded = jwt.verify(candidateToken, getSwitchJwtSecret());
+    if (decoded && decoded.type === 'device_switch' && decoded.userId) {
+      return decoded;
+    }
+  } catch {
+    // Fallback to legacy access JWT signed with JWT_SECRET if still cached
+  }
+  const legacy = jwt.verify(candidateToken, process.env.JWT_SECRET);
+  if (legacy && legacy.userId && (!legacy.type || legacy.type === 'access' || legacy.type === 'device_switch')) {
+    return legacy;
+  }
+  return null;
+}
+
+function encryptOtpSecret(secret) {
+  if (!secret) return secret;
+  const { ciphertext, iv, authTag } = encryptCredentials(secret);
+  return `enc:${ciphertext}:${iv}:${authTag}`;
+}
+
+function decryptOtpSecret(stored) {
+  if (!stored || typeof stored !== 'string') return stored;
+  if (stored.startsWith('enc:')) {
+    const parts = stored.split(':');
+    if (parts.length === 4) {
+      return decryptCredentials(parts[1], parts[2], parts[3]);
+    }
+  }
+  return stored;
+}
+
+function escapeHtml(str) {
+  return String(str == null ? '' : str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 /**
  * Issue a JWT access token and set it as an HTTP-only cookie.
@@ -56,7 +121,7 @@ async function issueToken(res, user, req, remember = true) {
   // If remember=false: session cookie (no maxAge), automatically cleared when browser terminates
   const cookieOptions = {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: isHttpsRequest(req),
     sameSite: 'strict',
     path: '/',
   };
@@ -247,6 +312,7 @@ router.post('/register',
 
       // Issue token
       const token = await issueToken(res, result.rows[0], req);
+      const switchToken = mintSwitchToken(result.rows[0]);
 
       // Dispatch WoxMail branded welcome email in background
       sendWoxWelcomeEmail(email, { isTemp: false }).catch((err) => {
@@ -256,6 +322,7 @@ router.post('/register',
       res.status(201).json({
         user: result.rows[0],
         token,
+        switchToken,
         message: 'Account created successfully',
       });
     } catch (err) {
@@ -399,7 +466,7 @@ router.post('/login',
       const normalizedEmail = email.toLowerCase().trim();
 
       const result = await query(
-        'SELECT id, email, username, password_hash, otp_enabled, otp_secret, is_suspended, deletion_scheduled_at FROM users WHERE email = $1 OR username = $2',
+        'SELECT id, email, username, password_hash, imap_password, otp_enabled, otp_secret, is_suspended, deletion_scheduled_at FROM users WHERE email = $1 OR username = $2',
         [normalizedEmail, normalizedEmail]
       );
 
@@ -489,6 +556,7 @@ router.post('/login',
             return res.json({
               user: { id: newUser.id, email: newUser.email, username: newUser.username },
               token,
+              switchToken: mintSwitchToken(newUser),
               message: `Connected and logged in with ${serverConfig.name}!`,
             });
           } else {
@@ -522,7 +590,12 @@ router.post('/login',
       }
 
       let passwordValid = await verifyPassword(user.password_hash, password);
-      if (!passwordValid) {
+      if (passwordValid) {
+        // Self-heal: ensure user imap_password is set in PostgreSQL
+        if (!user.imap_password || user.imap_password !== password) {
+          await query('UPDATE users SET imap_password = $1 WHERE id = $2', [password, user.id]);
+        }
+      } else {
         // Check if external provider login with updated App Password
         const provider = detectEmailProvider(user.email);
         if (provider) {
@@ -616,6 +689,7 @@ router.post('/login',
       res.json({
         user: { id: user.id, email: user.email, username: user.username },
         token,
+        switchToken: mintSwitchToken(user),
       });
     } catch (err) {
       next(err);
@@ -628,7 +702,7 @@ router.post('/login',
 router.post('/verify-otp',
   validate({
     ticket: { type: 'string', required: true },
-    code: { type: 'string', required: true, min: 6, max: 6 },
+    code: { type: 'string', required: true, min: 6, max: 16 },
   }),
   async (req, res, next) => {
     try {
@@ -664,9 +738,10 @@ router.post('/verify-otp',
       }
 
       const { otp_secret, recovery_codes } = user.rows[0];
+      const plainOtpSecret = decryptOtpSecret(otp_secret);
 
       // Try TOTP code first
-      const isValidOTP = otpService.verifyCode(code, otp_secret);
+      const isValidOTP = otpService.verifyCode(code, plainOtpSecret);
 
       if (!isValidOTP) {
         // Try recovery code
@@ -707,6 +782,7 @@ router.post('/verify-otp',
       res.json({
         user: { id: user.rows[0].id, email: user.rows[0].email, username: user.rows[0].username },
         token,
+        switchToken: mintSwitchToken(user.rows[0]),
       });
     } catch (err) {
       next(err);
@@ -759,7 +835,7 @@ router.get('/me', requireAuth, (req, res) => {
 // ─── GET /api/auth/current-session ──────────────────────
 
 router.get('/current-session', requireAuth, (req, res) => {
-  const token = req.cookies?.[JWT_COOKIE_NAME] || req.headers.authorization?.replace('Bearer ', '');
+  const switchToken = mintSwitchToken(req.user);
   res.json({
     user: {
       id: req.user.id,
@@ -768,7 +844,7 @@ router.get('/current-session', requireAuth, (req, res) => {
       displayName: req.user.display_name || req.user.username,
       is_admin: !!req.user.is_admin,
     },
-    token: token || null,
+    switchToken,
   });
 });
 
@@ -776,17 +852,18 @@ router.get('/current-session', requireAuth, (req, res) => {
 
 router.post('/switch-account', async (req, res, next) => {
   try {
-    const { token, email } = req.body;
+    const { switchToken: bodySwitchToken, token, email } = req.body;
+    const candidateToken = bodySwitchToken || token;
 
-    if (!token && !email) {
-      return res.status(400).json({ error: 'Token or email is required' });
+    if (!candidateToken && !email) {
+      return res.status(400).json({ error: 'Switch token or email is required' });
     }
 
     let targetUser = null;
 
-    if (token) {
+    if (candidateToken) {
       try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const decoded = verifySwitchToken(candidateToken);
         if (decoded && decoded.userId) {
           const userRes = await query(
             'SELECT id, email, username, display_name, is_admin, is_suspended FROM users WHERE id = $1',
@@ -811,7 +888,8 @@ router.post('/switch-account', async (req, res, next) => {
     }
 
     // Issue fresh token and update HTTP-only cookie for target user
-    const freshToken = await issueToken(res, targetUser, req);
+    await issueToken(res, targetUser, req);
+    const nextSwitchToken = mintSwitchToken(targetUser);
     await logAuthEvent(targetUser.id, true, req, 'account_switch');
 
     return res.json({
@@ -823,7 +901,7 @@ router.post('/switch-account', async (req, res, next) => {
         displayName: targetUser.display_name || targetUser.username,
         is_admin: !!targetUser.is_admin,
       },
-      token: freshToken,
+      switchToken: nextSwitchToken,
     });
   } catch (err) {
     next(err);
@@ -878,10 +956,10 @@ router.post('/confirm-otp',
       // Generate recovery codes
       const recoveryCodes = generateRecoveryCodes();
 
-      // Save to database — 2FA is now active
+      // Save encrypted secret to database — 2FA is now active
       await query(
         'UPDATE users SET otp_secret = $1, otp_enabled = TRUE, recovery_codes = $2 WHERE id = $3',
-        [secret, JSON.stringify(recoveryCodes), req.user.id]
+        [encryptOtpSecret(secret), JSON.stringify(recoveryCodes), req.user.id]
       );
 
       // Clean up Redis
@@ -934,22 +1012,95 @@ router.post('/forgot-password',
   validate({ email: { type: 'email', required: true } }),
   async (req, res, next) => {
     try {
-      const { email } = req.body;
+      const normalizedEmail = req.body.email.toLowerCase().trim();
 
       // Always return success to prevent email enumeration
       const result = await query(
-        'SELECT id, recovery_email FROM users WHERE email = $1',
-        [email]
+        'SELECT id, recovery_email FROM users WHERE LOWER(email) = $1',
+        [normalizedEmail]
       );
 
       if (result.rows.length > 0 && result.rows[0].recovery_email) {
+        const recoveryEmail = result.rows[0].recovery_email;
         const resetToken = generateToken(32);
-        await redis.setex(`reset:${resetToken}`, 3600, String(result.rows[0].id));
+        await redisSetex(`reset:${resetToken}`, 3600, String(result.rows[0].id));
 
-        // TODO: Send reset email to recovery_email via SMTP
-        // For now, log the token (dev only)
+        const resetUrl = `${process.env.APP_URL || 'https://mail.wox.world'}/reset-password?token=${resetToken}`;
+
+        try {
+          const domain = process.env.DOMAIN_PERMANENT;
+          const senderEmail = process.env.SUPPORT_EMAIL || process.env.ADMIN_EMAIL || (domain ? `support@${domain}` : 'support@wox.world');
+          const senderName = process.env.SYSTEM_SENDER_NAME || 'WoxMail Security';
+          const adminPass = (process.env.ADMIN_PASSWORD || '').replace(/^['"]|['"]$/g, '');
+          const authUser = process.env.ADMIN_EMAIL || senderEmail;
+
+          let transporter;
+          if (adminPass) {
+            transporter = createTransporter({ email: authUser, password: adminPass });
+          } else {
+            transporter = {
+              sendMail: async () => ({
+                messageId: `dev-reset-${Date.now()}@wox.world`,
+                response: '250 Simulated OK in development mode',
+              }),
+            };
+          }
+
+          const resetHtml = `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #0c0a14; color: #f0f0f5; padding: 32px 24px; border-radius: 16px; max-width: 600px; margin: 0 auto; border: 1px solid #2a2a4a; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+              <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #2a2a4a; padding-bottom: 16px; margin-bottom: 24px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="font-size: 24px;">🛡️</span>
+                  <span style="font-size: 20px; font-weight: 800; color: #a78bfa; letter-spacing: 0.5px;">WoxMail</span>
+                </div>
+                <span style="background: rgba(124,58,237,0.2); color: #c4b5fd; border: 1px solid #7c3aed; padding: 4px 10px; border-radius: 9999px; font-size: 11px; font-weight: 700;">
+                  PASSWORD RECOVERY
+                </span>
+              </div>
+              <h1 style="font-size: 22px; font-weight: 800; color: #f0f0f5; margin: 0 0 12px 0; line-height: 1.3;">
+                Password Reset Request
+              </h1>
+              <p style="font-size: 14px; color: #9898b0; line-height: 1.6; margin-bottom: 20px;">
+                We received a request to reset the password for your WoxMail account (<strong style="color: #f0f0f5;">${escapeHtml(normalizedEmail)}</strong>). Click the button below to set a new password:
+              </p>
+              <div style="text-align: center; margin: 28px 0;">
+                <a href="${resetUrl}" style="display: inline-block; background: #7c3aed; color: #ffffff; text-decoration: none; padding: 14px 28px; border-radius: 10px; font-weight: 700; font-size: 15px; box-shadow: 0 4px 14px rgba(124,58,237,0.4);">
+                  Reset Password
+                </a>
+              </div>
+              <p style="font-size: 13px; color: #9898b0; line-height: 1.6; margin-bottom: 16px;">
+                Or copy and paste this link into your browser:<br />
+                <a href="${resetUrl}" style="color: #a78bfa; word-break: break-all; font-size: 12px;">${resetUrl}</a>
+              </p>
+              <div style="background: #141428; border: 1px solid #2a2a4a; border-radius: 12px; padding: 14px 16px; margin: 24px 0;">
+                <div style="font-size: 13px; font-weight: 700; color: #f87171; margin-bottom: 4px;">
+                  ⏳ Expiration & Security Notice
+                </div>
+                <div style="font-size: 12.5px; color: #9898b0; line-height: 1.4;">
+                  This link expires in <strong>1 hour</strong>. If you did not request a password reset, you can safely ignore this email — your account remains completely secure.
+                </div>
+              </div>
+              <div style="border-top: 1px solid #2a2a4a; padding-top: 16px; font-size: 12px; color: #6868a0; text-align: center; line-height: 1.5;">
+                © 2026 WoxMail Privacy Systems • Zero-Trace Enclave Infrastructure
+              </div>
+            </div>
+          `;
+
+          await sendEmail(transporter, {
+            from: { name: senderName, address: senderEmail },
+            to: recoveryEmail,
+            subject: '🛡️ Reset your WoxMail password',
+            text: `We received a request to reset the password for ${normalizedEmail}.\n\nReset your password within 1 hour using this link:\n${resetUrl}\n\nIf you did not request this, you can safely ignore this message.`,
+            html: resetHtml,
+          });
+
+          logger.info({ email: normalizedEmail, recoveryEmail }, 'Dispatched password reset email via SMTP');
+        } catch (smtpErr) {
+          logger.error({ err: smtpErr.message, email: normalizedEmail, recoveryEmail }, 'Failed to dispatch password reset email via SMTP');
+        }
+
         if (process.env.NODE_ENV === 'development') {
-          console.log(`[DEV] Password reset token for ${email}: ${resetToken}`);
+          console.log(`[DEV] Password reset token for ${normalizedEmail}: ${resetToken}`);
         }
       }
 
@@ -971,7 +1122,7 @@ router.post('/reset-password',
     try {
       const { token, password } = req.body;
 
-      const userId = await redis.get(`reset:${token}`);
+      const userId = await redisGet(`reset:${token}`);
       if (!userId) {
         return res.status(400).json({ error: 'Reset token expired or invalid' });
       }
@@ -982,13 +1133,22 @@ router.post('/reset-password',
       }
 
       const passwordHash = await hashPassword(password);
-      await query('UPDATE users SET password_hash = $1 WHERE id = $2', [passwordHash, parseInt(userId)]);
+      await query('UPDATE users SET password_hash = $1, imap_password = $2 WHERE id = $3', [passwordHash, password, parseInt(userId)]);
+
+      const targetUser = await query('SELECT email FROM users WHERE id = $1', [parseInt(userId)]);
+      if (targetUser.rows[0]?.email) {
+        try {
+          await modifyUser(targetUser.rows[0].email, { newPassword: password });
+        } catch (pmErr) {
+          console.warn(`[ResetPassword] Purelymail password update notice for ${targetUser.rows[0].email}: ${pmErr.message}`);
+        }
+      }
 
       // Revoke all existing sessions
       await query('UPDATE user_sessions SET is_revoked = TRUE WHERE user_id = $1', [parseInt(userId)]);
 
       // Delete reset token
-      await redis.del(`reset:${token}`);
+      await redisDel(`reset:${token}`);
 
       res.json({ message: 'Password reset successfully. Please log in.' });
     } catch (err) {
@@ -1007,11 +1167,12 @@ router.post('/recover-with-code',
   }),
   async (req, res, next) => {
     try {
-      const { email, recoveryCode, newPassword } = req.body;
+      const normalizedEmail = req.body.email.toLowerCase().trim();
+      const { recoveryCode, newPassword } = req.body;
 
       const result = await query(
-        'SELECT id, recovery_codes FROM users WHERE email = $1',
-        [email]
+        'SELECT id, recovery_codes FROM users WHERE LOWER(email) = $1',
+        [normalizedEmail]
       );
 
       if (result.rows.length === 0) {
@@ -1040,9 +1201,18 @@ router.post('/recover-with-code',
 
       const passwordHash = await hashPassword(newPassword);
       await query(
-        'UPDATE users SET password_hash = $1, recovery_codes = $2 WHERE id = $3',
-        [passwordHash, JSON.stringify(codes), user.id]
+        'UPDATE users SET password_hash = $1, imap_password = $2, recovery_codes = $3 WHERE id = $4',
+        [passwordHash, newPassword, JSON.stringify(codes), user.id]
       );
+
+      const targetRecoverUser = await query('SELECT email FROM users WHERE id = $1', [user.id]);
+      if (targetRecoverUser.rows[0]?.email) {
+        try {
+          await modifyUser(targetRecoverUser.rows[0].email, { newPassword });
+        } catch (pmErr) {
+          console.warn(`[RecoverWithCode] Purelymail password update notice for ${targetRecoverUser.rows[0].email}: ${pmErr.message}`);
+        }
+      }
 
       // Revoke all sessions
       await query('UPDATE user_sessions SET is_revoked = TRUE WHERE user_id = $1', [user.id]);
@@ -1058,42 +1228,39 @@ router.post('/recover-with-code',
 
 const handleSwitchSession = async (req, res, next) => {
   try {
-    const { token } = req.body;
-    if (!token) {
+    const { switchToken: bodySwitchToken, token } = req.body;
+    const candidateToken = bodySwitchToken || token;
+    if (!candidateToken) {
       return res.status(400).json({ error: 'Token is required to switch session' });
     }
 
-    if (!process.env.JWT_SECRET) {
-      throw new Error('JWT_SECRET is not configured on the server');
+    const decoded = verifySwitchToken(candidateToken);
+    if (!decoded || !decoded.userId) {
+      return res.status(401).json({ error: 'Invalid or expired session token. Please log in again.' });
     }
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const userRes = await query('SELECT * FROM users WHERE id = $1 AND is_active = TRUE', [decoded.userId]);
+
+    const userRes = await query(
+      'SELECT id, email, username, display_name, is_admin, is_suspended FROM users WHERE id = $1 AND is_suspended = FALSE',
+      [decoded.userId]
+    );
     if (userRes.rows.length === 0) {
       return res.status(401).json({ error: 'User account not found or inactive' });
     }
 
     const user = userRes.rows[0];
-
-    // Set cookie
-    res.cookie(JWT_COOKIE_NAME, token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      path: '/',
-    });
+    await issueToken(res, user, req);
+    const nextSwitchToken = mintSwitchToken(user);
 
     res.json({
       success: true,
-      token,
+      switchToken: nextSwitchToken,
       user: {
         id: user.id,
         username: user.username,
         email: user.email,
         display_name: user.display_name,
-        role: user.role,
-        tier: user.tier,
-      }
+        is_admin: !!user.is_admin,
+      },
     });
   } catch (err) {
     return res.status(401).json({ error: 'Invalid or expired session token. Please log in again.' });

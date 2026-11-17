@@ -325,18 +325,21 @@ export async function processInboundReply({ fromEmail, toEmail = '', subject = '
  * Get status of an ongoing verification session.
  * @param {string} sessionToken
  */
-export async function getVerificationStatus(sessionToken) {
+export async function getVerificationStatus(sessionToken, viewerUserId = null) {
   const rawSession = await get(`vsession:${sessionToken}`);
   if (!rawSession) {
     return { status: 'expired' };
   }
   const session = JSON.parse(rawSession);
+  const canRevealStepUp = Boolean(
+    session.stepUpAuthToken && session.userId && viewerUserId && Number(viewerUserId) === Number(session.userId)
+  );
   return {
     status: session.status,
     type: session.type,
     targetEmail: session.targetEmail,
     expiresAt: session.expiresAt,
-    stepUpAuthToken: session.stepUpAuthToken || null,
+    ...(canRevealStepUp ? { stepUpAuthToken: session.stepUpAuthToken } : {}),
   };
 }
 

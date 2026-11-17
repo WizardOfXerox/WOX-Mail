@@ -9,9 +9,11 @@
   const API = '/api/tempmail';
   let currentAddress = null;
   let eventSource = null;
+  let sseReconnectTimer = null;
   let countdownInterval = null;
   let recentInterval = null;
   let autoRefreshInterval = null;
+  let purgeTimerInterval = null;
   let selectedExpiry = 24;
   let currentMessageUid = null;
   let currentMessageRawText = '';
@@ -31,7 +33,7 @@
     if (typeof hcaptcha !== 'undefined') {
       return hcaptcha.getResponse() || '';
     }
-    return 'dev-bypass';
+    return '';
   }
 
   // ─── Duration Selector ─────────────────────────────────
@@ -99,10 +101,13 @@
     try {
       const payload = {
         expiryHours: selectedExpiry,
-        captchaToken: getCaptchaToken(),
         forceNew: !!forceNew,
-        domain: customDomain || selectedDomain,
       };
+      const captchaToken = getCaptchaToken();
+      if (captchaToken) payload.captchaToken = captchaToken;
+      if (forceNew || customDomain) {
+        payload.domain = customDomain || selectedDomain;
+      }
       if (customUsername) payload.username = customUsername;
 
       const res = await fetch(`${API}/generate`, {
@@ -159,6 +164,10 @@
   // ─── Real-Time SSE Stream ──────────────────────────────
 
   function connectSSE(address) {
+    if (sseReconnectTimer) {
+      clearTimeout(sseReconnectTimer);
+      sseReconnectTimer = null;
+    }
     if (eventSource) {
       try { eventSource.close(); } catch {}
       eventSource = null;
@@ -183,9 +192,23 @@
       };
 
       eventSource.onerror = () => {
-        setTimeout(() => {
-          if (currentAddress) connectSSE(currentAddress);
-        }, 5000);
+        if (eventSource) {
+          try { eventSource.close(); } catch {}
+          eventSource = null;
+        }
+        if (sseReconnectTimer) {
+          clearTimeout(sseReconnectTimer);
+          sseReconnectTimer = null;
+        }
+        if (currentAddress) {
+          const targetAddr = currentAddress;
+          sseReconnectTimer = setTimeout(() => {
+            sseReconnectTimer = null;
+            if (currentAddress === targetAddr) {
+              connectSSE(targetAddr);
+            }
+          }, 5000);
+        }
       };
     } catch (err) {
       console.error('SSE connection error:', err);
@@ -744,6 +767,10 @@
       console.error('Delete request error:', e);
     }
 
+    if (sseReconnectTimer) {
+      clearTimeout(sseReconnectTimer);
+      sseReconnectTimer = null;
+    }
     if (eventSource) {
       try { eventSource.close(); } catch {}
       eventSource = null;
@@ -777,6 +804,10 @@
       const remaining = expiry - Date.now();
       if (remaining <= 0) {
         clearInterval(countdownInterval);
+        if (sseReconnectTimer) {
+          clearTimeout(sseReconnectTimer);
+          sseReconnectTimer = null;
+        }
         if (el) {
           el.innerHTML = '<svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> <span>Expired</span>';
         }
@@ -784,7 +815,10 @@
           badge.textContent = 'Expired';
           badge.className = 'badge badge-red';
         }
-        if (eventSource) eventSource.close();
+        if (eventSource) {
+          try { eventSource.close(); } catch {}
+          eventSource = null;
+        }
         return;
       }
 
@@ -1027,7 +1061,8 @@
       }
     }
     tick();
-    setInterval(tick, 1000);
+    if (purgeTimerInterval) clearInterval(purgeTimerInterval);
+    purgeTimerInterval = setInterval(tick, 1000);
   }
 
   // ─── Global Keyboard Shortcuts ──────────────────────────

@@ -1168,7 +1168,7 @@
           'x-csrf-token': getCsrfToken(),
         },
         credentials: 'include',
-        body: JSON.stringify({ expiryHours: currentHeroExpiryHours, captchaToken: 'dev-bypass', forceNew })
+        body: JSON.stringify({ expiryHours: currentHeroExpiryHours, forceNew })
       });
       const data = await res.json();
       if (data && data.address) {
@@ -1217,7 +1217,7 @@
           'x-csrf-token': getCsrfToken(),
         },
         credentials: 'include',
-        body: JSON.stringify({ username: customVal, expiryHours: currentHeroExpiryHours, captchaToken: 'dev-bypass', forceNew: true })
+        body: JSON.stringify({ username: customVal, expiryHours: currentHeroExpiryHours, forceNew: true })
       });
       const data = await res.json();
       if (data && data.address) {

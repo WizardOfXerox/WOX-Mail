@@ -1,84 +1,180 @@
 import { Router } from 'express';
-import { authenticateProtonAccount, getProtonMessages, getProtonMessageDetails, sendProtonMail, getProtonAddresses, activeSessions } from '../services/protonServerSync.js';
+import { requireAuth } from '../middleware/auth.js';
+import {
+  authenticateProtonAccount,
+  submitProton2FA,
+  getProtonMessages,
+  getProtonMessageDetails,
+  sendProtonMail,
+  getProtonAddresses,
+  getProtonSessionKey,
+  activeSessions,
+} from '../services/protonServerSync.js';
 import * as complianceArchiveService from '../services/complianceArchiveService.js';
 import { query } from '../config/database.js';
 import { encryptCredentials, decryptCredentials } from '../services/accountService.js';
 
 const router = Router();
+router.use(requireAuth);
+
 const PROTON_API_HOST = 'mail.proton.me';
 const PROTON_BASE_URL = `https://${PROTON_API_HOST}/api`;
 
+function cleanRequestedEmail(raw) {
+  if (!raw || raw === 'undefined' || raw === 'null') return null;
+  const trimmed = String(raw).trim().toLowerCase();
+  return trimmed || null;
+}
+
+function isProtonDomainEmail(email) {
+  if (!email) return false;
+  return (
+    email.endsWith('@proton.me') ||
+    email.endsWith('@pm.me') ||
+    email.endsWith('@protonmail.com') ||
+    email.endsWith('@protonmail.ch') ||
+    email.endsWith('@proton.ch')
+  );
+}
+
 /**
- * 0. Check live session status (with auto-resume from connected_accounts if needed)
+ * Resolve and authorize the Proton email for the authenticated user.
+ * Enforces strict tenant ownership against connected_accounts (user_id = req.user.id),
+ * active user-scoped Playwright sessions, or req.user.email.
+ */
+async function resolveAuthorizedProtonAccount(req, requestedEmailRaw) {
+  const userId = req.user.id;
+  const userPrimaryEmail = cleanRequestedEmail(req.user.email);
+  const requestedEmail = cleanRequestedEmail(requestedEmailRaw);
+
+  if (requestedEmail) {
+    const connRes = await query(
+      `SELECT email, credentials_encrypted, iv, auth_tag FROM connected_accounts
+       WHERE LOWER(email) = $1 AND user_id = $2 AND provider = 'proton' AND is_active = TRUE LIMIT 1`,
+      [requestedEmail, userId]
+    );
+    if (connRes.rows.length > 0) {
+      return { authorized: true, email: requestedEmail, accountRow: connRes.rows[0] };
+    }
+    if (activeSessions.has(getProtonSessionKey(requestedEmail, userId))) {
+      return { authorized: true, email: requestedEmail, accountRow: null };
+    }
+    if (userPrimaryEmail && requestedEmail === userPrimaryEmail) {
+      return { authorized: true, email: requestedEmail, accountRow: null };
+    }
+    return { authorized: false, email: requestedEmail, accountRow: null };
+  }
+
+  // No explicit email requested — find user's own connected Proton account
+  const ownConn = await query(
+    `SELECT email, credentials_encrypted, iv, auth_tag FROM connected_accounts
+     WHERE user_id = $1 AND provider = 'proton' AND is_active = TRUE
+     ORDER BY is_default DESC, id ASC LIMIT 1`,
+    [userId]
+  );
+  if (ownConn.rows.length > 0) {
+    return {
+      authorized: true,
+      email: ownConn.rows[0].email.toLowerCase().trim(),
+      accountRow: ownConn.rows[0],
+    };
+  }
+
+  // Fallback to active in-memory session owned by this userId
+  const userPrefix = `${userId}:`;
+  for (const [key, session] of activeSessions.entries()) {
+    if (key.startsWith(userPrefix) && session?.emailKey) {
+      return { authorized: true, email: session.emailKey, accountRow: null };
+    }
+  }
+
+  if (userPrimaryEmail && isProtonDomainEmail(userPrimaryEmail)) {
+    return { authorized: true, email: userPrimaryEmail, accountRow: null };
+  }
+
+  return { authorized: true, email: null, accountRow: null };
+}
+
+/**
+ * 0. Check live session status (with user-scoped auto-resume from connected_accounts if needed)
  */
 router.get('/sync/status', async (req, res) => {
-  let email = req.query.email || req.headers['x-proton-email'] || req.user?.email;
-  if (email === 'undefined' || email === 'null') email = req.user?.email;
-  if (!email) return res.json({ active: false });
+  const requested = req.query.email || req.headers['x-proton-email'];
+  const authCheck = await resolveAuthorizedProtonAccount(req, requested);
 
-  const cacheKey = email.toLowerCase().trim();
-  let isSessionActive = Boolean(activeSessions.has(cacheKey));
+  if (!authCheck.authorized) {
+    return res.status(403).json({ active: false, error: 'Access denied: Proton account does not belong to current user.' });
+  }
+  if (!authCheck.email) {
+    return res.json({ active: false });
+  }
 
-  // If memory session is lost (e.g. server restart), auto-restore from saved credentials
-  if (!isSessionActive) {
+  const email = authCheck.email;
+  const sessionKey = getProtonSessionKey(email, req.user.id);
+  let session = activeSessions.get(sessionKey);
+  let isSessionActive = Boolean(session && !session.pending2FA && session.page && !session.page.isClosed());
+
+  // If memory session is lost (e.g. server restart), auto-restore from saved user-owned credentials
+  if (!isSessionActive && !session?.pending2FA && authCheck.accountRow?.credentials_encrypted) {
     try {
-      const connRes = await query(
-        `SELECT credentials_encrypted, iv, auth_tag FROM connected_accounts 
-         WHERE LOWER(email) = $1 AND provider = 'proton' AND is_active = TRUE LIMIT 1`,
-        [cacheKey]
-      );
-      if (connRes.rows.length > 0 && connRes.rows[0].credentials_encrypted) {
-        const { credentials_encrypted, iv, auth_tag } = connRes.rows[0];
-        const pass = decryptCredentials(credentials_encrypted, iv, auth_tag);
-        if (pass) {
-          await authenticateProtonAccount(cacheKey, pass);
-          isSessionActive = activeSessions.has(cacheKey);
-        }
+      const { credentials_encrypted, iv, auth_tag } = authCheck.accountRow;
+      const pass = decryptCredentials(credentials_encrypted, iv, auth_tag);
+      if (pass) {
+        await authenticateProtonAccount(email, pass, req.user.id);
+        session = activeSessions.get(sessionKey);
+        isSessionActive = Boolean(session && !session.pending2FA && session.page && !session.page.isClosed());
       }
     } catch (restoreErr) {
       console.warn('[ProtonSync] Auto-resume failed:', restoreErr.message);
     }
   }
 
-  res.json({ active: isSessionActive, email });
+  return res.json({
+    active: isSessionActive,
+    requires2FA: Boolean(session?.pending2FA),
+    email,
+  });
 });
 
 /**
  * 1. Proton Direct Cloud Session Login
  */
 router.post('/login', async (req, res) => {
-  const email = req.body.email || req.user?.email;
+  const email = cleanRequestedEmail(req.body.email) || cleanRequestedEmail(req.user?.email);
   const password = req.body.password;
   if (!email || !password) {
     return res.status(400).json({ error: 'Email and password are required.' });
   }
 
   try {
-    const result = await authenticateProtonAccount(email, password);
+    const result = await authenticateProtonAccount(email, password, req.user.id);
 
-    // Persist encrypted credentials to connected_accounts for seamless future sessions
+    if (result.requires2FA) {
+      return res.json({
+        requires2FA: true,
+        email,
+        message: 'Two-factor authentication code required. Submit via POST /api/proton/sync/2fa.',
+      });
+    }
+
+    // Persist encrypted credentials scoped exclusively to req.user.id
     try {
-      const normEmail = email.toLowerCase().trim();
-      const userRes = await query('SELECT id FROM users WHERE LOWER(email) = $1', [normEmail]);
-      const userId = req.user?.id || userRes.rows[0]?.id;
-      if (userId) {
-        const { ciphertext, iv, authTag } = encryptCredentials(password);
-        await query(`
-          INSERT INTO connected_accounts (
-            user_id, provider, email, display_name, imap_host, imap_port, imap_secure, smtp_host, smtp_port, smtp_secure,
-            auth_type, credentials_encrypted, iv, auth_tag, is_default, is_active, color, created_at, updated_at
-          ) VALUES (
-            $1, 'proton', $2, 'Proton Mail', 'mail-api.proton.me', 993, true, 'mail-api.proton.me', 465, true,
-            'password', $3, $4, $5, false, true, '#6d4aff', NOW(), NOW()
-          )
-          ON CONFLICT (user_id, email) DO UPDATE SET
-            credentials_encrypted = EXCLUDED.credentials_encrypted,
-            iv = EXCLUDED.iv,
-            auth_tag = EXCLUDED.auth_tag,
-            is_active = TRUE,
-            updated_at = NOW()
-        `, [userId, normEmail, ciphertext, iv, authTag]);
-      }
+      const { ciphertext, iv, authTag } = encryptCredentials(password);
+      await query(`
+        INSERT INTO connected_accounts (
+          user_id, provider, email, display_name, imap_host, imap_port, imap_secure, smtp_host, smtp_port, smtp_secure,
+          auth_type, credentials_encrypted, iv, auth_tag, is_default, is_active, color, created_at, updated_at
+        ) VALUES (
+          $1, 'proton', $2, 'Proton Mail', 'mail-api.proton.me', 993, true, 'mail-api.proton.me', 465, true,
+          'password', $3, $4, $5, false, true, '#6d4aff', NOW(), NOW()
+        )
+        ON CONFLICT (user_id, email) DO UPDATE SET
+          credentials_encrypted = EXCLUDED.credentials_encrypted,
+          iv = EXCLUDED.iv,
+          auth_tag = EXCLUDED.auth_tag,
+          is_active = TRUE,
+          updated_at = NOW()
+      `, [req.user.id, email, ciphertext, iv, authTag]);
     } catch (dbErr) {
       console.warn('[ProtonSync] Storing credentials warning:', dbErr.message);
     }
@@ -94,23 +190,55 @@ router.post('/login', async (req, res) => {
 });
 
 /**
- * 2. Fetch live messages / conversations
+ * 1b. Submit TOTP 2FA code for pending Playwright Proton login
  */
-router.get('/sync/messages', async (req, res) => {
-  let email = req.query.email || req.headers['x-proton-email'] || req.user?.email;
-  if (!email || email === 'undefined' || email === 'null') {
-    email = req.user?.email;
+router.post('/sync/2fa', async (req, res) => {
+  const requested = req.body?.email || req.query.email || req.headers['x-proton-email'];
+  const code = req.body?.code || req.body?.totp;
+  if (!code || typeof code !== 'string') {
+    return res.status(400).json({ error: '2FA code is required.' });
   }
-  const labelId = req.query.LabelID || req.query.labelId || '0';
-  const page = parseInt(req.query.Page || '0', 10);
-  const pageSize = parseInt(req.query.PageSize || '25', 10);
 
-  if (!email) {
+  const authCheck = await resolveAuthorizedProtonAccount(req, requested);
+  if (!authCheck.authorized) {
+    return res.status(403).json({ error: 'Access denied: Proton account does not belong to current user.' });
+  }
+  if (!authCheck.email) {
     return res.status(400).json({ error: 'Proton account email required.' });
   }
 
   try {
-    const data = await getProtonMessages(email, labelId, page, pageSize);
+    const result = await submitProton2FA(authCheck.email, code, req.user.id);
+    return res.json({
+      ...result,
+      accessToken: result.uid || 'proton-session-token',
+    });
+  } catch (err) {
+    console.error('[ProtonSync] 2FA error:', err.message);
+    return res.status(401).json({ error: err.message });
+  }
+});
+
+/**
+ * 2. Fetch live messages / conversations
+ */
+router.get('/sync/messages', async (req, res) => {
+  const requested = req.query.email || req.headers['x-proton-email'];
+  const authCheck = await resolveAuthorizedProtonAccount(req, requested);
+
+  if (!authCheck.authorized) {
+    return res.status(403).json({ error: 'Access denied: Proton account does not belong to current user.' });
+  }
+  if (!authCheck.email) {
+    return res.status(400).json({ error: 'Proton account email required.' });
+  }
+
+  const labelId = req.query.LabelID || req.query.labelId || '0';
+  const page = parseInt(req.query.Page || '0', 10);
+  const pageSize = parseInt(req.query.PageSize || '25', 10);
+
+  try {
+    const data = await getProtonMessages(authCheck.email, labelId, page, pageSize, req.user.id);
     return res.json(data);
   } catch (err) {
     console.error('[ProtonSync] Messages error:', err.message);
@@ -122,18 +250,20 @@ router.get('/sync/messages', async (req, res) => {
  * 3. Fetch message details
  */
 router.get('/sync/messages/:id', async (req, res) => {
-  let email = req.query.email || req.headers['x-proton-email'] || req.user?.email;
-  if (!email || email === 'undefined' || email === 'null') {
-    email = req.user?.email;
-  }
-  const { id } = req.params;
+  const requested = req.query.email || req.headers['x-proton-email'];
+  const authCheck = await resolveAuthorizedProtonAccount(req, requested);
 
-  if (!email) {
+  if (!authCheck.authorized) {
+    return res.status(403).json({ error: 'Access denied: Proton account does not belong to current user.' });
+  }
+  if (!authCheck.email) {
     return res.status(400).json({ error: 'Proton account email required.' });
   }
 
+  const { id } = req.params;
+
   try {
-    const data = await getProtonMessageDetails(email, id);
+    const data = await getProtonMessageDetails(authCheck.email, id, req.user.id);
     return res.json(data);
   } catch (err) {
     console.error('[ProtonSync] Message detail error:', err.message);
@@ -145,13 +275,18 @@ router.get('/sync/messages/:id', async (req, res) => {
  * 4. Fetch Proton addresses & aliases
  */
 router.get('/addresses', async (req, res) => {
-  const email = req.query.email || req.headers['x-proton-email'];
-  if (!email) {
+  const requested = req.query.email || req.headers['x-proton-email'];
+  const authCheck = await resolveAuthorizedProtonAccount(req, requested);
+
+  if (!authCheck.authorized) {
+    return res.status(403).json({ error: 'Access denied: Proton account does not belong to current user.' });
+  }
+  if (!authCheck.email) {
     return res.status(400).json({ error: 'Proton account email required.' });
   }
 
   try {
-    const data = await getProtonAddresses(email);
+    const data = await getProtonAddresses(authCheck.email, req.user.id);
     return res.json(data);
   } catch (err) {
     console.error('[ProtonSync] Addresses error:', err.message);
@@ -165,21 +300,28 @@ router.get('/addresses', async (req, res) => {
 router.post('/send', async (req, res) => {
   const { email, from, to, cc, bcc, subject, text, html, attachments } = req.body;
   const cleanFrom = from ? (from.includes('<') ? from.replace(/.*<([^>]+)>.*/, '$1').trim() : from.trim()) : null;
-  const targetEmail = email || req.headers['x-proton-email'] || cleanFrom || req.user?.email;
+  const requested = email || req.headers['x-proton-email'] || cleanFrom;
 
-  if (!targetEmail) {
+  const authCheck = await resolveAuthorizedProtonAccount(req, requested);
+  if (!authCheck.authorized) {
+    return res.status(403).json({ error: 'Access denied: Proton account does not belong to current user.' });
+  }
+  if (!authCheck.email) {
     return res.status(400).json({ error: 'Proton account email required.' });
   }
   if (!to) {
     return res.status(400).json({ error: 'Recipient email is required.' });
   }
 
+  const targetEmail = authCheck.email;
+
   try {
-    const result = await sendProtonMail(targetEmail, { from, to, cc, bcc, subject, text, html, attachments });
+    const result = await sendProtonMail(targetEmail, { from, to, cc, bcc, subject, text, html, attachments }, req.user.id);
 
     // Record outbound Proton email in Domain-Wide Compliance Archive
     complianceArchiveService.archiveEmail({
       direction: 'outbound',
+      mailboxOwnerId: req.user.id,
       mailboxOwnerEmail: targetEmail,
       senderAddress: from || targetEmail,
       senderName: from || targetEmail,
@@ -202,33 +344,55 @@ router.post('/send', async (req, res) => {
 });
 
 /**
+ * Validate proxy subpath strictly to prevent host overrides, traversal, or CRLF injection.
+ */
+function buildValidatedProtonUrl(rawSubpath) {
+  if (typeof rawSubpath !== 'string') return null;
+  if (/[\r\n\\]|%0[ad]/i.test(rawSubpath)) return null;
+
+  const [rawPathOnly] = rawSubpath.split('?');
+  if (!rawPathOnly || rawPathOnly.startsWith('//') || rawPathOnly.includes('@')) return null;
+  if (rawPathOnly.split('/').some((seg) => seg === '..' || seg === '.')) return null;
+
+  const normalizedSubpath = rawSubpath.startsWith('/') ? rawSubpath : `/${rawSubpath}`;
+  let parsed;
+  try {
+    parsed = new URL(`${PROTON_BASE_URL}${normalizedSubpath}`);
+  } catch {
+    return null;
+  }
+
+  if (parsed.protocol !== 'https:' || parsed.hostname !== PROTON_API_HOST) return null;
+  if (parsed.username !== '' || parsed.password !== '') return null;
+  if (parsed.pathname !== '/api' && !parsed.pathname.startsWith('/api/')) return null;
+
+  return parsed.toString();
+}
+
+/**
  * Transparent Stateless Proxy for Proton Mail API v4.
- * Forwards requests from WoxMail client to https://mail-api.proton.me
- * Attaches required Proton headers:
- * - x-pm-appversion: web-mail@5.0.0
- * - x-pm-apiversion: 3
- * Pass-through of Authorization (Bearer token), x-pm-uid, Content-Type.
- * Strictly non-logging (zero credential retention).
+ * Forwards authenticated requests to https://mail.proton.me/api
  */
 router.all('/*', async (req, res) => {
-  const targetPath = req.originalUrl.replace(/^\/api\/proton/, '');
-  const url = `${PROTON_BASE_URL}${targetPath}`;
+  const url = buildValidatedProtonUrl(req.url || '/');
+  if (!url) {
+    return res.status(400).json({ error: 'Invalid Proton proxy target path.' });
+  }
 
   const headers = {
-    'Host': PROTON_API_HOST,
     'Accept': 'application/vnd.protonmail.v1+json',
     'x-pm-appversion': 'linux-bridge@3.4.0',
     'x-pm-apiversion': '3',
     'User-Agent': 'ProtonBridge/3.4.0',
   };
 
-  if (req.headers['authorization']) {
+  if (req.headers['authorization'] && !/[\r\n]/.test(String(req.headers['authorization']))) {
     headers['Authorization'] = req.headers['authorization'];
   }
-  if (req.headers['x-pm-uid']) {
+  if (req.headers['x-pm-uid'] && !/[\r\n]/.test(String(req.headers['x-pm-uid']))) {
     headers['x-pm-uid'] = req.headers['x-pm-uid'];
   }
-  if (req.headers['content-type']) {
+  if (req.headers['content-type'] && !/[\r\n]/.test(String(req.headers['content-type']))) {
     headers['Content-Type'] = req.headers['content-type'];
   }
 
@@ -236,6 +400,8 @@ router.all('/*', async (req, res) => {
     const fetchOptions = {
       method: req.method,
       headers,
+      redirect: 'manual',
+      signal: AbortSignal.timeout(15000),
     };
 
     if (['POST', 'PUT', 'PATCH'].includes(req.method) && req.body) {

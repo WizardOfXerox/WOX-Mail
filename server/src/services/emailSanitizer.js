@@ -35,18 +35,51 @@ function cleanUrlParams(rawUrl) {
   }
 }
 
+function stripUnsafeCss(cssText, blockRemoteUrls) {
+  if (!cssText || typeof cssText !== 'string') return '';
+  let out = cssText
+    .replace(/@import\b[^;]*(;|$)/gi, '/* @import blocked */')
+    .replace(/expression\s*\([^)]*\)/gi, 'none')
+    .replace(/javascript\s*:/gi, 'blocked:')
+    .replace(/vbscript\s*:/gi, 'blocked:');
+
+  if (blockRemoteUrls) {
+    out = out.replace(/url\(\s*(['"]?)\s*([^)'"]*?)\s*\1\s*\)/gi, (full, _q, inner) => {
+      const trimmed = (inner || '').trim();
+      const lower = trimmed.toLowerCase();
+      if (lower.startsWith('data:') || lower.startsWith('cid:') || lower.startsWith('#')) {
+        return full;
+      }
+      return 'none';
+    });
+  }
+  return out;
+}
+
+function isDangerousScheme(val) {
+  if (!val || typeof val !== 'string') return false;
+  const normalized = val.replace(/[\u0000-\u0020]+/g, '').toLowerCase();
+  return (
+    normalized.startsWith('javascript:') ||
+    normalized.startsWith('vbscript:') ||
+    normalized.startsWith('data:text/html') ||
+    normalized.startsWith('data:application/')
+  );
+}
+
 /**
  * Sanitize HTML email content for safe rendering.
  * Strips XSS vectors while preserving legitimate formatting.
  *
  * @param {string} html - Raw HTML email body
  * @param {object} [options]
- * @param {boolean} [options.loadImages=false] - Whether to allow external images
+ * @param {boolean} [options.loadImages=true] - Whether to allow external images
+ * @param {boolean} [options.proxyImages=false] - Whether to rewrite remote image URLs through proxyBase
  * @param {string} [options.proxyBase='/api/mail/proxy-image'] - Image proxy URL base
  * @returns {{ html: string, trackers: number }}
  */
 export function sanitizeEmail(html, options = {}) {
-  const { loadImages = true, allowScripts = false, proxyBase = '/api/mail/proxy-image' } = options;
+  const { loadImages = true, proxyImages = false, proxyBase = '/api/mail/proxy-image' } = options;
   let trackerCount = 0;
 
   if (!html) return { html: '', trackers: 0 };
@@ -60,11 +93,7 @@ export function sanitizeEmail(html, options = {}) {
     'u', 'ul', 'font', 'center', 'style', 'svg', 'path', 'circle', 'rect',
   ];
 
-  if (allowScripts) {
-    allowedTags.push('script', 'form', 'input', 'textarea', 'button', 'select', 'canvas', 'noscript');
-  }
-
-  // DOMPurify config — preserve email CSS layouts, tables, and typography
+  // DOMPurify config — scripts, forms, interactive controls, and event handlers are ALWAYS forbidden
   const clean = DOMPurify.sanitize(html, {
     ALLOWED_TAGS: allowedTags,
     ALLOWED_ATTR: [
@@ -72,17 +101,61 @@ export function sanitizeEmail(html, options = {}) {
       'class', 'colspan', 'rowspan', 'align', 'valign', 'border',
       'cellpadding', 'cellspacing', 'bgcolor', 'background', 'color', 'face',
       'size', 'dir', 'target', 'viewBox', 'xmlns', 'fill', 'stroke', 'stroke-width',
-      'data-original-src', 'data-loaded', 'type', 'id', 'name', 'value', 'placeholder', 'action', 'method',
+      'data-original-src', 'data-loaded', 'id',
     ],
     ALLOW_DATA_ATTR: true,
     ADD_ATTR: ['target'],
-    FORBID_TAGS: allowScripts ? ['iframe', 'object', 'embed', 'applet'] : ['script', 'iframe', 'form', 'input', 'textarea', 'button', 'select', 'object', 'embed', 'applet'],
-    FORBID_ATTR: allowScripts ? [] : ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur'],
+    FORBID_TAGS: [
+      'script', 'iframe', 'frame', 'frameset', 'object', 'embed', 'applet',
+      'form', 'input', 'textarea', 'button', 'select', 'option', 'canvas',
+      'noscript', 'meta', 'base', 'link', 'foreignObject', 'animate',
+      'animateMotion', 'animateTransform', 'set', 'use',
+    ],
+    FORBID_ATTR: [
+      'onerror', 'onload', 'onclick', 'onmouseover', 'onmouseenter', 'onmouseleave',
+      'onfocus', 'onblur', 'onsubmit', 'onchange', 'oninput', 'onkeydown', 'onkeyup',
+      'action', 'method', 'formaction',
+    ],
   });
 
   // Parse sanitized HTML for further processing
   const dom = new JSDOM(clean);
   const doc = dom.window.document;
+
+  // Defense-in-depth: strip any residual on* handlers, dangerous URI schemes, and CSS remote fetches
+  doc.querySelectorAll('*').forEach((el) => {
+    for (const attr of Array.from(el.attributes)) {
+      const nameLower = attr.name.toLowerCase();
+      if (nameLower.startsWith('on')) {
+        el.removeAttribute(attr.name);
+        continue;
+      }
+      if (['href', 'src', 'xlink:href', 'background'].includes(nameLower) && isDangerousScheme(attr.value)) {
+        el.removeAttribute(attr.name);
+        continue;
+      }
+      if (nameLower === 'style') {
+        const sanitizedStyle = stripUnsafeCss(attr.value, !loadImages);
+        if (sanitizedStyle) {
+          el.setAttribute('style', sanitizedStyle);
+        } else {
+          el.removeAttribute('style');
+        }
+      }
+      if (!loadImages && nameLower === 'background') {
+        const bgVal = attr.value.trim();
+        if (bgVal.startsWith('http://') || bgVal.startsWith('https://') || bgVal.startsWith('//')) {
+          el.setAttribute('data-original-background', bgVal);
+          el.removeAttribute('background');
+        }
+      }
+    }
+  });
+
+  // Sanitize <style> blocks (strip @import / expression, and neutralize remote url() when images blocked)
+  doc.querySelectorAll('style').forEach((styleEl) => {
+    styleEl.textContent = stripUnsafeCss(styleEl.textContent || '', !loadImages);
+  });
 
   // Process all links — clean tracking query params and force safe rel
   doc.querySelectorAll('a').forEach((a) => {
@@ -98,13 +171,19 @@ export function sanitizeEmail(html, options = {}) {
   doc.querySelectorAll('img').forEach((img) => {
     const src = img.getAttribute('src') || img.getAttribute('data-original-src') || '';
 
-    // Strip invisible 1x1 tracking pixels
-    const width = parseInt(img.getAttribute('width'), 10) || 0;
-    const height = parseInt(img.getAttribute('height'), 10) || 0;
+    // Strip invisible 0x0 / 1x1 tracking pixels ONLY when width or height attribute is explicitly present
+    const hasWidth = img.hasAttribute('width');
+    const hasHeight = img.hasAttribute('height');
+    const rawWidth = hasWidth ? parseInt(img.getAttribute('width'), 10) : NaN;
+    const rawHeight = hasHeight ? parseInt(img.getAttribute('height'), 10) : NaN;
+    const isDimensionTracker =
+      (hasWidth || hasHeight) &&
+      (!hasWidth || (!Number.isNaN(rawWidth) && rawWidth <= 1)) &&
+      (!hasHeight || (!Number.isNaN(rawHeight) && rawHeight <= 1));
+
     const isTracker =
-      (width === 1 && height === 1) ||
-      (width === 0 && height === 0 && !img.getAttribute('alt')) ||
-      TRACKING_DOMAINS.some((d) => src.includes(d));
+      isDimensionTracker ||
+      TRACKING_DOMAINS.some((d) => src.toLowerCase().includes(d));
 
     if (isTracker) {
       img.remove();
@@ -117,9 +196,10 @@ export function sanitizeEmail(html, options = {}) {
       return;
     }
 
-    if (src.startsWith('http://') || src.startsWith('https://')) {
+    if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('//')) {
+      const normalizedRemoteSrc = src.startsWith('//') ? `https:${src}` : src;
       if (!loadImages) {
-        img.setAttribute('data-original-src', src);
+        img.setAttribute('data-original-src', normalizedRemoteSrc);
         img.setAttribute('src', '');
         const existingClass = img.getAttribute('class') || '';
         if (!existingClass.includes('blocked-image')) {
@@ -127,7 +207,10 @@ export function sanitizeEmail(html, options = {}) {
         }
         img.setAttribute('alt', img.getAttribute('alt') || '[Remote image blocked — Click to load]');
       } else {
-        img.setAttribute('src', src);
+        const finalSrc = proxyImages && !normalizedRemoteSrc.startsWith(proxyBase)
+          ? `${proxyBase}${proxyBase.includes('?') ? '&' : '?'}url=${encodeURIComponent(normalizedRemoteSrc)}`
+          : normalizedRemoteSrc;
+        img.setAttribute('src', finalSrc);
         img.removeAttribute('data-original-src');
         img.setAttribute('data-loaded', 'true');
         const existingClass = img.getAttribute('class') || '';

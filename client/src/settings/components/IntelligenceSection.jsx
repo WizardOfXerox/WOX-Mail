@@ -9,35 +9,76 @@ export default function IntelligenceSection() {
   const [summariesEnabled, setSummariesEnabled] = useState(true);
   const [testText, setTestText] = useState('hey john can we talk about the project deadline tomorrow thx');
   const [testedOutput, setTestedOutput] = useState(null);
+  const [testError, setTestError] = useState(null);
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(null);
+  const [error, setError] = useState(null);
+  const [configStatus, setConfigStatus] = useState({
+    synced: false,
+    savedProvider: null,
+    savedTone: null,
+    lastSavedAt: null,
+  });
 
   useEffect(() => {
+    let active = true;
     get('/api/settings/preferences')
       .then((res) => {
+        if (!active) return;
         const p = res.preferences || {};
         if (p.aiProvider) setProvider(p.aiProvider);
         if (p.aiDefaultTone) setDefaultTone(p.aiDefaultTone);
         if (p.aiSmartReplies !== undefined) setSmartRepliesEnabled(p.aiSmartReplies);
         if (p.aiSummaries !== undefined) setSummariesEnabled(p.aiSummaries);
+        setConfigStatus({
+          synced: true,
+          savedProvider: p.aiProvider || 'auto',
+          savedTone: p.aiDefaultTone || 'professional',
+          lastSavedAt: null,
+        });
       })
-      .catch(() => {});
+      .catch((err) => {
+        if (!active) return;
+        setConfigStatus((prev) => ({ ...prev, synced: false }));
+        setError(err.message || 'Could not load AI backend preferences.');
+      });
+    return () => { active = false; };
   }, []);
 
   const handleTestTone = async () => {
+    setTestError(null);
+    setTestedOutput(null);
+
+    const trimmed = (testText || '').trim();
+    if (!trimmed) {
+      setTestError('Please enter sample email text before testing AI rewrite.');
+      return;
+    }
+    if (trimmed.length < 5) {
+      setTestError('Please enter at least 5 characters of sample text to rewrite.');
+      return;
+    }
+    if ((provider === 'gemini' || provider === 'openai') && apiKey && apiKey.trim().length < 10) {
+      setTestError('Custom API key looks incomplete. Enter a valid key or leave blank to use server defaults.');
+      return;
+    }
+
     try {
       setTesting(true);
-      setTestedOutput(null);
       const res = await post('/api/ai/rewrite', {
-        text: testText,
+        text: trimmed,
         tone: defaultTone,
         provider,
-        apiKey
+        apiKey: apiKey.trim() || undefined,
       });
+      if (!res?.rewritten) {
+        setTestError('AI backend returned an empty rewrite response.');
+        return;
+      }
       setTestedOutput(res.rewritten);
     } catch (err) {
-      setTestedOutput(`Error: ${err.message}`);
+      setTestError(err.message || 'Tone rewrite test failed.');
     } finally {
       setTesting(false);
     }
@@ -46,6 +87,8 @@ export default function IntelligenceSection() {
   const handleSave = async () => {
     try {
       setSaving(true);
+      setError(null);
+      setSuccess(null);
       await put('/api/settings/preferences', {
         preferences: {
           aiProvider: provider,
@@ -54,14 +97,24 @@ export default function IntelligenceSection() {
           aiSummaries: summariesEnabled
         }
       });
+      setConfigStatus({
+        synced: true,
+        savedProvider: provider,
+        savedTone: defaultTone,
+        lastSavedAt: new Date().toLocaleTimeString(),
+      });
       setSuccess('AI Intelligence settings saved successfully!');
       setTimeout(() => setSuccess(null), 4000);
     } catch (err) {
-      console.warn('Failed to save AI preferences:', err.message);
+      setError(err.message || 'Failed to save AI preferences.');
     } finally {
       setSaving(false);
     }
   };
+
+  const hasUnsavedChanges =
+    configStatus.synced &&
+    (configStatus.savedProvider !== provider || configStatus.savedTone !== defaultTone);
 
   return (
     <div className="settings-section">
@@ -72,6 +125,25 @@ export default function IntelligenceSection() {
         </p>
       </div>
 
+      {/* Backend Configuration Status Bar */}
+      <div className="card" style={{ marginBottom: '1.25rem', padding: '0.9rem 1.15rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '0.8125rem', fontWeight: 600 }}>AI Backend Status:</span>
+          <span className={`badge ${configStatus.synced ? 'badge-green' : 'badge-amber'}`}>
+            {configStatus.synced ? (hasUnsavedChanges ? 'Unsaved Changes' : 'Persisted to Profile') : 'Local Defaults'}
+          </span>
+          <span className="text-secondary" style={{ fontSize: '0.8125rem' }}>
+            Provider: <strong className="mono">{provider}</strong> · Tone: <strong style={{ textTransform: 'capitalize' }}>{defaultTone}</strong>
+          </span>
+        </div>
+        {configStatus.lastSavedAt && (
+          <span className="text-tertiary" style={{ fontSize: '0.75rem' }}>
+            Last saved at {configStatus.lastSavedAt}
+          </span>
+        )}
+      </div>
+
+      {error && <div className="toast toast-error" style={{ position: 'static', marginBottom: '1.5rem', width: '100%' }}>{error}</div>}
       {success && <div className="toast toast-success" style={{ position: 'static', marginBottom: '1.5rem', width: '100%' }}>{success}</div>}
 
       {/* Provider Selector */}
@@ -190,6 +262,12 @@ export default function IntelligenceSection() {
             {testing ? 'Rewriting with AI...' : `Rewrite in ${defaultTone} tone`}
           </button>
         </div>
+
+        {testError && (
+          <div className="toast toast-error" style={{ position: 'static', marginBottom: '1rem', width: '100%' }}>
+            {testError}
+          </div>
+        )}
 
         {testedOutput && (
           <div style={{ padding: '1rem', background: 'var(--color-bg-page)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', fontSize: '0.875rem', whiteSpace: 'pre-wrap' }}>

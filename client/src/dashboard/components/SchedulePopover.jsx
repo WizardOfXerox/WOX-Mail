@@ -122,7 +122,11 @@ export default function SchedulePopover({ onSchedule, onClose, anchorRect }) {
             className="input"
             value={customDateTime}
             onChange={(e) => setCustomDateTime(e.target.value)}
-            min={new Date().toISOString().slice(0, 16)}
+            min={(() => {
+              const now = new Date();
+              const pad = (n) => String(n).padStart(2, '0');
+              return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+            })()}
             required
             autoFocus
           />

@@ -166,4 +166,84 @@ document.addEventListener('DOMContentLoaded', () => {
       btnDecryptPgp.textContent = 'Decrypt Ciphertext';
     }
   });
+
+  // PGP Key Vault Sync with WoxMail
+  const btnSyncPgp = document.getElementById('btn-sync-pgp');
+  const pgpSyncStatus = document.getElementById('pgp-sync-status');
+  const pgpVaultInfo = document.getElementById('pgp-vault-info');
+
+  if (chrome.storage && chrome.storage.local) {
+    chrome.storage.local.get(['pgpKeyVault'], (res) => {
+      if (res && res.pgpKeyVault) {
+        const vault = res.pgpKeyVault;
+        if (vault.fingerprint) {
+          pgpVaultInfo.textContent = `Vault: Key ID ${vault.fingerprint.slice(-8)}`;
+          pgpVaultInfo.style.display = 'block';
+        } else if (vault.publicKey) {
+          pgpVaultInfo.textContent = 'Vault: Public key stored';
+          pgpVaultInfo.style.display = 'block';
+        }
+      }
+    });
+  }
+
+  if (btnSyncPgp) {
+    btnSyncPgp.addEventListener('click', async () => {
+      btnSyncPgp.disabled = true;
+      btnSyncPgp.textContent = 'Syncing...';
+      if (pgpSyncStatus) pgpSyncStatus.style.display = 'none';
+
+      try {
+        const apiBase = (settingApiBase?.value?.trim()) || DEFAULT_API_BASE;
+        const res = await fetch(`${apiBase}/api/settings/pgp`, {
+          credentials: 'include',
+        });
+        if (!res.ok) {
+          throw new Error(`Server returned HTTP ${res.status}`);
+        }
+        const data = await res.json();
+
+        const vaultData = {
+          publicKey: data.pgpPublicKey || '',
+          pgpEnabled: Boolean(data.pgpEnabled),
+          fingerprint: data.fingerprint || null,
+          syncedAt: Date.now(),
+        };
+
+        if (chrome.storage && chrome.storage.local) {
+          await new Promise((resolve) => {
+            chrome.storage.local.set({ pgpKeyVault: vaultData }, resolve);
+          });
+        }
+
+        if (pgpSyncStatus) {
+          pgpSyncStatus.textContent = 'PGP Keys Synced with WoxMail!';
+          pgpSyncStatus.style.color = '#22c55e';
+          pgpSyncStatus.style.display = 'block';
+        }
+
+        if (pgpVaultInfo) {
+          if (data.fingerprint) {
+            pgpVaultInfo.textContent = `Fingerprint: ${data.fingerprint}`;
+            pgpVaultInfo.style.display = 'block';
+          } else if (data.pgpPublicKey) {
+            pgpVaultInfo.textContent = 'Public Key synced and ready';
+            pgpVaultInfo.style.display = 'block';
+          } else {
+            pgpVaultInfo.textContent = 'No PGP key configured on server';
+            pgpVaultInfo.style.display = 'block';
+          }
+        }
+      } catch (err) {
+        if (pgpSyncStatus) {
+          pgpSyncStatus.textContent = `Sync failed: ${err.message || 'Connection error'}`;
+          pgpSyncStatus.style.color = '#ef4444';
+          pgpSyncStatus.style.display = 'block';
+        }
+      } finally {
+        btnSyncPgp.disabled = false;
+        btnSyncPgp.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg> Sync with WoxMail`;
+      }
+    });
+  }
 });

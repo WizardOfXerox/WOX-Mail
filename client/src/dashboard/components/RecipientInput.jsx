@@ -190,6 +190,10 @@ export default function RecipientInput({
       }
     }
 
+    if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+    }
+
     if (onKeyDown) onKeyDown(e);
   };
 

@@ -1,10 +1,43 @@
 import { ImapFlow } from 'imapflow';
 import pino from 'pino';
+import { setex, get as redisGet } from '../config/redis.js';
 
 const logger = pino({ name: 'woxmail:migration' });
 
 // Global in-memory active migration jobs
 const activeMigrations = new Map();
+
+/**
+ * Extract clean, serializable migration state snapshot (stripping IMAP client handles).
+ */
+function getJobSnapshot(job) {
+  return {
+    userId: job.userId,
+    status: job.status,
+    currentFolder: job.currentFolder,
+    totalFolders: job.totalFolders,
+    completedFolders: job.completedFolders,
+    totalMessages: job.totalMessages,
+    migratedMessages: job.migratedMessages,
+    skippedMessages: job.skippedMessages,
+    errors: job.errors || [],
+    startedAt: job.startedAt,
+    completedAt: job.completedAt || null,
+    isCancelled: Boolean(job.isCancelled)
+  };
+}
+
+/**
+ * Persist migration state snapshot to Redis with 30-minute TTL.
+ */
+async function saveMigrationSnapshot(userId, job) {
+  try {
+    const snapshot = getJobSnapshot(job);
+    await setex(`migration:${userId}`, 1800, JSON.stringify(snapshot));
+  } catch (err) {
+    logger.warn({ err: err.message, userId }, 'Failed to persist migration state snapshot to Redis');
+  }
+}
 
 /**
  * Test credentials and fetch mailbox hierarchy from a source IMAP server.
@@ -73,9 +106,41 @@ export function autoMapFolders(sourceFolders = []) {
 
 /**
  * Get active migration job state.
+ * First checks in-memory activeMigrations (for local live client),
+ * and if not found, checks Redis so multiple server instances / workers can report migration progress.
  */
 export function getMigrationState(userId) {
-  return activeMigrations.get(userId) || null;
+  const local = activeMigrations.get(userId);
+  if (local) {
+    return local;
+  }
+
+  // Not in local activeMigrations: check Redis asynchronously
+  const promise = (async () => {
+    try {
+      const cached = await redisGet(`migration:${userId}`);
+      if (cached) {
+        return typeof cached === 'string' ? JSON.parse(cached) : cached;
+      }
+    } catch (err) {
+      logger.warn({ err: err.message, userId }, 'Failed reading migration state from Redis');
+    }
+    return null;
+  })();
+
+  // Synchronous fallback properties for callers that inspect job properties immediately
+  promise.status = 'idle';
+  promise.currentFolder = '';
+  promise.totalFolders = 0;
+  promise.completedFolders = 0;
+  promise.totalMessages = 0;
+  promise.migratedMessages = 0;
+  promise.skippedMessages = 0;
+  promise.errors = [];
+  promise.startedAt = null;
+  promise.completedAt = null;
+
+  return promise;
 }
 
 /**
@@ -89,8 +154,22 @@ export async function cancelMigration(userId) {
     if (job.sourceClient) {
       await job.sourceClient.logout().catch(() => {});
     }
+    await saveMigrationSnapshot(userId, job);
     return true;
   }
+
+  // Also check if remote instance migration can be marked cancelled in Redis
+  try {
+    const cached = await redisGet(`migration:${userId}`);
+    if (cached) {
+      const parsed = typeof cached === 'string' ? JSON.parse(cached) : cached;
+      parsed.isCancelled = true;
+      parsed.status = 'cancelled';
+      await setex(`migration:${userId}`, 1800, JSON.stringify(parsed));
+      return true;
+    }
+  } catch {}
+
   return false;
 }
 
@@ -121,6 +200,8 @@ export async function startMigration(userId, sourceConfig, folderMapping, target
   };
 
   activeMigrations.set(userId, job);
+  // Persist initial state snapshot to Redis
+  await saveMigrationSnapshot(userId, job);
 
   // Run asynchronously
   (async () => {
@@ -138,11 +219,14 @@ export async function startMigration(userId, sourceConfig, folderMapping, target
     try {
       await sourceClient.connect();
 
+      let lastRedisSync = Date.now();
+
       for (const mapping of folderMapping) {
         if (job.isCancelled) break;
 
         const { source, target } = mapping;
         job.currentFolder = source;
+        saveMigrationSnapshot(userId, job).catch(() => {});
 
         // Ensure target folder exists
         try {
@@ -179,6 +263,13 @@ export async function startMigration(userId, sourceConfig, folderMapping, target
               if (onProgress) {
                 onProgress(job);
               }
+
+              // Periodic progress snapshot to Redis (throttled to 1s)
+              const now = Date.now();
+              if (now - lastRedisSync > 1000) {
+                lastRedisSync = now;
+                saveMigrationSnapshot(userId, job).catch(() => {});
+              }
             }
           }
         } catch (folderErr) {
@@ -189,20 +280,24 @@ export async function startMigration(userId, sourceConfig, folderMapping, target
         }
 
         job.completedFolders++;
+        saveMigrationSnapshot(userId, job).catch(() => {});
       }
 
       job.status = job.isCancelled ? 'cancelled' : 'completed';
       job.completedAt = new Date();
+      await saveMigrationSnapshot(userId, job);
       logger.info({ userId, migrated: job.migratedMessages, errors: job.errors.length }, 'Migration finished');
     } catch (err) {
       job.status = 'failed';
       job.errors.push(`Fatal migration error: ${err.message}`);
+      await saveMigrationSnapshot(userId, job);
       logger.error({ userId, err: err.message }, 'Fatal migration failure');
     } finally {
       await sourceClient.logout().catch(() => {});
       if (targetClient) await targetClient.logout().catch(() => {});
       job.sourceClient = null;
       if (onProgress) onProgress(job);
+      await saveMigrationSnapshot(userId, job);
       // Auto-purge job from activeMigrations after 30 minutes retention to prevent memory leak
       setTimeout(() => {
         if (activeMigrations.get(userId) === job) {

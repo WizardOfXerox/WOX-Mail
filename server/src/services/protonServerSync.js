@@ -5,20 +5,61 @@ const { chromium } = require('playwright');
 import { query } from '../config/database.js';
 import { decryptCredentials } from './accountService.js';
 
-// Map of active browser sessions per user email
+// Map of active browser sessions keyed by `${userId}:${email}` (or legacy `email`)
 export const activeSessions = new Map();
+
+const SESSION_IDLE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const SESSION_CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+export function getProtonSessionKey(email, userId = null) {
+  const cacheKey = String(email || '').toLowerCase().trim();
+  return userId !== undefined && userId !== null ? `${userId}:${cacheKey}` : cacheKey;
+}
+
+const sessionCleanupTimer = setInterval(async () => {
+  const now = Date.now();
+  for (const [key, session] of activeSessions.entries()) {
+    const lastActive = session.lastActive || 0;
+    if (now - lastActive > SESSION_IDLE_TTL_MS) {
+      activeSessions.delete(key);
+      if (session?.browser) {
+        await session.browser.close().catch(() => {});
+      }
+    }
+  }
+}, SESSION_CLEANUP_INTERVAL_MS);
+
+if (sessionCleanupTimer.unref) {
+  sessionCleanupTimer.unref();
+}
+
+/**
+ * Gracefully close all active Playwright Chromium Proton sessions.
+ */
+export async function closeAllProtonSessions() {
+  clearInterval(sessionCleanupTimer);
+  const closers = [];
+  for (const [key, session] of activeSessions.entries()) {
+    activeSessions.delete(key);
+    if (session?.browser) {
+      closers.push(session.browser.close().catch(() => {}));
+    }
+  }
+  await Promise.allSettled(closers);
+}
 
 /**
  * Perform genuine authenticated login into Proton Mail.
  */
-export async function authenticateProtonAccount(email, password) {
-  const cacheKey = email.toLowerCase().trim();
+export async function authenticateProtonAccount(email, password, userId = null) {
+  const cacheKey = String(email || '').toLowerCase().trim();
+  const sessionKey = getProtonSessionKey(cacheKey, userId);
 
   // Close existing browser if any
-  if (activeSessions.has(cacheKey)) {
-    const prev = activeSessions.get(cacheKey);
+  if (activeSessions.has(sessionKey)) {
+    const prev = activeSessions.get(sessionKey);
     await prev.browser.close().catch(() => {});
-    activeSessions.delete(cacheKey);
+    activeSessions.delete(sessionKey);
   }
 
   const browser = await chromium.launch({
@@ -55,7 +96,7 @@ export async function authenticateProtonAccount(email, password) {
   try {
     await page.goto('https://account.proton.me/login', { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('input#username', { timeout: 15000 });
-    await page.fill('input#username', email);
+    await page.fill('input#username', cacheKey);
     await page.fill('input#password', password);
     await page.click('button[type="submit"]');
 
@@ -63,15 +104,42 @@ export async function authenticateProtonAccount(email, password) {
     await page.waitForTimeout(6000);
 
     // Check if 2FA code is needed
-    const is2FA = await page.locator('input[type="text"][autocomplete="one-time-code"]').count();
+    const is2FA = await page.locator('input[type="text"][autocomplete="one-time-code"], input#twoFactorCode, input[data-testid="totp-input"]').count();
     if (is2FA > 0) {
-      activeSessions.set(cacheKey, { browser, context, page, pending2FA: true });
-      return { requires2FA: true };
+      activeSessions.set(sessionKey, {
+        browser,
+        context,
+        page,
+        email: cacheKey,
+        emailKey: cacheKey,
+        userId,
+        pending2FA: true,
+        uid,
+        addresses,
+        lastActive: Date.now(),
+      });
+      return { requires2FA: true, email: cacheKey };
+    }
+
+    // Check if login failed with an error banner while still on account.proton.me
+    const currentUrl = page.url();
+    if (currentUrl.includes('account.proton.me/login')) {
+      const errBanner = page.locator('[role="alert"], .notification--error, .error-message').first();
+      const errMsg = (await errBanner.count()) > 0
+        ? (await errBanner.innerText().catch(() => '')).trim()
+        : '';
+      if (errMsg) {
+        throw new Error(errMsg);
+      }
     }
 
     // Navigate to mail app
     await page.goto('https://mail.proton.me/u/0/inbox', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(5000);
+
+    if (page.url().includes('account.proton.me/login')) {
+      throw new Error('Invalid Proton credentials or session rejected');
+    }
 
     if (!uid) {
       const cookies = await context.cookies();
@@ -79,11 +147,14 @@ export async function authenticateProtonAccount(email, password) {
       if (authCookie) uid = authCookie.name.replace('AUTH-', '');
     }
 
-    activeSessions.set(cacheKey, {
+    activeSessions.set(sessionKey, {
       browser,
       context,
       page,
-      email,
+      email: cacheKey,
+      emailKey: cacheKey,
+      userId,
+      pending2FA: false,
       uid,
       addresses,
       lastActive: Date.now(),
@@ -92,7 +163,7 @@ export async function authenticateProtonAccount(email, password) {
     return {
       success: true,
       uid,
-      email,
+      email: cacheKey,
       addresses,
     };
   } catch (err) {
@@ -102,32 +173,164 @@ export async function authenticateProtonAccount(email, password) {
 }
 
 /**
- * Ensure active browser session exists for the given Proton email.
+ * Submit TOTP 2FA code for a pending Playwright Proton login session.
+ */
+export async function submitProton2FA(email, code, userId = null) {
+  if (!email || !code) {
+    throw new Error('Proton email and 2FA code are required.');
+  }
+  const cacheKey = String(email).toLowerCase().trim();
+  const sessionKey = getProtonSessionKey(cacheKey, userId);
+  const session = activeSessions.get(sessionKey);
+
+  if (!session || !session.pending2FA || !session.page || session.page.isClosed()) {
+    throw new Error('No pending Proton 2FA session found. Please login again.');
+  }
+
+  const { browser, context, page } = session;
+  session.lastActive = Date.now();
+
+  let uid = session.uid || null;
+  let addresses = Array.isArray(session.addresses) ? session.addresses : [];
+
+  const responseListener = async (res) => {
+    const url = res.url();
+    if (url.includes('/api/core/v4/auth') && res.request().method() === 'POST') {
+      try {
+        const data = await res.json();
+        if (data.UID) uid = data.UID;
+      } catch {}
+    }
+    if (url.includes('/api/core/v4/addresses')) {
+      try {
+        const data = await res.json();
+        if (data.Addresses) addresses = data.Addresses;
+      } catch {}
+    }
+  };
+  page.on('response', responseListener);
+
+  try {
+    const totpInput = page.locator('input[type="text"][autocomplete="one-time-code"], input#twoFactorCode, input[data-testid="totp-input"], input[autocomplete="one-time-code"]').first();
+    await totpInput.waitFor({ state: 'visible', timeout: 8000 });
+    await totpInput.fill(String(code).trim());
+
+    const submitBtn = page.locator('button[type="submit"]').first();
+    if (await submitBtn.count() > 0) {
+      await submitBtn.click();
+    } else {
+      await page.keyboard.press('Enter');
+    }
+
+    await page.waitForTimeout(5000);
+
+    const still2FA = await page.locator('input[type="text"][autocomplete="one-time-code"], input#twoFactorCode, input[data-testid="totp-input"]').count();
+    if (still2FA > 0) {
+      throw new Error('Invalid or expired Proton 2FA code.');
+    }
+
+    if (!page.url().includes('mail.proton.me')) {
+      await page.goto('https://mail.proton.me/u/0/inbox', { waitUntil: 'domcontentloaded' });
+      await page.waitForTimeout(4000);
+    }
+
+    if (page.url().includes('account.proton.me/login')) {
+      throw new Error('Proton 2FA authentication did not establish a mail session.');
+    }
+
+    if (!uid) {
+      const cookies = await context.cookies();
+      const authCookie = cookies.find(c => c.name.startsWith('AUTH-'));
+      if (authCookie) uid = authCookie.name.replace('AUTH-', '');
+    }
+
+    activeSessions.set(sessionKey, {
+      browser,
+      context,
+      page,
+      email: cacheKey,
+      emailKey: cacheKey,
+      userId,
+      pending2FA: false,
+      uid,
+      addresses,
+      lastActive: Date.now(),
+    });
+
+    return {
+      success: true,
+      uid,
+      email: cacheKey,
+      addresses,
+    };
+  } finally {
+    page.off('response', responseListener);
+  }
+}
+
+/**
+ * Ensure active browser session exists for the given Proton email (strictly scoped by userId when provided).
  * Automatically restores session from connected_accounts if needed.
  */
-export async function ensureActiveProtonSession(email) {
+export async function ensureActiveProtonSession(email, userId = null) {
   if (!email) {
     throw new Error('Proton email address is required');
   }
-  const cacheKey = email.toLowerCase().trim();
-  let session = activeSessions.get(cacheKey);
+  const cacheKey = String(email).toLowerCase().trim();
+  const sessionKey = getProtonSessionKey(cacheKey, userId);
+
+  let session = activeSessions.get(sessionKey);
+
+  // If legacy internal caller omitted userId, check unambiguous active session for this email
+  if (!session && (userId === null || userId === undefined)) {
+    const matches = [];
+    for (const entry of activeSessions.values()) {
+      if (entry.emailKey === cacheKey && entry.page && !entry.page.isClosed()) {
+        matches.push(entry);
+      }
+    }
+    if (matches.length === 1) {
+      session = matches[0];
+    }
+  }
+
+  if (session?.pending2FA) {
+    throw new Error('Proton 2FA verification required. Please submit your 2FA code.');
+  }
 
   if (!session || !session.page || session.page.isClosed()) {
     try {
-      const connRes = await query(
-        `SELECT credentials_encrypted, iv, auth_tag FROM connected_accounts 
-         WHERE LOWER(email) = $1 AND provider = 'proton' AND is_active = TRUE LIMIT 1`,
-        [cacheKey]
-      );
-      if (connRes.rows.length > 0 && connRes.rows[0].credentials_encrypted) {
+      let connRes;
+      if (userId !== null && userId !== undefined) {
+        connRes = await query(
+          `SELECT user_id, credentials_encrypted, iv, auth_tag FROM connected_accounts
+           WHERE LOWER(email) = $1 AND user_id = $2 AND provider = 'proton' AND is_active = TRUE LIMIT 1`,
+          [cacheKey, userId]
+        );
+      } else {
+        connRes = await query(
+          `SELECT user_id, credentials_encrypted, iv, auth_tag FROM connected_accounts
+           WHERE LOWER(email) = $1 AND provider = 'proton' AND is_active = TRUE LIMIT 2`,
+          [cacheKey]
+        );
+      }
+
+      if (connRes.rows.length === 1 && connRes.rows[0].credentials_encrypted) {
+        const resolvedUserId = userId !== null && userId !== undefined ? userId : connRes.rows[0].user_id;
         const { credentials_encrypted, iv, auth_tag } = connRes.rows[0];
         const pass = decryptCredentials(credentials_encrypted, iv, auth_tag);
         if (pass) {
-          await authenticateProtonAccount(cacheKey, pass);
-          session = activeSessions.get(cacheKey);
+          const authRes = await authenticateProtonAccount(cacheKey, pass, resolvedUserId);
+          if (authRes?.requires2FA) {
+            throw new Error('Proton 2FA verification required. Please submit your 2FA code.');
+          }
+          session = activeSessions.get(getProtonSessionKey(cacheKey, resolvedUserId));
         }
       }
     } catch (autoErr) {
+      if (autoErr.message?.includes('2FA')) {
+        throw autoErr;
+      }
       console.warn(`[ProtonSync] Auto-login for ${cacheKey} failed:`, autoErr.message);
     }
   }
@@ -135,15 +338,19 @@ export async function ensureActiveProtonSession(email) {
   if (!session || !session.page || session.page.isClosed()) {
     throw new Error('Proton session not active. Please unlock your mailbox.');
   }
+  if (session.pending2FA) {
+    throw new Error('Proton 2FA verification required. Please submit your 2FA code.');
+  }
 
+  session.lastActive = Date.now();
   return session;
 }
 
 /**
  * Fetch messages / conversations from live Proton session.
  */
-export async function getProtonMessages(email, labelId = '0', pageNum = 0, pageSize = 25) {
-  const session = await ensureActiveProtonSession(email);
+export async function getProtonMessages(email, labelId = '0', pageNum = 0, pageSize = 25, userId = null) {
+  const session = await ensureActiveProtonSession(email, userId);
   const uid = session.uid;
   const result = await session.page.evaluate(async ({ labelId, pageNum, pageSize, uid, userEmail }) => {
     try {
@@ -219,8 +426,8 @@ export async function getProtonMessages(email, labelId = '0', pageNum = 0, pageS
 /**
  * Fetch single conversation / message details with decrypted HTML body.
  */
-export async function getProtonMessageDetails(email, id) {
-  const session = await ensureActiveProtonSession(email);
+export async function getProtonMessageDetails(email, id, userId = null) {
+  const session = await ensureActiveProtonSession(email, userId);
   const page = session.page;
   const uid = session.uid;
 
@@ -262,12 +469,61 @@ export async function getProtonMessageDetails(email, id) {
     }
   }, { msgId: id, uid });
 
-  // 2. Open email in the browser page to extract decrypted HTML
+  const conv = meta.convData?.Conversation || {};
+  const firstMsg = meta.convData?.Messages?.[0] || meta.msgData?.Message || {};
+  const targetSubject = (firstMsg.Subject || conv.Subject || '').trim();
+  const candidateIds = [String(id), String(meta.firstMsgId || '')].filter(Boolean);
+
+  // 2. Locate and open the specific email in the browser page to extract decrypted HTML
   let decryptedHtml = '';
   try {
-    const itemSelector = `.item-container, tr[data-testid*="message-item"], [data-testid="message-item"]`;
-    if (await page.locator(itemSelector).count() > 0) {
-      await page.click(itemSelector).catch(() => {});
+    // Attempt 1: Match DOM element by exact ID attributes or href without clicking unrelated first item
+    const clickedSpecific = await page.evaluate(({ ids, subject }) => {
+      const rows = Array.from(
+        document.querySelectorAll('[data-element-id], [data-shortcut-target-id], [data-id], [data-message-id], .item-container, tr[data-testid*="message-item"], [data-testid="message-item"]')
+      );
+
+      for (const row of rows) {
+        const attrs = [
+          row.getAttribute('data-element-id'),
+          row.getAttribute('data-shortcut-target-id'),
+          row.getAttribute('data-id'),
+          row.getAttribute('data-message-id'),
+        ].filter(Boolean);
+        if (attrs.some((a) => ids.includes(a))) {
+          row.click();
+          return true;
+        }
+        const link = row.querySelector('a[href]');
+        const href = link?.getAttribute('href') || '';
+        if (href && ids.some((targetId) => href.includes(targetId))) {
+          (link || row).click();
+          return true;
+        }
+      }
+
+      if (subject) {
+        for (const row of rows) {
+          const subjectEl = row.querySelector('[data-testid="message-item:subject"], .item-subject');
+          if (subjectEl && subjectEl.textContent?.trim() === subject) {
+            row.click();
+            return true;
+          }
+        }
+      }
+
+      return false;
+    }, { ids: candidateIds, subject: targetSubject });
+
+    // Attempt 2: Direct conversation navigation if item isn't in current DOM page
+    let navigatedDirectly = false;
+    if (!clickedSpecific && id) {
+      const targetUrl = `https://mail.proton.me/u/0/all-mail/${encodeURIComponent(id)}`;
+      await page.goto(targetUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
+      navigatedDirectly = true;
+    }
+
+    if (clickedSpecific || navigatedDirectly) {
       await page.waitForTimeout(2500);
 
       decryptedHtml = await page.evaluate(() => {
@@ -287,8 +543,6 @@ export async function getProtonMessageDetails(email, id) {
     console.warn('[ProtonSync] DOM decryption extraction notice:', domErr.message);
   }
 
-  const conv = meta.convData?.Conversation || {};
-  const firstMsg = meta.convData?.Messages?.[0] || meta.msgData?.Message || {};
   const senderObj = firstMsg.Sender || conv.Senders?.[0] || {};
 
   return {
@@ -314,8 +568,8 @@ export async function getProtonMessageDetails(email, id) {
 /**
  * Fetch all active addresses / aliases from the Proton session (including custom handles, custom domains, SimpleLogin/Pass aliases).
  */
-export async function getProtonAddresses(email) {
-  const session = await ensureActiveProtonSession(email);
+export async function getProtonAddresses(email, userId = null) {
+  const session = await ensureActiveProtonSession(email, userId);
   const page = session.page;
   const discovered = new Set();
 
@@ -438,8 +692,8 @@ export async function getProtonAddresses(email) {
 /**
  * Send an email through the authenticated Proton Mail session.
  */
-export async function sendProtonMail(email, { from, to, cc, bcc, subject, text, html, attachments = [] }) {
-  const session = await ensureActiveProtonSession(email);
+export async function sendProtonMail(email, { from, to, cc, bcc, subject, text, html, attachments = [] }, userId = null) {
+  const session = await ensureActiveProtonSession(email, userId);
   const page = session.page;
 
   // Ensure page is on mail app (any valid user index /u/0, /u/1, etc.)
@@ -650,8 +904,8 @@ export async function sendProtonMail(email, { from, to, cc, bcc, subject, text, 
 
       for (let i = 0; i < attachments.length; i++) {
         const att = attachments[i];
-        const name = att.filename || `attachment_${i + 1}`;
-        const tempFilePath = path.join(os.tmpdir(), `wox_proton_${Date.now()}_${name}`);
+        const safeName = path.basename(att.filename || `attachment_${i + 1}`).replace(/[^a-zA-Z0-9._-]/g, '_');
+        const tempFilePath = path.join(os.tmpdir(), `wox_proton_${Date.now()}_${safeName}`);
         let buf = null;
         if (Buffer.isBuffer(att.content)) {
           buf = att.content;
@@ -685,44 +939,65 @@ export async function sendProtonMail(email, { from, to, cc, bcc, subject, text, 
     }
   }
 
-  // 5. Send message and await confirmation
+  // 5. Send message and await genuine confirmation
   let sendSucceeded = false;
+  let sendErrorMessage = null;
   let sentMessageId = `proton-${Date.now()}`;
 
   const responseHandler = async (res) => {
     try {
       const url = res.url();
-      if (url.includes('/api/mail/v4/messages') && res.request().method() === 'POST' && res.status() === 200) {
-        sendSucceeded = true;
+      if (url.includes('/api/mail/v4/messages') && res.request().method() === 'POST') {
+        const status = res.status();
         const data = await res.json().catch(() => ({}));
-        if (data?.Message?.ID) sentMessageId = data.Message.ID;
+        if (status >= 200 && status < 300 && (data?.Code === undefined || data.Code === 1000)) {
+          sendSucceeded = true;
+          if (data?.Message?.ID) sentMessageId = data.Message.ID;
+        } else if (status >= 400 || (data?.Code && data.Code !== 1000)) {
+          sendErrorMessage = data?.Error || `Proton Mail API returned status ${status}`;
+        }
       }
     } catch {}
   };
   page.on('response', responseHandler);
 
-  const sendBtn = page.locator('button[data-testid="composer:send-button"], button:has-text("Send")').first();
-  if (await sendBtn.count() > 0 && await sendBtn.isVisible()) {
-    await sendBtn.click({ force: true });
-  } else {
-    await page.keyboard.press('Control+Enter');
-  }
-
-  // Wait up to 10 seconds for confirmation
-  const startWait = Date.now();
-  while (Date.now() - startWait < 10000) {
-    if (sendSucceeded) break;
-    const isNotification = await page.locator('.notification__content, [role="alert"], [data-testid="notification"]').filter({ hasText: /sent|message sent/i }).count();
-    if (isNotification > 0) {
-      sendSucceeded = true;
-      break;
+  try {
+    const sendBtn = page.locator('button[data-testid="composer:send-button"], button:has-text("Send")').first();
+    if (await sendBtn.count() > 0 && await sendBtn.isVisible()) {
+      await sendBtn.click({ force: true });
+    } else {
+      await page.keyboard.press('Control+Enter');
     }
-    await page.waitForTimeout(500);
+
+    // Wait up to 12 seconds for confirmation or error
+    const startWait = Date.now();
+    while (Date.now() - startWait < 12000) {
+      if (sendSucceeded || sendErrorMessage) break;
+      const isNotification = await page.locator('.notification__content, [role="alert"], [data-testid="notification"]').filter({ hasText: /sent|message sent/i }).count();
+      if (isNotification > 0) {
+        sendSucceeded = true;
+        break;
+      }
+      const errNotif = page.locator('.notification--error, [role="alert"]').filter({ hasText: /error|fail|unable|invalid/i }).first();
+      if (await errNotif.count() > 0) {
+        const errText = (await errNotif.innerText().catch(() => '')).trim();
+        if (errText) {
+          sendErrorMessage = errText;
+          break;
+        }
+      }
+      await page.waitForTimeout(500);
+    }
+  } finally {
+    page.off('response', responseHandler);
   }
 
-  page.off('response', responseHandler);
-  // Ensure the composer has fully closed and UI is settled before completing
-  await page.waitForTimeout(2500);
+  if (!sendSucceeded) {
+    throw new Error(sendErrorMessage || 'Proton Mail did not confirm message delivery within timeout.');
+  }
+
+  // Ensure the composer has settled before completing
+  await page.waitForTimeout(1500);
 
   return {
     success: true,

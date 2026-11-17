@@ -179,9 +179,30 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
-// 6. Listen for manual skipWaiting messages
-self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting();
+// 6. Helper to broadcast messages to all active clients
+function notifyClients(type, payload = {}) {
+  return self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+    for (const client of clientList) {
+      client.postMessage({ type, ...payload });
+    }
+  });
+}
+
+// 7. Background Sync Event Listener (notifies clients when connection restored)
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'sync-outbox' || event.tag === 'SYNC_OUTBOX' || event.tag === 'woxmail-sync') {
+    event.waitUntil(notifyClients('SYNC_OUTBOX_TRIGGER'));
   }
 });
+
+// 8. Listen for messages from client (SKIP_WAITING and SYNC_OUTBOX)
+self.addEventListener('message', (event) => {
+  if (event.data) {
+    if (event.data.type === 'SKIP_WAITING') {
+      self.skipWaiting();
+    } else if (event.data.type === 'SYNC_OUTBOX') {
+      event.waitUntil(notifyClients('SYNC_OUTBOX_TRIGGER'));
+    }
+  }
+});
+

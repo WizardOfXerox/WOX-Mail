@@ -9,7 +9,9 @@ import { validate } from '../middleware/validate.js';
 import { query } from '../config/database.js';
 import { extractOTP } from '../utils/otpDetector.js';
 import crypto from 'crypto';
+import pino from 'pino';
 
+const logger = pino({ name: 'woxmail:sms' });
 const router = Router();
 
 /**
@@ -190,10 +192,10 @@ router.get('/messages', requireAuth, async (req, res, next) => {
 });
 
 /**
- * POST /api/sms/send
- * Queue outbound SMS via phone relay.
+ * POST /api/sms/send and POST /api/sms/messages/send
+ * Dispatch outbound SMS via TextBee API or SMS Webhook relay.
  */
-router.post('/send',
+router.post(['/send', '/messages/send'],
   requireAuth,
   validate({
     deviceId: { type: 'number', required: true },
@@ -212,16 +214,86 @@ router.post('/send',
       if (device.rows.length === 0) return res.status(404).json({ error: 'Device not found' });
 
       // Store outbound SMS record
-      await query(
+      const insertResult = await query(
         `INSERT INTO sms_messages (user_id, device_id, sender_phone, message_body, direction, received_at)
-         VALUES ($1, $2, $3, $4, 'outbound', NOW())`,
+         VALUES ($1, $2, $3, $4, 'outbound', NOW())
+         RETURNING id`,
         [req.user.id, deviceId, to, message]
       );
+      const smsId = insertResult.rows[0]?.id;
 
-      // TODO: Send via TextBee API to the phone for actual dispatch
-      // await textbee.send(device.rows[0].device_token, to, message);
+      // Check if external SMS gateway provider is configured
+      if (!process.env.TEXTBEE_API_KEY && !process.env.SMS_WEBHOOK_URL) {
+        return res.json({
+          message: 'SMS recorded in log (SMS gateway provider not configured on this host)',
+          queued: true,
+          smsId,
+        });
+      }
 
-      res.json({ message: 'SMS queued for sending' });
+      // Dispatch via configured SMS gateway
+      try {
+        let dispatchResult;
+        if (process.env.SMS_WEBHOOK_URL) {
+          const webhookRes = await fetch(process.env.SMS_WEBHOOK_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(process.env.SMS_WEBHOOK_SECRET ? { 'X-Webhook-Secret': process.env.SMS_WEBHOOK_SECRET } : {}),
+            },
+            body: JSON.stringify({
+              to,
+              message,
+              deviceId,
+              deviceToken: device.rows[0].device_token,
+              smsId,
+              timestamp: new Date().toISOString(),
+            }),
+          });
+
+          if (!webhookRes.ok) {
+            throw new Error(`SMS Webhook returned HTTP ${webhookRes.status}: ${webhookRes.statusText}`);
+          }
+          dispatchResult = { gateway: 'webhook', status: webhookRes.status };
+        } else if (process.env.TEXTBEE_API_KEY) {
+          const textbeeBaseUrl = process.env.TEXTBEE_BASE_URL || 'https://api.textbee.dev/api/v1';
+          const deviceToken = device.rows[0].device_token;
+          const endpoint = `${textbeeBaseUrl}/gateway/devices/${encodeURIComponent(deviceToken)}/send-sms`;
+
+          const textbeeRes = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': process.env.TEXTBEE_API_KEY,
+            },
+            body: JSON.stringify({
+              recipients: [to],
+              message,
+            }),
+          });
+
+          if (!textbeeRes.ok) {
+            throw new Error(`TextBee API returned HTTP ${textbeeRes.status}: ${textbeeRes.statusText}`);
+          }
+          dispatchResult = { gateway: 'textbee', status: textbeeRes.status };
+        }
+
+        logger.info({ smsId, to, deviceId, gateway: dispatchResult?.gateway }, 'Outbound SMS dispatched successfully');
+        return res.json({
+          message: 'SMS sent successfully via gateway',
+          queued: false,
+          smsId,
+          gateway: dispatchResult?.gateway,
+        });
+      } catch (dispatchErr) {
+        logger.error({ err: dispatchErr.message, smsId, to, deviceId }, 'Failed to dispatch outbound SMS via gateway provider');
+        return res.status(502).json({
+          error: 'Failed to dispatch outbound SMS via gateway provider',
+          details: dispatchErr.message,
+          queued: true,
+          smsId,
+        });
+      }
     } catch (err) {
       next(err);
     }

@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
+import { get, post } from '../../shared/api.js';
 
 const STORAGE_KEY = 'woxmail_email_privacy';
+export const PRIVACY_PREFS_EVENT = 'woxmail:privacy-prefs-changed';
 
 export const DEFAULT_PRIVACY_PREFS = {
   remoteImages: 'proxy_cloak', // 'proxy_cloak' | 'neutralize_pixels' | 'block_all' | 'trusted_only' | 'allow_all'
   trustedSenders: [],
+  blockedDomains: [],
   allowScripts: false,
   interceptLinks: true,
   blockWebFonts: true,
@@ -14,12 +17,41 @@ export const DEFAULT_PRIVACY_PREFS = {
   authFailurePolicy: 'warning', // 'warning' | 'quarantine' | 'block'
 };
 
+function parseStringArray(val) {
+  if (Array.isArray(val)) return val.map((v) => String(v).trim().toLowerCase()).filter(Boolean);
+  if (typeof val === 'string') {
+    try {
+      const parsed = JSON.parse(val);
+      if (Array.isArray(parsed)) return parsed.map((v) => String(v).trim().toLowerCase()).filter(Boolean);
+    } catch {}
+  }
+  return [];
+}
+
+export function normalizePrivacyPrefs(raw = {}, fallbackBlockedDomains = []) {
+  const source = raw || {};
+  const blocked = source.blockedDomains ?? source.blocked_domains ?? fallbackBlockedDomains;
+  return {
+    ...DEFAULT_PRIVACY_PREFS,
+    remoteImages: source.remoteImages || source.remote_images || DEFAULT_PRIVACY_PREFS.remoteImages,
+    trustedSenders: parseStringArray(source.trustedSenders ?? source.trusted_senders),
+    blockedDomains: parseStringArray(blocked),
+    allowScripts: source.allowScripts !== undefined ? Boolean(source.allowScripts) : Boolean(source.allow_scripts),
+    interceptLinks: source.interceptLinks !== undefined ? source.interceptLinks !== false : (source.intercept_links !== undefined ? source.intercept_links !== false : true),
+    blockWebFonts: source.blockWebFonts !== undefined ? source.blockWebFonts !== false : (source.block_web_fonts !== undefined ? source.block_web_fonts !== false : true),
+    disarmForms: source.disarmForms !== undefined ? source.disarmForms !== false : (source.disarm_forms !== undefined ? source.disarm_forms !== false : true),
+    homographShield: source.homographShield !== undefined ? source.homographShield !== false : (source.homograph_shield !== undefined ? source.homograph_shield !== false : true),
+    stripMarketingRedirects: source.stripMarketingRedirects !== undefined ? source.stripMarketingRedirects !== false : (source.strip_marketing_redirects !== undefined ? source.strip_marketing_redirects !== false : true),
+    authFailurePolicy: source.authFailurePolicy || source.auth_failure_policy || DEFAULT_PRIVACY_PREFS.authFailurePolicy,
+  };
+}
+
 export function getStoredPrivacyPrefs() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_PRIVACY_PREFS;
     const parsed = JSON.parse(raw);
-    return { ...DEFAULT_PRIVACY_PREFS, ...parsed };
+    return normalizePrivacyPrefs(parsed, parsed?.blockedDomains);
   } catch {
     return DEFAULT_PRIVACY_PREFS;
   }
@@ -27,10 +59,39 @@ export function getStoredPrivacyPrefs() {
 
 export function saveStoredPrivacyPrefs(prefs) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
+    const normalized = normalizePrivacyPrefs(prefs, prefs?.blockedDomains);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(PRIVACY_PREFS_EVENT, { detail: normalized }));
+    }
   } catch (e) {
     console.error('Failed to save privacy prefs', e);
   }
+}
+
+export async function fetchPrivacyPrefs() {
+  const local = getStoredPrivacyPrefs();
+  const res = await get('/security/privacy-prefs');
+  const merged = normalizePrivacyPrefs(res?.prefs || {}, local.blockedDomains);
+  saveStoredPrivacyPrefs(merged);
+  return merged;
+}
+
+export async function persistPrivacyPrefs(prefs) {
+  const normalized = normalizePrivacyPrefs(prefs, prefs?.blockedDomains);
+  saveStoredPrivacyPrefs(normalized);
+  await post('/security/privacy-prefs', { prefs: normalized });
+  return normalized;
+}
+
+export async function blockDestinationDomain(domain) {
+  const clean = String(domain || '').trim().toLowerCase().replace(/^www\./, '');
+  if (!clean) return getStoredPrivacyPrefs();
+  const current = getStoredPrivacyPrefs();
+  const nextBlocked = Array.from(new Set([...(current.blockedDomains || []), clean]));
+  const updated = { ...current, blockedDomains: nextBlocked };
+  await persistPrivacyPrefs(updated);
+  return updated;
 }
 
 export default function EmailPrivacyModal({
@@ -45,11 +106,21 @@ export default function EmailPrivacyModal({
 }) {
   const [prefs, setPrefs] = useState(() => getStoredPrivacyPrefs());
   const [newSenderInput, setNewSenderInput] = useState('');
+  const [newDomainInput, setNewDomainInput] = useState('');
 
   useEffect(() => {
-    if (isOpen) {
-      setPrefs(getStoredPrivacyPrefs());
-    }
+    if (!isOpen) return;
+    setPrefs(getStoredPrivacyPrefs());
+    let active = true;
+    fetchPrivacyPrefs()
+      .then((synced) => {
+        if (active) {
+          setPrefs(synced);
+          if (onPrefsChanged) onPrefsChanged(synced);
+        }
+      })
+      .catch(() => {});
+    return () => { active = false; };
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -59,6 +130,9 @@ export default function EmailPrivacyModal({
     setPrefs(updated);
     saveStoredPrivacyPrefs(updated);
     if (onPrefsChanged) onPrefsChanged(updated);
+    persistPrivacyPrefs(updated).catch((err) => {
+      if (window.WoxToast) window.WoxToast.error('Failed to sync privacy preference: ' + err.message);
+    });
   };
 
   const addTrustedSender = (senderToAdd) => {
@@ -75,13 +149,29 @@ export default function EmailPrivacyModal({
     updatePref('trustedSenders', updatedSenders);
   };
 
+  const addBlockedDomainHandler = (domainToAdd) => {
+    const clean = (domainToAdd || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, '');
+    if (!clean) return;
+    if ((prefs.blockedDomains || []).includes(clean)) return;
+    const updatedDomains = [...(prefs.blockedDomains || []), clean];
+    updatePref('blockedDomains', updatedDomains);
+    setNewDomainInput('');
+  };
+
+  const removeBlockedDomain = (domainToRemove) => {
+    const updatedDomains = (prefs.blockedDomains || []).filter((d) => d !== domainToRemove);
+    updatePref('blockedDomains', updatedDomains);
+  };
+
   const handleResetDefaults = () => {
     if (confirm('Reset all email privacy & security preferences to safe defaults?')) {
       setPrefs(DEFAULT_PRIVACY_PREFS);
-      saveStoredPrivacyPrefs(DEFAULT_PRIVACY_PREFS);
       if (setAllowImagesThisEmail) setAllowImagesThisEmail(false);
       if (setAllowScriptsThisEmail) setAllowScriptsThisEmail(false);
       if (onPrefsChanged) onPrefsChanged(DEFAULT_PRIVACY_PREFS);
+      persistPrivacyPrefs(DEFAULT_PRIVACY_PREFS).catch((err) => {
+        if (window.WoxToast) window.WoxToast.error('Failed to reset privacy preferences: ' + err.message);
+      });
     }
   };
 
@@ -485,6 +575,67 @@ export default function EmailPrivacyModal({
                     <button
                       type="button"
                       onClick={() => removeTrustedSender(sender)}
+                      style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0 }}
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 6. Blocked Destination Domains */}
+        <div style={{ marginBottom: '1.25rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+              <strong style={{ fontSize: '0.875rem' }}>Blocked Link Domains ({(prefs.blockedDomains || []).length})</strong>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.5rem' }}>
+            <input
+              type="text"
+              className="input"
+              placeholder="e.g. tracker.example.com"
+              value={newDomainInput}
+              onChange={(e) => setNewDomainInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  addBlockedDomainHandler(newDomainInput);
+                }
+              }}
+              style={{ fontSize: '0.78rem', flex: 1 }}
+            />
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => addBlockedDomainHandler(newDomainInput)}
+            >
+              Block
+            </button>
+          </div>
+
+          <div style={{ maxHeight: '100px', overflowY: 'auto', background: 'var(--color-bg-input)', borderRadius: 'var(--radius-md)', padding: '0.4rem', border: '1px solid var(--color-border)' }}>
+            {(prefs.blockedDomains || []).length === 0 ? (
+              <div style={{ fontSize: '0.72rem', color: 'var(--color-text-tertiary)', textAlign: 'center', padding: '0.4rem 0' }}>
+                No destination domains blocked.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                {(prefs.blockedDomains || []).map((domain) => (
+                  <span
+                    key={domain}
+                    className="badge"
+                    style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: 'rgba(239,68,68,0.15)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.3)' }}
+                  >
+                    <span>{domain}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeBlockedDomain(domain)}
                       style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0 }}
                     >
                       ✕

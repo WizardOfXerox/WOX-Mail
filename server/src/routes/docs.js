@@ -37,18 +37,71 @@ router.get('/openapi.json', (req, res) => {
  */
 router.get('/', (req, res) => {
   const html = `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WoxMail REST API Reference & Interactive Portal</title>
+  <script>
+    (function() {
+      try {
+        var t = localStorage.getItem('woxmail_theme') || 'dark';
+        var isLight = t === 'light' || (t === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches);
+        document.documentElement.setAttribute('data-theme', isLight ? 'light' : 'dark');
+        var a = localStorage.getItem('woxmail_accent') || 'purple';
+        document.documentElement.setAttribute('data-accent', a);
+      } catch (e) {}
+    })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
-    :root {
+    :root, [data-accent='purple'] {
       --color-primary: #7c3aed;
       --color-primary-light: #8b5cf6;
+      --color-primary-subtle: rgba(124, 58, 237, 0.14);
+      --color-primary-border: rgba(124, 58, 237, 0.35);
+      --color-on-primary: #ffffff;
+    }
+    [data-accent='emerald'] {
+      --color-primary: #10b981;
+      --color-primary-light: #34d399;
+      --color-primary-subtle: rgba(16, 185, 129, 0.14);
+      --color-primary-border: rgba(16, 185, 129, 0.35);
+    }
+    [data-accent='cobalt'] {
+      --color-primary: #3b82f6;
+      --color-primary-light: #60a5fa;
+      --color-primary-subtle: rgba(59, 130, 246, 0.14);
+      --color-primary-border: rgba(59, 130, 246, 0.35);
+    }
+    [data-accent='amber'] {
+      --color-primary: #f59e0b;
+      --color-primary-light: #fbbf24;
+      --color-primary-subtle: rgba(245, 158, 11, 0.14);
+      --color-primary-border: rgba(245, 158, 11, 0.35);
+    }
+    [data-accent='cyan'] {
+      --color-primary: #06b6d4;
+      --color-primary-light: #22d3ee;
+      --color-primary-subtle: rgba(6, 182, 212, 0.14);
+      --color-primary-border: rgba(6, 182, 212, 0.35);
+    }
+    [data-accent='crimson'] {
+      --color-primary: #ef4444;
+      --color-primary-light: #f87171;
+      --color-primary-subtle: rgba(239, 68, 68, 0.14);
+      --color-primary-border: rgba(239, 68, 68, 0.35);
+    }
+    [data-accent='oled'] {
+      --color-primary: #e5e7eb;
+      --color-primary-light: #f3f4f6;
+      --color-primary-subtle: rgba(229, 231, 235, 0.14);
+      --color-primary-border: rgba(229, 231, 235, 0.35);
+      --color-on-primary: #09090b;
+    }
+    :root {
       --color-bg-page: #0b0b14;
       --color-bg-sidebar: #121222;
       --color-bg-card: #19192f;
@@ -57,6 +110,9 @@ router.get('/', (req, res) => {
       --color-text-primary: #f0f0f5;
       --color-text-secondary: #9898b8;
       --color-text-tertiary: #686890;
+      --color-code-text: #cbd5e1;
+      --color-pill-bg: rgba(255, 255, 255, 0.06);
+      --color-card-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
       --color-success: #22c55e;
       --color-warning: #f59e0b;
       --color-error: #ef4444;
@@ -67,6 +123,36 @@ router.get('/', (req, res) => {
       --radius-lg: 14px;
       --radius-pill: 9999px;
     }
+    [data-theme='dark'][data-accent='oled'] {
+      --color-bg-page: #000000;
+      --color-bg-sidebar: #07070b;
+      --color-bg-card: #0c0c12;
+      --color-bg-elevated: #14141d;
+    }
+    [data-theme='light'] {
+      --color-bg-page: #f4f4f8;
+      --color-bg-sidebar: #ffffff;
+      --color-bg-card: #ffffff;
+      --color-bg-elevated: #f0f0f6;
+      --color-border: #e2e2ea;
+      --color-text-primary: #1a1a2e;
+      --color-text-secondary: #52526d;
+      --color-text-tertiary: #71718a;
+      --color-code-text: #1e293b;
+      --color-pill-bg: rgba(26, 26, 46, 0.06);
+      --color-card-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+    }
+    [data-theme='light'][data-accent='oled'] {
+      --color-primary: #18181b;
+      --color-primary-light: #3f3f46;
+      --color-primary-subtle: rgba(24, 24, 27, 0.08);
+      --color-primary-border: rgba(24, 24, 27, 0.25);
+      --color-on-primary: #ffffff;
+    }
+    [data-theme='light'] .method-get { color: #1d4ed8; }
+    [data-theme='light'] .method-post { color: #15803d; }
+    [data-theme='light'] .method-put { color: #b45309; }
+    [data-theme='light'] .method-delete { color: #b91c1c; }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: var(--font-body);
@@ -97,9 +183,9 @@ router.get('/', (req, res) => {
       font-size: 1.15rem;
     }
     .badge {
-      background: rgba(124, 58, 237, 0.2);
-      color: var(--color-primary-light);
-      border: 1px solid rgba(124, 58, 237, 0.4);
+      background: var(--color-primary-subtle);
+      color: var(--color-primary);
+      border: 1px solid var(--color-primary-border);
       padding: 0.2rem 0.55rem;
       border-radius: var(--radius-pill);
       font-size: 0.75rem;
@@ -118,6 +204,21 @@ router.get('/', (req, res) => {
       transition: color 150ms ease;
     }
     .header-links a:hover { color: var(--color-text-primary); }
+    .docs-theme-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.35rem 0.75rem;
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--color-border);
+      background: var(--color-bg-elevated);
+      color: var(--color-text-primary);
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: border-color 150ms ease, background 150ms ease;
+    }
+    .docs-theme-btn:hover { border-color: var(--color-primary); }
 
     .main-container {
       display: flex;
@@ -207,7 +308,7 @@ router.get('/', (req, res) => {
       border: 1px solid var(--color-border);
       border-radius: var(--radius-lg);
       padding: 1.75rem;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+      box-shadow: var(--color-card-shadow);
     }
     .endpoint-header {
       display: flex;
@@ -220,7 +321,7 @@ router.get('/', (req, res) => {
       font-family: var(--font-mono);
       font-size: 1.1rem;
       font-weight: 600;
-      color: #fff;
+      color: var(--color-text-primary);
     }
     .endpoint-title {
       font-size: 1.25rem;
@@ -249,7 +350,7 @@ router.get('/', (req, res) => {
       padding: 1rem;
       font-family: var(--font-mono);
       font-size: 0.82rem;
-      color: #cbd5e1;
+      color: var(--color-code-text);
       overflow-x: auto;
       position: relative;
     }
@@ -272,7 +373,7 @@ router.get('/', (req, res) => {
     td { color: var(--color-text-primary); }
     .mono-pill {
       font-family: var(--font-mono);
-      background: rgba(255,255,255,0.06);
+      background: var(--color-pill-bg);
       padding: 0.15rem 0.4rem;
       border-radius: 4px;
       font-size: 0.78rem;
@@ -334,6 +435,7 @@ router.get('/', (req, res) => {
       <a href="/tempmail">Temp Mail</a>
       <a href="/api/docs/openapi.json" target="_blank">OpenAPI JSON</a>
       <a href="/docs">Docs</a>
+      <button type="button" id="docsThemeToggle" class="docs-theme-btn" aria-label="Toggle Light/Dark theme">Theme</button>
     </div>
   </header>
 
@@ -350,6 +452,25 @@ router.get('/', (req, res) => {
     </main>
   </div>
 
+  <script>
+    (function() {
+      var btn = document.getElementById('docsThemeToggle');
+      function syncLabel() {
+        if (!btn) return;
+        var cur = document.documentElement.getAttribute('data-theme') || 'dark';
+        btn.textContent = cur === 'light' ? 'Dark Mode' : 'Light Mode';
+      }
+      syncLabel();
+      if (btn) {
+        btn.addEventListener('click', function() {
+          var next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+          document.documentElement.setAttribute('data-theme', next);
+          try { localStorage.setItem('woxmail_theme', next); } catch (e) {}
+          syncLabel();
+        });
+      }
+    })();
+  </script>
   <script src="/js/api-docs.js"></script>
   <script src="/js/interactive-bg.js" defer></script>
 </body>

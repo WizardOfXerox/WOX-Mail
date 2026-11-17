@@ -1,5 +1,6 @@
 import React from 'react';
 import { useIntl } from '../../i18n/IntlProvider.jsx';
+import { put } from '../../shared/api.js';
 
 const SUPPORTED_LANGUAGES = [
   { code: 'en', name: 'English', nativeName: 'English', region: 'Global / US' },
@@ -10,6 +11,15 @@ const SUPPORTED_LANGUAGES = [
 
 export default function LanguageSection() {
   const { locale, setLocale, t, isRtl } = useIntl();
+
+  const handleSelectLanguage = async (code) => {
+    setLocale(code);
+    try {
+      await put('/settings/profile', { language: code });
+    } catch (err) {
+      console.warn('Could not save language to user profile:', err);
+    }
+  };
 
   return (
     <div className="card settings-section" style={{ maxWidth: '780px', margin: '0 auto' }}>
@@ -46,7 +56,7 @@ export default function LanguageSection() {
           return (
             <div
               key={lang.code}
-              onClick={() => setLocale(lang.code)}
+              onClick={() => handleSelectLanguage(lang.code)}
               style={{
                 border: isSelected ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
                 borderRadius: 'var(--radius-md)',

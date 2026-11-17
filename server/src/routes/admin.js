@@ -8,7 +8,7 @@ import { requireAdmin } from '../middleware/admin.js';
 import { validate } from '../middleware/validate.js';
 import { query } from '../config/database.js';
 import { generateToken, hashPassword } from '../utils/crypto.js';
-import { createUser, deleteUser } from '../services/purelymail.js';
+import { createUser, deleteUser, modifyUser } from '../services/purelymail.js';
 import { createConnection } from '../services/imap.js';
 import { createTransporter } from '../services/smtp.js';
 import { getPoolStats, replenishPool, purgeAllTempPoolAndRecreate } from '../services/pool.js';
@@ -362,10 +362,10 @@ router.post('/users',
       // 2. Hash password & insert into PostgreSQL
       const hash = await hashPassword(password);
       const insertRes = await query(
-        `INSERT INTO users (email, username, password_hash, display_name, is_admin, is_suspended, created_at)
-         VALUES ($1, $2, $3, $4, $5, FALSE, NOW())
+        `INSERT INTO users (email, username, password_hash, imap_password, display_name, is_admin, is_suspended, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, FALSE, NOW())
          RETURNING id, email, username, display_name, is_admin, is_suspended, created_at`,
-        [email, username, hash, displayName || username, Boolean(isAdmin)]
+        [email, username, hash, password, displayName || username, Boolean(isAdmin)]
       );
 
       const newUser = { ...insertRes.rows[0], tier: 'permanent' };
@@ -502,8 +502,20 @@ router.post('/users/:id/reset-password',
       }
 
       const userId = parseInt(rawId, 10);
-      await query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [hash, userId]);
+      const { newPassword } = req.body;
+      const userRes = await query('SELECT email FROM users WHERE id = $1', [userId]);
+      const userEmail = userRes.rows[0]?.email;
+
+      await query('UPDATE users SET password_hash = $1, imap_password = $2, updated_at = NOW() WHERE id = $3', [hash, newPassword, userId]);
       await query('UPDATE user_sessions SET is_revoked = TRUE WHERE user_id = $1', [userId]);
+
+      if (userEmail) {
+        try {
+          await modifyUser(userEmail, { newPassword });
+        } catch (pmErr) {
+          console.warn(`[AdminReset] Purelymail password update notice for ${userEmail}: ${pmErr.message}`);
+        }
+      }
 
       await query(
         `INSERT INTO audit_log (actor_type, actor_id, action, target_type, target_id, ip_address)
@@ -1085,7 +1097,7 @@ router.get('/pool', async (req, res, next) => {
  */
 router.post('/pool/replenish', async (req, res, next) => {
   try {
-    const created = await replenishPool();
+    const created = await replenishPool(24, req.body.count || null);
     res.json({ message: `Replenished ${created} addresses`, created });
   } catch (err) {
     next(err);
@@ -2022,7 +2034,7 @@ router.get('/ediscovery', async (req, res, next) => {
 
     res.json({
       messages: rowsRes.rows,
-      pagination: paginationMeta(page, limit, total),
+      pagination: paginationMeta(total, page, limit),
     });
   } catch (err) {
     next(err);

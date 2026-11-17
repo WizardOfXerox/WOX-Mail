@@ -4,17 +4,29 @@
  */
 export function verifyCaptcha(req, res, next) {
   const secret = process.env.HCAPTCHA_SECRET_KEY;
-  const isDev = process.env.NODE_ENV === 'development';
+  const isProd = process.env.NODE_ENV === 'production';
+  const isDevOrTest = !isProd;
   const isUnconfigured = !secret || secret.includes('your-hcaptcha');
+  const token = req.body?.captchaToken;
 
-  // If unconfigured or using dev test bypass token, allow through
-  if (isUnconfigured || req.body.captchaToken === 'dev-bypass' || isDev) {
-    return next();
+  // Allow bypass/dev-bypass ONLY in non-production environments (development / test)
+  if (isDevOrTest) {
+    if (
+      process.env.NODE_ENV === 'development' ||
+      process.env.NODE_ENV === 'test' ||
+      isUnconfigured ||
+      token === 'dev-bypass'
+    ) {
+      return next();
+    }
   }
 
-  const token = req.body.captchaToken;
+  // In production: strictly enforce hCaptcha (never accept dev-bypass)
+  if (isUnconfigured) {
+    return res.status(503).json({ error: 'CAPTCHA verification is not configured on server' });
+  }
 
-  if (!token) {
+  if (!token || typeof token !== 'string' || token === 'dev-bypass') {
     return res.status(400).json({ error: 'CAPTCHA verification required' });
   }
 
@@ -28,6 +40,7 @@ export function verifyCaptcha(req, res, next) {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: params.toString(),
+    signal: AbortSignal.timeout(8000),
   })
     .then((resp) => resp.json())
     .then((data) => {
@@ -41,8 +54,7 @@ export function verifyCaptcha(req, res, next) {
       }
     })
     .catch((err) => {
-      // If hCaptcha is unreachable, fail open in dev, closed in prod
-      if (process.env.NODE_ENV === 'development') return next();
+      if (!isProd) return next();
       next(err);
     });
 }

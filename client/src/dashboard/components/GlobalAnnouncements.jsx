@@ -66,8 +66,9 @@ export default function GlobalAnnouncements({
 
   // Active (non-dismissed) announcements, sorted by priority and date
   const sorted = useMemo(() => {
+    const dismissedSet = new Set((dismissedIds || []).map(String));
     return announcements
-      .filter((a) => !dismissedIds.includes(a.id))
+      .filter((a) => !dismissedSet.has(String(a.id)))
       .sort((a, b) => {
         const weightDiff = getPriorityWeight(b.type) - getPriorityWeight(a.type);
         if (weightDiff !== 0) return weightDiff;
@@ -83,15 +84,17 @@ export default function GlobalAnnouncements({
   }, [sorted.length, currentIndex]);
 
   const current = sorted[currentIndex];
+  const currentType = (current?.type || '').toLowerCase();
+  const isPersistentAlert = ['critical', 'emergency', 'warning'].includes(currentType);
 
   // Reset 5-second countdown whenever current announcement changes
   useEffect(() => {
     setRemainingMs(5000);
   }, [current?.id, currentIndex]);
 
-  // 5-Second countdown timer with tick resolution of 50ms
+  // 5-Second countdown timer with tick resolution of 50ms (info/maintenance only; critical/warning stay visible)
   useEffect(() => {
-    if (!current || isPaused || showModal) return;
+    if (!current || isPaused || showModal || isPersistentAlert) return;
 
     const interval = setInterval(() => {
       setRemainingMs((prev) => {
@@ -107,7 +110,7 @@ export default function GlobalAnnouncements({
     }, 50);
 
     return () => clearInterval(interval);
-  }, [current, isPaused, showModal, onDismiss]);
+  }, [current, isPaused, showModal, isPersistentAlert, onDismiss]);
 
   // Close modal on Escape
   useEffect(() => {
@@ -339,19 +342,21 @@ export default function GlobalAnnouncements({
             </button>
           </div>
 
-          {/* 5-second countdown progress bar */}
-          <div
-            style={{
-              position: 'absolute',
-              bottom: 0,
-              left: 0,
-              height: '2.5px',
-              width: `${progressPct}%`,
-              background: typeConfig.progressBarBg,
-              transition: isPaused ? 'none' : 'width 50ms linear',
-              boxShadow: '0 0 4px rgba(255,255,255,0.5)',
-            }}
-          />
+          {/* 5-second countdown progress bar (omitted for critical/emergency/warning banners) */}
+          {!isPersistentAlert && (
+            <div
+              style={{
+                position: 'absolute',
+                bottom: 0,
+                left: 0,
+                height: '2.5px',
+                width: `${progressPct}%`,
+                background: typeConfig.progressBarBg,
+                transition: isPaused ? 'none' : 'width 50ms linear',
+                boxShadow: '0 0 4px rgba(255,255,255,0.5)',
+              }}
+            />
+          )}
         </div>
       </div>
 

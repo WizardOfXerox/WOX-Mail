@@ -5,6 +5,8 @@ import { JWT_COOKIE_NAME } from '../config/constants.js';
 
 const router = Router();
 
+const isHttpsReq = (req) => !!(req.secure || req.headers['x-forwarded-proto'] === 'https');
+
 /**
  * Helper to render a page inside the base layout.
  * Passes common variables (user session, announcements, CSRF, hCaptcha key, currentPath).
@@ -15,7 +17,7 @@ async function renderPage(req, res, view, options = {}) {
   if (token) {
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      if (decoded && decoded.userId) {
+      if (decoded && decoded.userId && decoded.type !== 'device_switch') {
         const userRes = await query('SELECT id, email, username, display_name, is_admin FROM users WHERE id = $1', [decoded.userId]);
         if (userRes.rows.length > 0) {
           user = userRes.rows[0];
@@ -53,6 +55,13 @@ router.get('/register', async (req, res) => {
 
 router.get('/forgot-password', async (req, res) => {
   await renderPage(req, res, 'forgot-password', { title: 'Forgot Password' });
+});
+
+router.get('/reset-password', async (req, res) => {
+  await renderPage(req, res, 'reset-password', {
+    title: 'Reset Password',
+    token: String(req.query.token || '').trim(),
+  });
 });
 
 router.get('/otp-setup', async (req, res) => {
@@ -113,7 +122,7 @@ router.get('/tempmail/nojs', async (req, res) => {
       addressRecord = await claimAddress(req.ip || '127.0.0.1', 24);
       res.cookie(TEMP_COOKIE_NAME, addressRecord.session_token, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
+        secure: isHttpsReq(req),
         sameSite: 'lax',
         maxAge: 72 * 3600 * 1000,
         path: '/',
@@ -143,7 +152,7 @@ router.get('/tempmail/nojs', async (req, res) => {
       selectedMessage: null,
     });
   } catch (err) {
-    res.status(500).render('error', { title: 'Error', error: err.message, status: 500 });
+    res.status(500).render('500', { title: 'Error', error: err.message, status: 500 });
   }
 });
 
@@ -155,7 +164,7 @@ router.post('/tempmail/nojs/generate', async (req, res) => {
     const addressRecord = await claimAddress(req.ip || '127.0.0.1', 24);
     res.cookie(TEMP_COOKIE_NAME, addressRecord.session_token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: isHttpsReq(req),
       sameSite: 'lax',
       maxAge: 72 * 3600 * 1000,
       path: '/',
@@ -176,7 +185,7 @@ router.post('/tempmail/nojs/custom', async (req, res) => {
       const addressRecord = await claimAddress(req.ip || '127.0.0.1', 24, username);
       res.cookie(TEMP_COOKIE_NAME, addressRecord.session_token, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
+        secure: isHttpsReq(req),
         sameSite: 'lax',
         maxAge: 72 * 3600 * 1000,
         path: '/',
@@ -228,6 +237,7 @@ router.get('/tempmail/nojs/view/:uid', async (req, res) => {
       otpCode = otpMatch[1];
     }
 
+    const sanitized = parsed.html ? sanitizeEmail(parsed.html, { loadImages: false }) : null;
     const selectedMessage = {
       uid: msg.uid,
       subject: parsed.subject,
@@ -235,7 +245,7 @@ router.get('/tempmail/nojs/view/:uid', async (req, res) => {
       date: parsed.date || msg.date,
       text: parsed.text,
       html: parsed.html,
-      sanitizedHtml: parsed.html ? sanitizeEmail(parsed.html) : null,
+      sanitizedHtml: sanitized ? sanitized.html : null,
       otpCode,
     };
 
@@ -272,16 +282,16 @@ router.get('/dashboard', async (req, res) => {
   await renderPage(req, res, 'dashboard', { title: 'Inbox', showNav: false, showFooter: false });
 });
 
-router.get('/settings', async (req, res) => {
+router.get(['/settings', '/settings/:section'], async (req, res) => {
   await renderPage(req, res, 'settings', { title: 'Settings', showNav: false, showFooter: false });
 });
 
-router.get('/admin', async (req, res) => {
+router.get(['/admin', '/admin/:tab'], async (req, res) => {
   try {
     const { JWT_COOKIE_NAME } = await import('../config/constants.js');
     const jwt = (await import('jsonwebtoken')).default;
     const token = req.cookies?.[JWT_COOKIE_NAME] || req.headers.authorization?.replace('Bearer ', '');
-    if (!token) return res.redirect('/login?redirect=/admin');
+    if (!token) return res.redirect(`/login?redirect=${encodeURIComponent(req.originalUrl || '/admin')}`);
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const userRes = await query('SELECT is_admin FROM users WHERE id = $1', [decoded.userId]);
@@ -291,7 +301,7 @@ router.get('/admin', async (req, res) => {
 
     await renderPage(req, res, 'admin', { title: 'Admin Control Center', showNav: false, showFooter: false });
   } catch (err) {
-    res.redirect('/login?redirect=/admin');
+    res.redirect(`/login?redirect=${encodeURIComponent(req.originalUrl || '/admin')}`);
   }
 });
 

@@ -11,10 +11,10 @@
     <div class="skeleton" style="height:300px;border-radius:var(--radius-lg);margin-top:1.5rem;"></div>
   </div>
 </div>
-`, scripts: '<script type="module" src="/dist/admin.js"></script>' }) %>
+`, scripts: '<script type="module" src="/dist/admin.js?v=3.0.2"></script>' }) %>
 
 <style>
-  body { margin: 0; padding: 0; overflow: hidden; height: 100vh; background: #0a0a14; }
+  body { margin: 0; padding: 0; overflow: hidden; height: 100vh; background: var(--color-bg-page); }
   #admin-root { width: 100vw; height: 100vh; display: flex; }
   .admin-loading { width: 100%; max-width: 1200px; margin: 0 auto; padding: 2rem; display: flex; flex-direction: column; gap: 1.5rem; }
   .admin-skeleton-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.25rem; }

@@ -55,7 +55,18 @@ export async function createTemplate(userId, { name, subject = '', body_html = '
  * Update an existing template
  */
 export async function updateTemplate(userId, templateId, { name, subject, body_html, body_text, category }) {
-  const vars = extractVariables(`${subject || ''} ${body_html || ''} ${body_text || ''}`);
+  const existingRes = await query(
+    'SELECT subject, body_html, body_text FROM email_templates WHERE id = $1 AND user_id = $2',
+    [templateId, userId]
+  );
+  if (existingRes.rows.length === 0) return null;
+
+  const existing = existingRes.rows[0];
+  const mergedSubject = subject !== undefined ? subject : existing.subject;
+  const mergedHtml = body_html !== undefined ? body_html : existing.body_html;
+  const mergedText = body_text !== undefined ? body_text : existing.body_text;
+  const vars = extractVariables(`${mergedSubject || ''} ${mergedHtml || ''} ${mergedText || ''}`);
+
   const res = await query(`
     UPDATE email_templates
     SET name = COALESCE($1, name),
@@ -67,7 +78,7 @@ export async function updateTemplate(userId, templateId, { name, subject, body_h
         updated_at = NOW()
     WHERE id = $7 AND user_id = $8
     RETURNING *
-  `, [name, subject, body_html, body_text, category, JSON.stringify(vars), templateId, userId]);
+  `, [name ?? null, subject ?? null, body_html ?? null, body_text ?? null, category ?? null, JSON.stringify(vars), templateId, userId]);
   return res.rows[0] || null;
 }
 

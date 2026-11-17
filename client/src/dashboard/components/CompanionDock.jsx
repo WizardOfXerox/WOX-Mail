@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { get, post, del, put } from '../../shared/api.js';
 
 /**
@@ -40,8 +40,11 @@ export default function CompanionDock({ user, onClose, onComposeTo, activeMessag
 
   const fetchEvents = () => {
     setLoadingEvents(true);
-    fetch('/api/calendar/events', { credentials: 'include' })
-      .then((r) => r.json())
+    const y = currentCalMonth.getFullYear();
+    const m = currentCalMonth.getMonth();
+    const start = new Date(y, m - 1, 20).toISOString();
+    const end = new Date(y, m + 2, 10).toISOString();
+    get(`/calendar/events?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`)
       .then((d) => setEvents(d.events || []))
       .catch(() => {})
       .finally(() => setLoadingEvents(false));
@@ -51,7 +54,7 @@ export default function CompanionDock({ user, onClose, onComposeTo, activeMessag
     if (activeTab === 'agenda') {
       fetchEvents();
     }
-  }, [activeTab]);
+  }, [activeTab, currentCalMonth]);
 
   // Mini-Calendar calculations
   const calendarGrid = useMemo(() => {
@@ -156,19 +159,13 @@ export default function CompanionDock({ user, onClose, onComposeTo, activeMessag
     };
 
     try {
-      const res = await fetch('/api/calendar/events', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          title: eventTitle.trim(),
-          startTime: startDate.toISOString(),
-          endTime: endDate.toISOString(),
-          color: categoryColors[eventCategory] || '#7c3aed',
-          location: eventLocation.trim() || undefined,
-        }),
+      const data = await post('/calendar/events', {
+        title: eventTitle.trim(),
+        startTime: startDate.toISOString(),
+        endTime: endDate.toISOString(),
+        color: categoryColors[eventCategory] || '#7c3aed',
+        location: eventLocation.trim() || undefined,
       });
-      const data = await res.json();
       if (data.event) {
         setEvents((prev) => [data.event, ...prev]);
         setEventTitle('');
@@ -183,14 +180,11 @@ export default function CompanionDock({ user, onClose, onComposeTo, activeMessag
 
   const handleDeleteEvent = async (id) => {
     try {
-      await fetch(`/api/calendar/events/${id}`, {
-        method: 'DELETE',
-        credentials: 'include',
-      });
+      await del(`/calendar/events/${id}`);
       setEvents((prev) => prev.filter((ev) => ev.id !== id));
       if (window.WoxToast) window.WoxToast.info('Event removed');
     } catch (err) {
-      if (window.WoxToast) window.WoxToast.error('Failed to delete event');
+      if (window.WoxToast) window.WoxToast.error('Failed to delete event: ' + err.message);
     }
   };
 
@@ -218,8 +212,7 @@ export default function CompanionDock({ user, onClose, onComposeTo, activeMessag
 
   const fetchVaultNotes = () => {
     setLoadingNotes(true);
-    fetch('/api/notes/vault', { credentials: 'include' })
-      .then((r) => r.json())
+    get('/notes/vault')
       .then((d) => {
         if (d.notes) {
           setVaultNotes(d.notes);
@@ -242,6 +235,28 @@ export default function CompanionDock({ user, onClose, onComposeTo, activeMessag
     return vaultNotes.find((n) => n.id === selectedNoteId) || null;
   }, [vaultNotes, selectedNoteId]);
 
+  const noteSaveTimersRef = useRef({});
+  const pendingNoteUpdatesRef = useRef({});
+
+  const flushNoteSave = (noteId) => {
+    if (!noteId || !pendingNoteUpdatesRef.current[noteId]) return;
+    if (noteSaveTimersRef.current[noteId]) {
+      clearTimeout(noteSaveTimersRef.current[noteId]);
+      delete noteSaveTimersRef.current[noteId];
+    }
+    const payload = pendingNoteUpdatesRef.current[noteId];
+    delete pendingNoteUpdatesRef.current[noteId];
+    put(`/notes/vault/${noteId}`, payload).catch((err) => {
+      if (window.WoxToast) window.WoxToast.error('Failed to auto-save note: ' + err.message);
+    });
+  };
+
+  useEffect(() => {
+    return () => {
+      Object.keys(pendingNoteUpdatesRef.current).forEach((noteId) => flushNoteSave(noteId));
+    };
+  }, []);
+
   const handleCreateNote = async (isChecklist = false) => {
     const defaultTitle = isChecklist ? 'New Checklist' : 'Quick Note';
     const defaultContent = isChecklist
@@ -249,61 +264,56 @@ export default function CompanionDock({ user, onClose, onComposeTo, activeMessag
       : '';
 
     try {
-      const res = await fetch('/api/notes/vault', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          title: defaultTitle,
-          content: defaultContent,
-          color: isChecklist ? 'emerald' : 'purple',
-          isPinned: false,
-          isChecklist,
-        }),
+      const data = await post('/notes/vault', {
+        title: defaultTitle,
+        content: defaultContent,
+        color: isChecklist ? 'emerald' : 'purple',
+        isPinned: false,
+        isChecklist,
       });
-      const data = await res.json();
       if (data.note) {
         setVaultNotes((prev) => [data.note, ...prev]);
         setSelectedNoteId(data.note.id);
         if (window.WoxToast) window.WoxToast.success(`Created ${isChecklist ? 'checklist' : 'note'}`);
       }
     } catch (err) {
-      if (window.WoxToast) window.WoxToast.error('Failed to create note');
+      if (window.WoxToast) window.WoxToast.error('Failed to create note: ' + err.message);
     }
   };
 
-  const handleUpdateActiveNote = async (updates) => {
+  const handleUpdateActiveNote = (updates) => {
     if (!activeNote) return;
+    const noteId = activeNote.id;
     const updated = { ...activeNote, ...updates };
+    setVaultNotes((prev) => prev.map((n) => (n.id === noteId ? updated : n)));
 
-    // Update local state immediately for zero latency
-    setVaultNotes((prev) => prev.map((n) => (n.id === activeNote.id ? updated : n)));
+    pendingNoteUpdatesRef.current[noteId] = {
+      ...(pendingNoteUpdatesRef.current[noteId] || {}),
+      ...updates,
+    };
 
-    // Debounced or direct API sync
-    try {
-      await fetch(`/api/notes/vault/${activeNote.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(updates),
-      });
-    } catch (err) {
-      console.error('Note auto-save error:', err);
+    if (noteSaveTimersRef.current[noteId]) {
+      clearTimeout(noteSaveTimersRef.current[noteId]);
     }
+    noteSaveTimersRef.current[noteId] = setTimeout(() => {
+      flushNoteSave(noteId);
+    }, 500);
   };
 
   const handleDeleteActiveNote = async (id) => {
+    if (noteSaveTimersRef.current[id]) {
+      clearTimeout(noteSaveTimersRef.current[id]);
+      delete noteSaveTimersRef.current[id];
+    }
+    delete pendingNoteUpdatesRef.current[id];
     try {
-      await fetch(`/api/notes/vault/${id}`, {
-        method: 'DELETE',
-        credentials: 'include',
-      });
+      await del(`/notes/vault/${id}`);
       const remaining = vaultNotes.filter((n) => n.id !== id);
       setVaultNotes(remaining);
       setSelectedNoteId(remaining.length > 0 ? remaining[0].id : null);
       if (window.WoxToast) window.WoxToast.info('Note deleted');
     } catch (err) {
-      if (window.WoxToast) window.WoxToast.error('Failed to delete note');
+      if (window.WoxToast) window.WoxToast.error('Failed to delete note: ' + err.message);
     }
   };
 
@@ -379,8 +389,7 @@ export default function CompanionDock({ user, onClose, onComposeTo, activeMessag
 
   const fetchContacts = () => {
     setLoadingContacts(true);
-    fetch('/api/settings/contacts', { credentials: 'include' })
-      .then((r) => r.json())
+    get('/settings/contacts')
       .then((d) => setContacts(d.contacts || []))
       .catch(() => {})
       .finally(() => setLoadingContacts(false));
@@ -397,18 +406,12 @@ export default function CompanionDock({ user, onClose, onComposeTo, activeMessag
     if (!contactEmail.trim()) return;
 
     try {
-      const res = await fetch('/api/settings/contacts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          name: contactName.trim() || undefined,
-          email: contactEmail.trim().toLowerCase(),
-          phone: contactPhone.trim() || undefined,
-          isVip: contactIsVip,
-        }),
+      const data = await post('/settings/contacts', {
+        name: contactName.trim() || undefined,
+        email: contactEmail.trim().toLowerCase(),
+        phone: contactPhone.trim() || undefined,
+        isVip: contactIsVip,
       });
-      const data = await res.json();
       if (data.contact) {
         setContacts((prev) => [data.contact, ...prev]);
         setContactName('');
@@ -419,20 +422,17 @@ export default function CompanionDock({ user, onClose, onComposeTo, activeMessag
         if (window.WoxToast) window.WoxToast.success('Contact saved');
       }
     } catch (err) {
-      if (window.WoxToast) window.WoxToast.error('Failed to save contact');
+      if (window.WoxToast) window.WoxToast.error('Failed to save contact: ' + err.message);
     }
   };
 
   const handleDeleteContact = async (id) => {
     try {
-      await fetch(`/api/settings/contacts/${id}`, {
-        method: 'DELETE',
-        credentials: 'include',
-      });
+      await del(`/settings/contacts/${id}`);
       setContacts((prev) => prev.filter((c) => c.id !== id));
       if (window.WoxToast) window.WoxToast.info('Contact removed');
     } catch (err) {
-      if (window.WoxToast) window.WoxToast.error('Failed to remove contact');
+      if (window.WoxToast) window.WoxToast.error('Failed to remove contact: ' + err.message);
     }
   };
 
@@ -591,6 +591,10 @@ export default function CompanionDock({ user, onClose, onComposeTo, activeMessag
   const [dossierData, setDossierData] = useState(null);
   const [loadingDossier, setLoadingDossier] = useState(false);
   const [dossierEmailInput, setDossierEmailInput] = useState('');
+  const [newDossierTag, setNewDossierTag] = useState('');
+  const [newDossierNote, setNewDossierNote] = useState('');
+  const [newDealTitle, setNewDealTitle] = useState('');
+  const [newDealValue, setNewDealValue] = useState('');
 
   const targetDossierEmail = useMemo(() => {
     if (dossierEmailInput.trim()) return dossierEmailInput.trim();
@@ -619,6 +623,98 @@ export default function CompanionDock({ user, onClose, onComposeTo, activeMessag
       fetchDossier(targetDossierEmail);
     }
   }, [activeTab, targetDossierEmail]);
+
+  useEffect(() => {
+    const handleSelectContact = (e) => {
+      const email = e.detail?.email;
+      if (email) {
+        setDossierEmailInput(email);
+        switchTab('dossier');
+      }
+    };
+    const handleDockTab = (e) => {
+      if (e.detail?.tab) {
+        switchTab(e.detail.tab);
+      }
+    };
+    window.addEventListener('woxmail:select-dossier-contact', handleSelectContact);
+    window.addEventListener('woxmail:dock-tab', handleDockTab);
+    return () => {
+      window.removeEventListener('woxmail:select-dossier-contact', handleSelectContact);
+      window.removeEventListener('woxmail:dock-tab', handleDockTab);
+    };
+  }, []);
+
+  const handleAddDossierTag = async (e) => {
+    e.preventDefault();
+    if (!newDossierTag.trim() || !dossierData?.email) return;
+    try {
+      await post(`/dossier/${encodeURIComponent(dossierData.email)}/tags`, { tag: newDossierTag.trim() });
+      setNewDossierTag('');
+      fetchDossier(dossierData.email);
+    } catch (err) {
+      if (window.WoxToast) window.WoxToast.error('Failed to add tag: ' + err.message);
+    }
+  };
+
+  const handleRemoveDossierTag = async (tag) => {
+    if (!dossierData?.email) return;
+    try {
+      await del(`/dossier/${encodeURIComponent(dossierData.email)}/tags/${encodeURIComponent(tag)}`);
+      fetchDossier(dossierData.email);
+    } catch (err) {
+      if (window.WoxToast) window.WoxToast.error('Failed to remove tag: ' + err.message);
+    }
+  };
+
+  const handleAddDossierNote = async (e) => {
+    e.preventDefault();
+    if (!newDossierNote.trim() || !dossierData?.email) return;
+    try {
+      await post(`/dossier/${encodeURIComponent(dossierData.email)}/notes`, { note: newDossierNote.trim() });
+      setNewDossierNote('');
+      fetchDossier(dossierData.email);
+    } catch (err) {
+      if (window.WoxToast) window.WoxToast.error('Failed to add note: ' + err.message);
+    }
+  };
+
+  const handleDeleteDossierNote = async (noteId) => {
+    if (!dossierData?.email) return;
+    try {
+      await del(`/dossier/${encodeURIComponent(dossierData.email)}/notes/${noteId}`);
+      fetchDossier(dossierData.email);
+    } catch (err) {
+      if (window.WoxToast) window.WoxToast.error('Failed to delete note: ' + err.message);
+    }
+  };
+
+  const handleAddDossierDeal = async (e) => {
+    e.preventDefault();
+    if (!newDealTitle.trim() || !dossierData?.email) return;
+    try {
+      await post(`/dossier/${encodeURIComponent(dossierData.email)}/deals`, {
+        title: newDealTitle.trim(),
+        value: parseFloat(newDealValue) || 0,
+        stage: 'lead',
+      });
+      setNewDealTitle('');
+      setNewDealValue('');
+      fetchDossier(dossierData.email);
+    } catch (err) {
+      if (window.WoxToast) window.WoxToast.error('Failed to add deal: ' + err.message);
+    }
+  };
+
+  const handleDeleteDossierDeal = async (dealId) => {
+    if (!dossierData?.email) return;
+    try {
+      await del(`/dossier/deals/${dealId}`);
+      fetchDossier(dossierData.email);
+    } catch (err) {
+      if (window.WoxToast) window.WoxToast.error('Failed to remove deal: ' + err.message);
+    }
+  };
 
   // ══════════════════════════════════════════════════════════════════════════
   // 6. SNIPPETS & SLASH MACROS STATE
@@ -1408,7 +1504,6 @@ export default function CompanionDock({ user, onClose, onComposeTo, activeMessag
                       title="Choose burner domain"
                     >
                       <option value="mail.wox.world">@mail.wox.world</option>
-                      <option value="wox.world">@wox.world</option>
                     </select>
 
                     <select
@@ -1475,7 +1570,6 @@ export default function CompanionDock({ user, onClose, onComposeTo, activeMessag
                       title="Choose domain"
                     >
                       <option value="mail.wox.world" style={{ background: 'var(--color-bg-card)', color: 'var(--color-text-primary)' }}>@mail.wox.world</option>
-                      <option value="wox.world" style={{ background: 'var(--color-bg-card)', color: 'var(--color-text-primary)' }}>@wox.world</option>
                     </select>
                   </div>
 
@@ -1706,6 +1800,97 @@ export default function CompanionDock({ user, onClose, onComposeTo, activeMessag
                         </div>
                       ))}
                     </div>
+                  </div>
+                )}
+
+                {/* CRM Tags */}
+                <div className="dock-card" style={{ padding: '0.75rem' }}>
+                  <span className="dock-section-title" style={{ marginBottom: '0.4rem', display: 'block' }}>
+                    CRM Tags ({dossierData.crm?.tags?.length || 0})
+                  </span>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginBottom: '0.5rem' }}>
+                    {(dossierData.crm?.tags || []).map((tag) => (
+                      <span key={tag} className="badge badge-purple" style={{ fontSize: '0.68rem', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                        {tag}
+                        <button type="button" onClick={() => handleRemoveDossierTag(tag)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0 }}>✕</button>
+                      </span>
+                    ))}
+                  </div>
+                  <form onSubmit={handleAddDossierTag} style={{ display: 'flex', gap: '0.35rem' }}>
+                    <input className="input" placeholder="Add tag (e.g. VIP)" value={newDossierTag} onChange={(e) => setNewDossierTag(e.target.value)} style={{ fontSize: '0.72rem', flex: 1 }} />
+                    <button type="submit" className="btn btn-secondary btn-xs">Add</button>
+                  </form>
+                </div>
+
+                {/* CRM Deals */}
+                <div className="dock-card" style={{ padding: '0.75rem' }}>
+                  <span className="dock-section-title" style={{ marginBottom: '0.4rem', display: 'block' }}>
+                    Deals Pipeline ({dossierData.crm?.deals?.length || 0})
+                  </span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginBottom: '0.5rem' }}>
+                    {(dossierData.crm?.deals || []).map((deal) => (
+                      <div key={deal.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', padding: '0.3rem 0.45rem', borderRadius: '6px', background: 'var(--color-bg-input)' }}>
+                        <span className="truncate">{deal.title} — <strong>${deal.value || 0}</strong> ({deal.stage})</span>
+                        <button type="button" onClick={() => handleDeleteDossierDeal(deal.id)} style={{ background: 'none', border: 'none', color: 'var(--color-text-tertiary)', cursor: 'pointer' }}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                  <form onSubmit={handleAddDossierDeal} style={{ display: 'flex', gap: '0.35rem' }}>
+                    <input className="input" placeholder="Deal title" value={newDealTitle} onChange={(e) => setNewDealTitle(e.target.value)} style={{ fontSize: '0.72rem', flex: 2 }} />
+                    <input className="input" type="number" placeholder="$" value={newDealValue} onChange={(e) => setNewDealValue(e.target.value)} style={{ fontSize: '0.72rem', width: '64px' }} />
+                    <button type="submit" className="btn btn-secondary btn-xs">+</button>
+                  </form>
+                </div>
+
+                {/* CRM Notes */}
+                <div className="dock-card" style={{ padding: '0.75rem' }}>
+                  <span className="dock-section-title" style={{ marginBottom: '0.4rem', display: 'block' }}>
+                    Contact Notes ({dossierData.crm?.notes?.length || 0})
+                  </span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginBottom: '0.5rem' }}>
+                    {(dossierData.crm?.notes || []).map((n) => (
+                      <div key={n.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.4rem', fontSize: '0.75rem', padding: '0.35rem 0.45rem', borderRadius: '6px', background: 'var(--color-bg-input)' }}>
+                        <span style={{ whiteSpace: 'pre-wrap' }}>{n.note}</span>
+                        <button type="button" onClick={() => handleDeleteDossierNote(n.id)} style={{ background: 'none', border: 'none', color: 'var(--color-text-tertiary)', cursor: 'pointer' }}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                  <form onSubmit={handleAddDossierNote} style={{ display: 'flex', gap: '0.35rem' }}>
+                    <input className="input" placeholder="Add private CRM note..." value={newDossierNote} onChange={(e) => setNewDossierNote(e.target.value)} style={{ fontSize: '0.72rem', flex: 1 }} />
+                    <button type="submit" className="btn btn-secondary btn-xs">Save</button>
+                  </form>
+                </div>
+
+                {/* Recent Tracked Emails & Active Reminders */}
+                {dossierData.recentEmails?.length > 0 && (
+                  <div className="dock-card" style={{ padding: '0.75rem' }}>
+                    <span className="dock-section-title" style={{ marginBottom: '0.4rem', display: 'block' }}>
+                      Recent Outbound ({dossierData.recentEmails.length})
+                    </span>
+                    {dossierData.recentEmails.map((em, idx) => (
+                      <div key={em.id || idx} style={{ fontSize: '0.72rem', padding: '0.25rem 0', borderBottom: '1px solid var(--color-border-subtle)' }}>
+                        <div className="truncate">{em.subject || '(No Subject)'}</div>
+                        <div className="text-secondary" style={{ fontSize: '0.68rem' }}>
+                          {em.open_count > 0 ? `Opened ${em.open_count}x` : 'Unopened'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {dossierData.activeReminders?.length > 0 && (
+                  <div className="dock-card" style={{ padding: '0.75rem' }}>
+                    <span className="dock-section-title" style={{ marginBottom: '0.4rem', display: 'block' }}>
+                      Follow-up Reminders ({dossierData.activeReminders.length})
+                    </span>
+                    {dossierData.activeReminders.map((rem) => (
+                      <div key={rem.id} style={{ fontSize: '0.72rem', padding: '0.25rem 0', borderBottom: '1px solid var(--color-border-subtle)' }}>
+                        <div className="truncate">{rem.subject || '(No Subject)'}</div>
+                        <div className="text-secondary" style={{ fontSize: '0.68rem' }}>
+                          Due {rem.due_at ? new Date(rem.due_at).toLocaleDateString() : 'Soon'}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

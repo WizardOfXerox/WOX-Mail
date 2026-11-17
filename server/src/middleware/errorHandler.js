@@ -8,6 +8,10 @@ const logger = pino({ name: 'woxmail' });
  * Must be registered LAST in the middleware chain.
  */
 export function errorHandler(err, req, res, _next) {
+  if (res.headersSent) {
+    return _next(err);
+  }
+
   // Default to 500 if no status set
   const status = err.status || err.statusCode || 500;
 

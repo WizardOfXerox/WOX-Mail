@@ -58,18 +58,62 @@ const getAdminIcon = (id, width = 15, height = 15) => {
 };
 
 
+const VALID_ADMIN_TABS = [
+  'overview',
+  'admins',
+  'users',
+  'invites',
+  'services',
+  'pool',
+  'ips',
+  'diagnostics',
+  'settings',
+  'audit',
+  'announcements',
+  'tickets',
+  'terminal',
+  'domains',
+  'queue',
+  'ediscovery',
+  'governance',
+  'storage',
+  'futureme',
+];
+
 export default function App() {
   const { user, loading: userLoading } = useUser();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     return localStorage.getItem('woxmail_admin_sidebar_collapsed') === 'true';
   });
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState(() => {
-    const hash = window.location.hash.replace('#', '');
-    return ['overview', 'admins', 'users', 'invites', 'services', 'pool', 'ips', 'diagnostics', 'settings', 'audit', 'announcements', 'tickets', 'terminal'].includes(hash)
-      ? hash
-      : 'overview';
-  });
+  const resolveAdminTab = () => {
+    const pathSegment = window.location.pathname.replace(/^\/admin\/?/, '').split('/')[0].toLowerCase();
+    if (VALID_ADMIN_TABS.includes(pathSegment)) return pathSegment;
+    const hash = window.location.hash.replace(/^#/, '').toLowerCase();
+    if (VALID_ADMIN_TABS.includes(hash)) return hash;
+    return 'overview';
+  };
+
+  const [activeTab, setActiveTab] = useState(resolveAdminTab);
+
+  useEffect(() => {
+    // Upgrade legacy /admin#tab URLs cleanly to /admin/tab
+    const hash = window.location.hash.replace(/^#/, '').toLowerCase();
+    if (VALID_ADMIN_TABS.includes(hash)) {
+      window.history.replaceState(null, '', hash === 'overview' ? '/admin' : `/admin/${hash}`);
+      setActiveTab(hash);
+    }
+
+    const handlePopState = () => {
+      setActiveTab(resolveAdminTab());
+    };
+    window.addEventListener('popstate', handlePopState);
+    window.addEventListener('hashchange', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('hashchange', handlePopState);
+    };
+  }, []);
 
   const [themeModalOpen, setThemeModalOpen] = useState(false);
 
@@ -99,8 +143,13 @@ export default function App() {
   }, [user, userLoading]);
 
   const handleTabChange = (tabId) => {
-    setActiveTab(tabId);
-    window.location.hash = tabId;
+    const targetTab = VALID_ADMIN_TABS.includes(tabId) ? tabId : 'overview';
+    setActiveTab(targetTab);
+    setMobileSidebarOpen(false);
+    const nextUrl = targetTab === 'overview' ? '/admin' : `/admin/${targetTab}`;
+    if (window.location.pathname !== nextUrl || window.location.hash) {
+      window.history.pushState(null, '', nextUrl);
+    }
   };
 
   if (userLoading) {
@@ -563,6 +612,7 @@ function UsersTab() {
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'active' | 'suspended' | 'available' | 'expired'
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(25);
   const [pagination, setPagination] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -576,18 +626,18 @@ function UsersTab() {
     setLoading(true);
     const q = search ? `&q=${encodeURIComponent(search)}` : '';
     const st = statusFilter !== 'all' ? `&status=${encodeURIComponent(statusFilter)}` : '';
-    get(`/admin/users?page=${page}&limit=25&tier=${tierFilter}${st}${q}`)
+    get(`/admin/users?page=${page}&limit=${limit}&tier=${tierFilter}${st}${q}`)
       .then((d) => {
         setUsers(d.users || []);
         if (d.counts) setCounts(d.counts);
-        setPagination(d.pagination);
+        setPagination(d.pagination || null);
       })
       .finally(() => setLoading(false));
   };
 
   useEffect(() => {
     fetchUsers();
-  }, [page, search, tierFilter, statusFilter]);
+  }, [page, limit, search, tierFilter, statusFilter]);
 
   const toggleSuspend = async (u) => {
     try {
@@ -712,7 +762,7 @@ function UsersTab() {
               <th>Status</th>
               <th>Lifespan / Expiry</th>
               <th>Registered</th>
-              <th style={{ textAlign: 'right' }}>Actions</th>
+              <th className="admin-sticky-actions-col" style={{ textAlign: 'right' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -773,7 +823,7 @@ function UsersTab() {
                   <td className="text-secondary" style={{ fontSize: '0.75rem' }}>
                     {u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}
                   </td>
-                  <td>
+                  <td className="admin-sticky-actions-col">
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', justifyContent: 'flex-end' }}>
                       <button
                         type="button"
@@ -837,6 +887,82 @@ function UsersTab() {
           </tbody>
         </table>
       </div>
+
+      {/* Pagination Footer */}
+      {pagination && (
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '0.75rem',
+            padding: '0.85rem 1.25rem',
+            background: 'var(--color-bg-elevated)',
+            borderTop: '1px solid var(--color-border)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }}>
+            <span>
+              Showing{' '}
+              <strong style={{ color: 'var(--color-text-primary)' }}>
+                {pagination.total === 0 ? 0 : (page - 1) * limit + 1}–{Math.min(page * limit, pagination.total)}
+              </strong>{' '}
+              of <strong style={{ color: 'var(--color-text-primary)' }}>{pagination.total}</strong> accounts
+            </span>
+            <select
+              className="input input-xs"
+              value={limit}
+              onChange={(e) => { setLimit(Number(e.target.value)); setPage(1); }}
+              aria-label="Rows per page"
+              style={{ width: 'auto', padding: '0.2rem 0.45rem', fontSize: '0.75rem' }}
+            >
+              <option value={10}>10 / page</option>
+              <option value={25}>25 / page</option>
+              <option value={50}>50 / page</option>
+              <option value={100}>100 / page</option>
+            </select>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+            <button
+              type="button"
+              className="btn btn-secondary btn-xs"
+              disabled={page <= 1}
+              onClick={() => setPage(1)}
+            >
+              « First
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary btn-xs"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              ← Prev
+            </button>
+            <span className="admin-badge admin-badge-purple" style={{ padding: '0.25rem 0.65rem' }}>
+              Page {page} of {Math.max(1, pagination.totalPages || 1)}
+            </span>
+            <button
+              type="button"
+              className="btn btn-secondary btn-xs"
+              disabled={page >= (pagination.totalPages || 1)}
+              onClick={() => setPage((p) => Math.min(pagination.totalPages || 1, p + 1))}
+            >
+              Next →
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary btn-xs"
+              disabled={page >= (pagination.totalPages || 1)}
+              onClick={() => setPage(Math.max(1, pagination.totalPages || 1))}
+            >
+              Last »
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Create User Modal ─────────────────────────────── */}
       {showCreateModal && (

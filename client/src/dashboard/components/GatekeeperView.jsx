@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { get, post, del } from '../../shared/api.js';
 
 /**
  * GatekeeperView — HEY-Grade Sender Screening Quarantine Queue & Rules Management
@@ -13,21 +14,19 @@ export default function GatekeeperView({ onBack }) {
 
   const fetchPending = async () => {
     try {
-      const res = await fetch('/api/screener/pending', { credentials: 'include' });
-      const data = await res.json();
+      const data = await get('/screener/pending');
       setPending(data.pending || []);
     } catch (err) {
-      console.error('Failed to fetch pending senders', err);
+      if (window.WoxToast) window.WoxToast.error('Failed to load pending senders: ' + err.message);
     }
   };
 
   const fetchRules = async () => {
     try {
-      const res = await fetch('/api/screener/rules', { credentials: 'include' });
-      const data = await res.json();
+      const data = await get('/screener/rules');
       setRules(data.rules || []);
     } catch (err) {
-      console.error('Failed to fetch screener rules', err);
+      if (window.WoxToast) window.WoxToast.error('Failed to load screener rules: ' + err.message);
     }
   };
 
@@ -41,24 +40,20 @@ export default function GatekeeperView({ onBack }) {
     const pattern = matchType === 'domain' ? domain : senderEmail;
 
     try {
-      const res = await fetch('/api/screener/decide', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          senderPattern: pattern,
-          matchType,
-          destination,
-        }),
+      const data = await post('/screener/decide', {
+        senderPattern: pattern,
+        matchType,
+        destination,
       });
-      const data = await res.json();
       if (data.success) {
-        // Remove from pending list
         setPending((prev) => prev.filter((p) => p.email !== senderEmail && (matchType !== 'domain' || p.domain !== domain)));
+        if (window.WoxToast) window.WoxToast.success(`Screener rule saved (${destination})`);
         fetchRules();
+      } else {
+        throw new Error(data.error || 'Failed to save screening rule');
       }
     } catch (err) {
-      alert('Failed to save decision: ' + err.message);
+      if (window.WoxToast) window.WoxToast.error('Failed to save decision: ' + err.message);
     } finally {
       setActionLoading((prev) => ({ ...prev, [senderEmail]: false }));
     }
@@ -67,13 +62,11 @@ export default function GatekeeperView({ onBack }) {
   const handleDeleteRule = async (ruleId) => {
     if (!confirm('Are you sure you want to remove this screening rule?')) return;
     try {
-      await fetch(`/api/screener/rules/${ruleId}`, {
-        method: 'DELETE',
-        credentials: 'include',
-      });
+      await del(`/screener/rules/${ruleId}`);
+      if (window.WoxToast) window.WoxToast.success('Screening rule removed');
       fetchRules();
     } catch (err) {
-      alert('Failed to remove rule: ' + err.message);
+      if (window.WoxToast) window.WoxToast.error('Failed to remove rule: ' + err.message);
     }
   };
 
@@ -84,7 +77,7 @@ export default function GatekeeperView({ onBack }) {
   );
 
   return (
-    <div className="gatekeeper-view" style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100vh', overflowY: 'auto', background: 'var(--color-bg-page)' }}>
+    <div className="gatekeeper-view" style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, overflowY: 'auto', background: 'var(--color-bg-page)' }}>
       {/* Header Bar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--color-border)', background: 'var(--color-bg-card)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>

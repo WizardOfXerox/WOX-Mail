@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import CampaignComposer from './CampaignComposer.jsx';
+import { get, post } from '../../shared/api.js';
 
 /**
  * CampaignsView — WoxNewsletter & Bulk Campaign Broadcaster Dashboard
@@ -50,45 +51,41 @@ export default function CampaignsView() {
 
   const fetchCampaigns = async () => {
     try {
-      const res = await fetch('/api/campaigns', { credentials: 'include' });
-      const data = await res.json();
+      const data = await get('/campaigns');
       setCampaigns(data.campaigns || []);
     } catch (err) {
-      console.error('Failed to fetch campaigns', err);
+      if (window.WoxToast) window.WoxToast.error('Failed to load campaigns: ' + err.message);
     }
   };
 
   const fetchLists = async () => {
     try {
-      const res = await fetch('/api/campaigns/lists', { credentials: 'include' });
-      const data = await res.json();
+      const data = await get('/campaigns/lists');
       setLists(data.lists || []);
       if (data.lists?.[0]?.id) {
         setNewSeqListId(data.lists[0].id);
         setNewSegmentListId(data.lists[0].id);
       }
     } catch (err) {
-      console.error('Failed to fetch mailing lists', err);
+      if (window.WoxToast) window.WoxToast.error('Failed to load mailing lists: ' + err.message);
     }
   };
 
   const fetchSequences = async () => {
     try {
-      const res = await fetch('/api/campaigns/drip/sequences', { credentials: 'include' });
-      const data = await res.json();
+      const data = await get('/campaigns/drip/sequences');
       setSequences(data.sequences || []);
     } catch (err) {
-      console.error('Failed to fetch drip sequences', err);
+      if (window.WoxToast) window.WoxToast.error('Failed to load drip sequences: ' + err.message);
     }
   };
 
   const fetchSegments = async () => {
     try {
-      const res = await fetch('/api/campaigns/segments', { credentials: 'include' });
-      const data = await res.json();
+      const data = await get('/campaigns/segments');
       setSegments(data.segments || []);
     } catch (err) {
-      console.error('Failed to fetch segments', err);
+      if (window.WoxToast) window.WoxToast.error('Failed to load segments: ' + err.message);
     }
   };
 
@@ -105,21 +102,21 @@ export default function CampaignsView() {
     e.preventDefault();
     if (!newListName.trim()) return;
     try {
-      const res = await fetch('/api/campaigns/lists', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ name: newListName.trim(), description: newListDesc.trim() }),
+      const data = await post('/campaigns/lists', {
+        name: newListName.trim(),
+        description: newListDesc.trim(),
       });
-      const data = await res.json();
       if (data.success) {
         setShowNewListModal(false);
         setNewListName('');
         setNewListDesc('');
+        if (window.WoxToast) window.WoxToast.success('Mailing list created');
         fetchLists();
+      } else {
+        throw new Error(data.error || 'Failed to create list');
       }
     } catch (err) {
-      alert('Failed to create list: ' + err.message);
+      if (window.WoxToast) window.WoxToast.error('Failed to create list: ' + err.message);
     }
   };
 
@@ -127,25 +124,22 @@ export default function CampaignsView() {
     e.preventDefault();
     if (!newSeqName.trim() || !newSeqListId) return;
     try {
-      const res = await fetch('/api/campaigns/drip/sequences', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          list_id: parseInt(newSeqListId, 10),
-          name: newSeqName.trim(),
-          description: newSeqDesc.trim()
-        })
+      const data = await post('/campaigns/drip/sequences', {
+        list_id: parseInt(newSeqListId, 10),
+        name: newSeqName.trim(),
+        description: newSeqDesc.trim(),
       });
-      const data = await res.json();
       if (data.success) {
         setShowNewSeqModal(false);
         setNewSeqName('');
         setNewSeqDesc('');
+        if (window.WoxToast) window.WoxToast.success('Drip sequence created');
         fetchSequences();
+      } else {
+        throw new Error(data.error || 'Failed to create drip sequence');
       }
     } catch (err) {
-      alert('Failed to create drip sequence: ' + err.message);
+      if (window.WoxToast) window.WoxToast.error('Failed to create drip sequence: ' + err.message);
     }
   };
 
@@ -153,27 +147,24 @@ export default function CampaignsView() {
     e.preventDefault();
     if (!activeSeqForStep || !stepSubject.trim() || !stepHtml.trim()) return;
     try {
-      const res = await fetch(`/api/campaigns/drip/sequences/${activeSeqForStep.id}/steps`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          delay_days: parseInt(stepDays, 10) || 0,
-          delay_hours: parseInt(stepHours, 10) || 0,
-          subject: stepSubject.trim(),
-          html_content: stepHtml.trim()
-        })
+      const data = await post(`/campaigns/drip/sequences/${activeSeqForStep.id}/steps`, {
+        delay_days: parseInt(stepDays, 10) || 0,
+        delay_hours: parseInt(stepHours, 10) || 0,
+        subject: stepSubject.trim(),
+        html_content: stepHtml.trim(),
       });
-      const data = await res.json();
       if (data.success) {
         setActiveSeqForStep(null);
         setStepSubject('');
         setStepDays(1);
         setStepHours(0);
+        if (window.WoxToast) window.WoxToast.success('Drip step added');
         fetchSequences();
+      } else {
+        throw new Error(data.error || 'Failed to add step');
       }
     } catch (err) {
-      alert('Failed to add step: ' + err.message);
+      if (window.WoxToast) window.WoxToast.error('Failed to add step: ' + err.message);
     }
   };
 
@@ -191,13 +182,10 @@ export default function CampaignsView() {
     }
 
     try {
-      const res = await fetch('/api/campaigns/segments/preview-count', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ list_id: parseInt(newSegmentListId, 10), rules })
+      const data = await post('/campaigns/segments/preview-count', {
+        list_id: parseInt(newSegmentListId, 10),
+        rules,
       });
-      const data = await res.json();
       setPreviewCount(data.count);
     } catch (err) {
       console.warn('Count preview error', err);
@@ -220,43 +208,38 @@ export default function CampaignsView() {
     }
 
     try {
-      const res = await fetch('/api/campaigns/segments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          list_id: parseInt(newSegmentListId, 10),
-          name: newSegmentName.trim(),
-          rules
-        })
+      const data = await post('/campaigns/segments', {
+        list_id: parseInt(newSegmentListId, 10),
+        name: newSegmentName.trim(),
+        rules,
       });
-      const data = await res.json();
       if (data.success) {
         setShowNewSegmentModal(false);
         setNewSegmentName('');
         setSegmentTag('');
         setPreviewCount(null);
+        if (window.WoxToast) window.WoxToast.success('Segment created');
         fetchSegments();
+      } else {
+        throw new Error(data.error || 'Failed to create segment');
       }
     } catch (err) {
-      alert('Failed to create segment: ' + err.message);
+      if (window.WoxToast) window.WoxToast.error('Failed to create segment: ' + err.message);
     }
   };
 
   const handleStartBroadcast = async (campaignId) => {
     if (!confirm('Are you sure you want to broadcast this campaign to active subscribers?')) return;
     try {
-      const res = await fetch(`/api/campaigns/${campaignId}/send`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-      const data = await res.json();
+      const data = await post(`/campaigns/${campaignId}/send`);
       if (data.success) {
-        alert('Campaign broadcast started! Emails are being dispatched.');
+        if (window.WoxToast) window.WoxToast.success('Campaign broadcast started! Emails are being dispatched.');
         fetchCampaigns();
+      } else {
+        throw new Error(data.error || 'Failed to start broadcast');
       }
     } catch (err) {
-      alert('Failed to start broadcast: ' + err.message);
+      if (window.WoxToast) window.WoxToast.error('Failed to start broadcast: ' + err.message);
     }
   };
 
@@ -282,27 +265,23 @@ export default function CampaignsView() {
     }
 
     if (subscribers.length === 0) {
-      alert('No valid email addresses found in the CSV text.');
+      if (window.WoxToast) window.WoxToast.error('No valid email addresses found in the CSV text.');
       return;
     }
 
     setImporting(true);
     try {
-      const res = await fetch(`/api/campaigns/lists/${importListId}/import`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ subscribers }),
-      });
-      const data = await res.json();
+      const data = await post(`/campaigns/lists/${importListId}/import`, { subscribers });
       if (data.success) {
-        alert(`Successfully imported ${data.imported} subscribers! (${data.skipped} skipped)`);
+        if (window.WoxToast) window.WoxToast.success(`Imported ${data.imported} subscribers (${data.skipped || 0} skipped)`);
         setImportListId(null);
         setCsvText('');
         fetchLists();
+      } else {
+        throw new Error(data.error || 'Import failed');
       }
     } catch (err) {
-      alert('Failed to import subscribers: ' + err.message);
+      if (window.WoxToast) window.WoxToast.error('Failed to import subscribers: ' + err.message);
     } finally {
       setImporting(false);
     }
@@ -310,17 +289,16 @@ export default function CampaignsView() {
 
   const showEmbedCode = async (listId) => {
     try {
-      const res = await fetch(`/api/campaigns/lists/${listId}/embed`, { credentials: 'include' });
-      const data = await res.json();
-      setEmbedHtml(data.embedHtml);
+      const data = await get(`/campaigns/lists/${listId}/embed`);
+      setEmbedHtml(data.html || data.embedHtml || '');
     } catch (err) {
-      alert('Failed to get embed code: ' + err.message);
+      if (window.WoxToast) window.WoxToast.error('Failed to get embed code: ' + err.message);
     }
   };
 
   if (isComposing) {
     return (
-      <div style={{ flex: 1, height: '100vh', overflowY: 'auto', background: 'var(--color-bg-page)' }}>
+      <div style={{ flex: 1, height: '100%', minHeight: 0, overflowY: 'auto', background: 'var(--color-bg-page)' }}>
         <CampaignComposer
           lists={lists}
           onSave={() => {
@@ -334,7 +312,7 @@ export default function CampaignsView() {
   }
 
   return (
-    <div className="campaigns-view" style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100vh', overflowY: 'auto', background: 'var(--color-bg-page)' }}>
+    <div className="campaigns-view" style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, overflowY: 'auto', background: 'var(--color-bg-page)' }}>
       {/* Header Bar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--color-border)', background: 'var(--color-bg-card)', flexWrap: 'wrap', gap: '0.75rem' }}>
         <div>

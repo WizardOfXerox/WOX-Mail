@@ -2,19 +2,84 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import { requireAuth } from '../middleware/auth.js';
 import { query } from '../config/database.js';
+import { encryptCredentials, decryptCredentials } from '../services/accountService.js';
 import pino from 'pino';
 
 const logger = pino({ name: 'woxmail:notes' });
 const router = Router();
 router.use(requireAuth);
 
+function getNotesWrapSecret() {
+  return process.env.NOTES_ENCRYPTION_KEY || process.env.ACCOUNT_ENCRYPTION_KEY || process.env.JWT_SECRET;
+}
+
+function wrapDek(dekBuffer) {
+  if (process.env.NOTES_ENCRYPTION_KEY) {
+    const wrapKey = crypto.createHash('sha256').update(`woxmail-notes-dek-wrap:${process.env.NOTES_ENCRYPTION_KEY}`).digest();
+    const iv = crypto.randomBytes(16);
+    const cipher = crypto.createCipheriv('aes-256-gcm', wrapKey, iv);
+    let ct = cipher.update(dekBuffer.toString('hex'), 'utf8', 'hex');
+    ct += cipher.final('hex');
+    return `nenc:${ct}:${iv.toString('hex')}:${cipher.getAuthTag().toString('hex')}`;
+  }
+  const { ciphertext, iv, authTag } = encryptCredentials(dekBuffer.toString('hex'));
+  return `enc:${ciphertext}:${iv}:${authTag}`;
+}
+
+function unwrapDek(stored) {
+  if (!stored || typeof stored !== 'string') return null;
+  const parts = stored.split(':');
+  if (parts.length !== 4) return null;
+  if (parts[0] === 'nenc' && process.env.NOTES_ENCRYPTION_KEY) {
+    const wrapKey = crypto.createHash('sha256').update(`woxmail-notes-dek-wrap:${process.env.NOTES_ENCRYPTION_KEY}`).digest();
+    const decipher = crypto.createDecipheriv('aes-256-gcm', wrapKey, Buffer.from(parts[2], 'hex'));
+    decipher.setAuthTag(Buffer.from(parts[3], 'hex'));
+    let hex = decipher.update(parts[1], 'hex', 'utf8');
+    hex += decipher.final('utf8');
+    return Buffer.from(hex, 'hex');
+  }
+  if (parts[0] === 'enc') {
+    const hex = decryptCredentials(parts[1], parts[2], parts[3]);
+    return Buffer.from(hex, 'hex');
+  }
+  return null;
+}
+
 /**
- * Derive 256-bit encryption key per user
+ * Retrieve persistent 256-bit DEK for user (stored wrapped in users.notes_key_encrypted).
+ * Attaches legacy password_hash-derived key on `_legacyKey` for transparent read migration.
  */
 async function getUserKey(userId) {
-  const userRes = await query('SELECT password_hash FROM users WHERE id = $1', [userId]);
-  const secret = userRes.rows[0]?.password_hash || `user-secret-salt-${userId}`;
-  return crypto.pbkdf2Sync(secret, 'woxmail-private-notes-salt-v1', 100000, 32, 'sha256');
+  const userRes = await query('SELECT password_hash, notes_key_encrypted FROM users WHERE id = $1', [userId]);
+  const row = userRes.rows[0] || {};
+  const legacySecret = row.password_hash || `user-secret-salt-${userId}`;
+  const legacyKey = crypto.pbkdf2Sync(legacySecret, 'woxmail-private-notes-salt-v1', 100000, 32, 'sha256');
+
+  let dek = null;
+  if (row.notes_key_encrypted) {
+    try {
+      dek = unwrapDek(row.notes_key_encrypted);
+    } catch (err) {
+      logger.warn({ userId, err: err.message }, 'Failed unwrapping stored notes DEK');
+    }
+  }
+
+  if (!dek) {
+    dek = crypto.randomBytes(32);
+    if (getNotesWrapSecret()) {
+      try {
+        await query('UPDATE users SET notes_key_encrypted = $1 WHERE id = $2', [wrapDek(dek), userId]);
+      } catch (err) {
+        logger.warn({ userId, err: err.message }, 'Failed persisting wrapped notes DEK');
+        dek = legacyKey;
+      }
+    } else {
+      dek = legacyKey;
+    }
+  }
+
+  dek._legacyKey = legacyKey;
+  return dek;
 }
 
 /**
@@ -31,18 +96,29 @@ function encryptNote(text, key) {
   };
 }
 
+function decryptWithKey(encryptedHex, ivHex, key) {
+  const iv = Buffer.from(ivHex, 'hex');
+  const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+  let decrypted = decipher.update(encryptedHex, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+  return decrypted;
+}
+
 /**
- * Decrypt note text with AES-256-CBC
+ * Decrypt note text with AES-256-CBC (tries persistent DEK, falls back to legacy password_hash key)
  */
 function decryptNote(encryptedHex, ivHex, key) {
+  if (!encryptedHex || !ivHex) return '';
   try {
-    if (!encryptedHex || !ivHex) return '';
-    const iv = Buffer.from(ivHex, 'hex');
-    const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
-    let decrypted = decipher.update(encryptedHex, 'hex', 'utf8');
-    decrypted += decipher.final('utf8');
-    return decrypted;
+    return decryptWithKey(encryptedHex, ivHex, key);
   } catch (err) {
+    if (key?._legacyKey) {
+      try {
+        return decryptWithKey(encryptedHex, ivHex, key._legacyKey);
+      } catch {
+        // Fall through to error message
+      }
+    }
     logger.warn({ err: err.message }, 'Failed to decrypt email note');
     return '[Encrypted Note — Decryption Error]';
   }
@@ -166,6 +242,7 @@ router.put('/vault/:id', async (req, res, next) => {
       iv = enc.iv;
     }
 
+    const hasLinkedUid = Object.prototype.hasOwnProperty.call(req.body, 'linkedMessageUid');
     const result = await query(
       `UPDATE user_notes SET
          title = COALESCE($1, title),
@@ -175,9 +252,9 @@ router.put('/vault/:id', async (req, res, next) => {
          is_pinned = COALESCE($5, is_pinned),
          is_checklist = COALESCE($6, is_checklist),
          tags = COALESCE($7, tags),
-         linked_message_uid = COALESCE($8, linked_message_uid),
+         linked_message_uid = CASE WHEN $8::boolean THEN $9::varchar ELSE linked_message_uid END,
          updated_at = NOW()
-       WHERE id = $9 AND user_id = $10
+       WHERE id = $10 AND user_id = $11
        RETURNING id, title, color, is_pinned, is_checklist, tags, linked_message_uid, created_at, updated_at`,
       [
         title !== undefined ? title.trim() : null,
@@ -187,7 +264,8 @@ router.put('/vault/:id', async (req, res, next) => {
         isPinned !== undefined ? Boolean(isPinned) : null,
         isChecklist !== undefined ? Boolean(isChecklist) : null,
         tags || null,
-        linkedMessageUid !== undefined ? linkedMessageUid : null,
+        hasLinkedUid,
+        hasLinkedUid && linkedMessageUid !== null ? String(linkedMessageUid) : null,
         id,
         req.userId
       ]

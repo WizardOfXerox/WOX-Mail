@@ -67,16 +67,36 @@ export default function AccountsSection() {
 
   const handleTest = async (e) => {
     e.preventDefault();
-    if (!form.email || !form.password) {
+    setSuccess(null);
+    if (!form.email?.trim() || !form.password) {
       setError('Please enter both email and password / App Password.');
+      return;
+    }
+    if (form.provider === 'custom' && (!form.imap_host?.trim() || !form.smtp_host?.trim())) {
+      setError('Please enter both IMAP host and SMTP host for custom servers.');
       return;
     }
     try {
       setTesting(true);
       setError(null);
       setTestResult(null);
-      const res = await post('/api/accounts/test', form);
-      setTestResult(res.testResults);
+      const res = await post('/api/accounts/test', {
+        ...form,
+        email: form.email.trim(),
+        imap_port: Number(form.imap_port) || 993,
+        smtp_port: Number(form.smtp_port) || (form.smtp_secure ? 465 : 587),
+      });
+      const results = res?.testResults || null;
+      setTestResult(results);
+      if (!results) {
+        setError('Connection test did not return IMAP/SMTP diagnostic results.');
+      } else if (!results.imap?.success && !results.smtp?.success) {
+        setError('Both IMAP and SMTP connection tests failed. Check hostnames, ports, and credentials.');
+      } else if (!results.imap?.success) {
+        setError(`IMAP validation failed: ${results.imap?.error || 'Connection failed'}`);
+      } else if (!results.smtp?.success) {
+        setError(`SMTP validation failed: ${results.smtp?.error || 'Verification failed'}`);
+      }
     } catch (err) {
       setError(err.message || 'Connection test failed.');
     } finally {
@@ -86,6 +106,20 @@ export default function AccountsSection() {
 
   const handleConnect = async (e) => {
     e.preventDefault();
+    if (!form.email?.trim() || !form.password) {
+      setError('Please enter both email and password / App Password.');
+      return;
+    }
+    if (form.provider === 'custom' && (!form.imap_host?.trim() || !form.smtp_host?.trim())) {
+      setError('Please enter both IMAP host and SMTP host for custom servers.');
+      return;
+    }
+    const payload = {
+      ...form,
+      email: form.email.trim(),
+      imap_port: Number(form.imap_port) || 993,
+      smtp_port: Number(form.smtp_port) || (form.smtp_secure ? 465 : 587),
+    };
     try {
       setSaving(true);
       setError(null);
@@ -94,7 +128,7 @@ export default function AccountsSection() {
       // Direct Proton Mail SRP-6a & OpenPGP Flow
       if (form.provider === 'proton') {
         setPendingProtonPassword(form.password);
-        const loginRes = await protonClient.login(form.email, form.password);
+        const loginRes = await protonClient.login(payload.email, form.password);
         if (loginRes.requires2FA) {
           setShow2FAModal(true);
           setSaving(false);
@@ -102,8 +136,18 @@ export default function AccountsSection() {
         }
       }
 
-      await post('/api/accounts/connect', form);
-      setSuccess(`Connected ${form.email} successfully!`);
+      const res = await post('/api/accounts/connect', payload);
+      const results = res?.testResults || null;
+      setTestResult(results);
+      setPendingProtonPassword('');
+
+      if (results?.smtp && !results.smtp.success) {
+        setSuccess(`Connected ${payload.email} for IMAP.`);
+        setError(`SMTP check failed: ${results.smtp.error || 'SMTP verification failed. Outbound sending may require adjusting SMTP host/port or security.'}`);
+      } else {
+        setSuccess(`Connected ${payload.email} successfully! Both IMAP and SMTP verified.`);
+      }
+
       setForm({
         provider: 'gmail',
         email: '',
@@ -117,9 +161,9 @@ export default function AccountsSection() {
         smtp_secure: true,
         is_default: false
       });
-      setTestResult(null);
       await loadData();
     } catch (err) {
+      setPendingProtonPassword('');
       setError(err.message || 'Failed to connect account.');
     } finally {
       setSaving(false);
@@ -132,8 +176,14 @@ export default function AccountsSection() {
       setError(null);
       await protonClient.submit2FA(totpCode, pendingProtonPassword);
       setShow2FAModal(false);
-      await post('/api/accounts/connect', form);
-      setSuccess(`Connected ${form.email} with 2FA successfully!`);
+      const res = await post('/api/accounts/connect', {
+        ...form,
+        email: form.email.trim(),
+        imap_port: Number(form.imap_port) || 443,
+        smtp_port: Number(form.smtp_port) || 443,
+      });
+      setTestResult(res?.testResults || null);
+      setSuccess(`Connected ${form.email.trim()} with 2FA successfully!`);
       setForm({
         provider: 'gmail',
         email: '',
@@ -239,6 +289,11 @@ export default function AccountsSection() {
                     <div className="text-secondary" style={{ fontSize: '0.75rem' }}>
                       IMAP: {acc.imap_host}:{acc.imap_port} · SMTP: {acc.smtp_host}:{acc.smtp_port}
                     </div>
+                    {acc.sync_error && (
+                      <div style={{ fontSize: '0.72rem', color: 'var(--color-error)', marginTop: '0.2rem' }}>
+                        Sync warning: {acc.sync_error}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -335,8 +390,19 @@ export default function AccountsSection() {
                   type="number"
                   className="input"
                   value={form.imap_port}
-                  onChange={(e) => setForm({ ...form, imap_port: parseInt(e.target.value, 10) })}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    setForm({ ...form, imap_port: Number.isNaN(val) ? '' : val });
+                  }}
                 />
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', marginTop: '0.35rem', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(form.imap_secure)}
+                    onChange={(e) => setForm({ ...form, imap_secure: e.target.checked })}
+                  />
+                  <span>IMAP SSL/TLS</span>
+                </label>
               </div>
               <div>
                 <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.875rem' }}>SMTP Host</label>
@@ -355,19 +421,34 @@ export default function AccountsSection() {
                   type="number"
                   className="input"
                   value={form.smtp_port}
-                  onChange={(e) => setForm({ ...form, smtp_port: parseInt(e.target.value, 10) })}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    setForm({ ...form, smtp_port: Number.isNaN(val) ? '' : val });
+                  }}
                 />
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', marginTop: '0.35rem', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(form.smtp_secure)}
+                    onChange={(e) => setForm({ ...form, smtp_secure: e.target.checked })}
+                  />
+                  <span>SMTP SSL/TLS</span>
+                </label>
               </div>
             </div>
           )}
 
           {testResult && (
             <div style={{ padding: '0.875rem', background: 'var(--color-bg-page)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', marginBottom: '1.25rem', fontSize: '0.8125rem' }}>
-              <div style={{ color: testResult.imap.success ? 'var(--color-success)' : 'var(--color-error)' }}>
-                {testResult.imap.success ? '✓ IMAP Authentication Succeeded' : `✗ IMAP Error: ${testResult.imap.error}`}
+              <div style={{ color: testResult.imap?.success ? 'var(--color-success)' : 'var(--color-error)' }}>
+                {testResult.imap?.success
+                  ? `✓ ${testResult.imap.message || 'IMAP Authentication Succeeded'}`
+                  : `✗ IMAP Error: ${testResult.imap?.error || 'IMAP connection failed'}`}
               </div>
-              <div style={{ color: testResult.smtp.success ? 'var(--color-success)' : 'var(--color-error)', marginTop: '0.25rem' }}>
-                {testResult.smtp.success ? '✓ SMTP Handshake Succeeded' : `✗ SMTP Error: ${testResult.smtp.error}`}
+              <div style={{ color: testResult.smtp?.success ? 'var(--color-success)' : 'var(--color-error)', marginTop: '0.25rem' }}>
+                {testResult.smtp?.success
+                  ? `✓ ${testResult.smtp.message || 'SMTP Handshake Succeeded'}`
+                  : `✗ SMTP Error: ${testResult.smtp?.error || 'SMTP verification failed'}`}
               </div>
             </div>
           )}
@@ -395,7 +476,10 @@ export default function AccountsSection() {
       {show2FAModal && (
         <Proton2FAModal
           onSubmit={handle2FASubmit}
-          onCancel={() => setShow2FAModal(false)}
+          onCancel={() => {
+            setShow2FAModal(false);
+            setPendingProtonPassword('');
+          }}
           loading={saving}
         />
       )}

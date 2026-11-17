@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { getCsrfToken } from '../../shared/api.js';
+import React, { useState, useEffect, useCallback } from 'react';
+import { post } from '../../shared/api.js';
+import { getStoredPrivacyPrefs, PRIVACY_PREFS_EVENT } from './EmailPrivacyModal.jsx';
 
 /**
  * Extract distinct external HTTP/HTTPS URLs from HTML string or plaintext.
@@ -54,8 +55,37 @@ export default function LinkPreviewTray({
   const [previews, setPreviews] = useState({});
   const [loading, setLoading] = useState(false);
   const [collapsed, setCollapsed] = useState(true);
+  const [privacyBlocked, setPrivacyBlocked] = useState(false);
+  const [userOptedIn, setUserOptedIn] = useState(false);
+
+  const checkBlockedByPrivacy = useCallback((msg) => {
+    const prefs = getStoredPrivacyPrefs();
+    if (prefs.remoteImages === 'block_all') return true;
+    if (prefs.remoteImages === 'trusted_only') {
+      const fromAddr = String(msg?.from?.address || msg?.from || '').toLowerCase();
+      const trusted = (prefs.trustedSenders || []).some((s) => fromAddr.includes(s));
+      if (!trusted) return true;
+    }
+    return false;
+  }, []);
+
+  const loadPreviews = useCallback(async (foundUrls) => {
+    if (!foundUrls || foundUrls.length === 0) return;
+    setLoading(true);
+    try {
+      const data = await post('/mail/link-previews', { urls: foundUrls });
+      if (data?.previews) {
+        setPreviews(data.previews);
+      }
+    } catch (err) {
+      console.error('Failed fetching link previews', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
+    setUserOptedIn(false);
     if (!message) {
       setUrls([]);
       setPreviews({});
@@ -64,7 +94,6 @@ export default function LinkPreviewTray({
 
     const foundUrls = extractEmbeddedUrls(message.html, message.text);
     setUrls(foundUrls);
-    // Collapse if more than 2 links
     setCollapsed(foundUrls.length > 2);
 
     if (foundUrls.length === 0) {
@@ -72,36 +101,37 @@ export default function LinkPreviewTray({
       return;
     }
 
-    let isMounted = true;
-    setLoading(true);
+    const blocked = checkBlockedByPrivacy(message);
+    setPrivacyBlocked(blocked);
+    if (blocked) {
+      setPreviews({});
+      return;
+    }
 
-    const csrfToken = getCsrfToken();
-    const reqHeaders = { 'Content-Type': 'application/json' };
-    if (csrfToken) reqHeaders['x-csrf-token'] = csrfToken;
+    loadPreviews(foundUrls);
+  }, [message?.uid, message?.subject, checkBlockedByPrivacy, loadPreviews]);
 
-    fetch('/api/mail/link-previews', {
-      method: 'POST',
-      headers: reqHeaders,
-      credentials: 'include',
-      body: JSON.stringify({ urls: foundUrls }),
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        if (isMounted && data.previews) {
-          setPreviews(data.previews);
-        }
-      })
-      .catch((err) => {
-        console.error('Failed fetching link previews', err);
-      })
-      .finally(() => {
-        if (isMounted) setLoading(false);
-      });
-
-    return () => { isMounted = false; };
-  }, [message?.uid, message?.subject]);
+  useEffect(() => {
+    const onPrefsChange = () => {
+      if (!message) return;
+      const blocked = checkBlockedByPrivacy(message);
+      setPrivacyBlocked(blocked && !userOptedIn);
+    };
+    window.addEventListener(PRIVACY_PREFS_EVENT, onPrefsChange);
+    return () => window.removeEventListener(PRIVACY_PREFS_EVENT, onPrefsChange);
+  }, [message, checkBlockedByPrivacy, userOptedIn]);
 
   if (urls.length === 0) return null;
+
+  const isUrlDomainBlocked = (targetUrl) => {
+    try {
+      const hostname = new URL(targetUrl).hostname.toLowerCase().replace(/^www\./, '');
+      const prefs = getStoredPrivacyPrefs();
+      return (prefs.blockedDomains || []).some((d) => hostname === d || hostname.endsWith(`.${d}`));
+    } catch {
+      return false;
+    }
+  };
 
   return (
     <div className="link-preview-tray">
@@ -116,6 +146,21 @@ export default function LinkPreviewTray({
             <span className="text-tertiary" style={{ fontSize: '0.75rem' }}>
               • Fetching rich meta...
             </span>
+          )}
+          {privacyBlocked && !userOptedIn && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-xs"
+              onClick={() => {
+                setUserOptedIn(true);
+                setPrivacyBlocked(false);
+                setCollapsed(false);
+                loadPreviews(urls);
+              }}
+              style={{ fontSize: '0.72rem' }}
+            >
+              Load Safe Previews
+            </button>
           )}
         </div>
 
@@ -134,12 +179,13 @@ export default function LinkPreviewTray({
         <div className="link-preview-grid">
           {urls.map((u) => {
             const p = previews[u];
+            const domainBlocked = isUrlDomainBlocked(u);
             let hostname = '';
             try { hostname = new URL(u).hostname.replace(/^www\./, ''); } catch { hostname = u; }
 
             return (
               <div key={u} className="link-preview-card">
-                {p?.image ? (
+                {p?.image && !privacyBlocked ? (
                   <div
                     className="link-preview-thumb"
                     style={{ backgroundImage: `url(${p.image})` }}
@@ -152,7 +198,7 @@ export default function LinkPreviewTray({
 
                 <div className="link-preview-content">
                   <div className="link-preview-site-row">
-                    {p?.favicon && (
+                    {p?.favicon && !privacyBlocked && (
                       <img
                         src={p.favicon}
                         alt=""
@@ -161,6 +207,11 @@ export default function LinkPreviewTray({
                       />
                     )}
                     <span className="link-preview-hostname">{p?.siteName || hostname}</span>
+                    {domainBlocked && (
+                      <span className="admin-badge admin-badge-red" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem' }}>
+                        BLOCKED
+                      </span>
+                    )}
                     <span className="admin-badge admin-badge-purple" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem' }}>
                       {p?.type || 'WEB'}
                     </span>
@@ -189,15 +240,21 @@ export default function LinkPreviewTray({
                     </button>
 
                     <a
-                      href={u}
+                      href={domainBlocked ? undefined : u}
                       target="_blank"
                       rel="noopener noreferrer nofollow"
+                      onClick={(e) => {
+                        if (domainBlocked) {
+                          e.preventDefault();
+                          if (window.WoxToast) window.WoxToast.error(`Blocked by privacy policy: ${hostname}`);
+                        }
+                      }}
                       className="btn btn-ghost btn-xs"
-                      title="Open external website"
-                      style={{ fontSize: '0.75rem', gap: '0.3rem', color: 'var(--color-primary-light)' }}
+                      title={domainBlocked ? `Blocked destination: ${hostname}` : 'Open external website'}
+                      style={{ fontSize: '0.75rem', gap: '0.3rem', color: domainBlocked ? 'var(--color-error)' : 'var(--color-primary-light)' }}
                     >
-                      <span>Visit</span>
-                      <span>↗</span>
+                      <span>{domainBlocked ? 'Blocked' : 'Visit'}</span>
+                      {!domainBlocked && <span>↗</span>}
                     </a>
 
                     <button

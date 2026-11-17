@@ -56,6 +56,38 @@ redis.connect().catch(() => {
 
 // In-memory fallback map for when Redis is offline
 const memoryStore = new Map();
+const MAX_MEMORY_KEYS = 50000;
+
+const memoryCleanupTimer = setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of memoryStore.entries()) {
+    if (v.expires <= now) {
+      memoryStore.delete(k);
+    }
+  }
+}, 5 * 60 * 1000);
+
+if (memoryCleanupTimer.unref) {
+  memoryCleanupTimer.unref();
+}
+
+function setMemoryKey(key, value, expires) {
+  if (!memoryStore.has(key) && memoryStore.size >= MAX_MEMORY_KEYS) {
+    const now = Date.now();
+    for (const [k, v] of memoryStore.entries()) {
+      if (v.expires <= now) {
+        memoryStore.delete(k);
+      }
+      if (memoryStore.size < MAX_MEMORY_KEYS) break;
+    }
+    while (memoryStore.size >= MAX_MEMORY_KEYS) {
+      const oldestKey = memoryStore.keys().next().value;
+      if (oldestKey === undefined) break;
+      memoryStore.delete(oldestKey);
+    }
+  }
+  memoryStore.set(key, { value, expires });
+}
 
 /**
  * Set a key with an expiration time in seconds.
@@ -75,7 +107,7 @@ export async function setex(key, seconds, value) {
   } catch (err) {
     logger.warn({ err: err.message }, 'Redis setex failed, falling back to memory');
   }
-  memoryStore.set(key, { value: serialized, expires: Date.now() + seconds * 1000 });
+  setMemoryKey(key, serialized, Date.now() + seconds * 1000);
   return 'OK';
 }
 
@@ -127,6 +159,7 @@ export async function del(key) {
 
 /**
  * Increment the integer value of a key by one.
+ * Checks expiration before incrementing and preserves remaining TTL.
  *
  * @param {string} key - Redis key name
  * @returns {Promise<number>} Value of key after increment
@@ -139,9 +172,13 @@ export async function incr(key) {
   } catch (err) {
     logger.warn({ err: err.message }, 'Redis incr failed, falling back to memory');
   }
-  const current = parseInt(memoryStore.get(key)?.value || '0', 10);
+  const now = Date.now();
+  const existing = memoryStore.get(key);
+  const isAlive = Boolean(existing && existing.expires > now);
+  const current = isAlive ? (parseInt(existing.value, 10) || 0) : 0;
   const nextVal = current + 1;
-  memoryStore.set(key, { value: String(nextVal), expires: Date.now() + 86400000 });
+  const expires = isAlive ? existing.expires : now + 86400000;
+  setMemoryKey(key, String(nextVal), expires);
   return nextVal;
 }
 

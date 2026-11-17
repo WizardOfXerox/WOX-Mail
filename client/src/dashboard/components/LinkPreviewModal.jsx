@@ -1,13 +1,42 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { get, post } from '../../shared/api.js';
+import { getStoredPrivacyPrefs } from './EmailPrivacyModal.jsx';
 
 /**
  * Interactive Sandboxed Safe Web Preview Modal
  * Allows users to inspect embedded links with SSL verification,
- * security warnings, and an isolated sandbox iframe.
+ * security warnings, and scriptless text reader extraction (never loading remote scripts directly).
  */
 export default function LinkPreviewModal({ url, preview, onClose }) {
-  const [viewMode, setViewMode] = useState('card'); // 'card' | 'sandbox'
+  const [viewMode, setViewMode] = useState('card'); // 'card' | 'reader'
   const [copied, setCopied] = useState(false);
+  const [readerLoading, setReaderLoading] = useState(false);
+  const [readerData, setReaderData] = useState(null);
+  const [inspectData, setInspectData] = useState(null);
+
+  useEffect(() => {
+    setReaderData(null);
+    setInspectData(null);
+  }, [url]);
+
+  useEffect(() => {
+    if (!url || viewMode !== 'reader' || readerData) return;
+    let active = true;
+    setReaderLoading(true);
+    Promise.all([
+      get(`/security/reader-view?url=${encodeURIComponent(url)}`).catch(() => null),
+      post('/security/inspect-link', { url }).catch(() => null),
+    ])
+      .then(([reader, inspect]) => {
+        if (!active) return;
+        if (reader) setReaderData(reader);
+        if (inspect) setInspectData(inspect);
+      })
+      .finally(() => {
+        if (active) setReaderLoading(false);
+      });
+    return () => { active = false; };
+  }, [viewMode, url, readerData]);
 
   if (!url) return null;
 
@@ -20,6 +49,12 @@ export default function LinkPreviewModal({ url, preview, onClose }) {
   } catch {
     hostname = url;
   }
+
+  const normalizedHost = hostname.toLowerCase().replace(/^www\./, '');
+  const privacyPrefs = getStoredPrivacyPrefs();
+  const isBlockedDomain = (privacyPrefs.blockedDomains || []).some(
+    (d) => normalizedHost === d || normalizedHost.endsWith(`.${d}`)
+  );
 
   const copyUrl = () => {
     navigator.clipboard.writeText(url);
@@ -111,11 +146,11 @@ export default function LinkPreviewModal({ url, preview, onClose }) {
               </button>
               <button
                 type="button"
-                className={`btn btn-xs ${viewMode === 'sandbox' ? 'btn-primary' : 'btn-ghost'}`}
-                onClick={() => setViewMode('sandbox')}
+                className={`btn btn-xs ${viewMode === 'reader' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setViewMode('reader')}
                 style={{ fontSize: '0.75rem', borderRadius: 'var(--radius-sm)' }}
               >
-                Live Sandbox
+                Safe Reader
               </button>
             </div>
             <button
@@ -130,7 +165,12 @@ export default function LinkPreviewModal({ url, preview, onClose }) {
         </div>
 
         {/* Modal Body */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: viewMode === 'sandbox' ? 0 : '1.75rem' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '1.75rem' }}>
+          {isBlockedDomain && (
+            <div style={{ marginBottom: '1rem', padding: '0.85rem 1rem', borderRadius: 'var(--radius-md)', background: 'rgba(239, 68, 68, 0.14)', border: '1px solid rgba(239, 68, 68, 0.35)', color: '#fca5a5', fontSize: '0.82rem' }}>
+              <strong>Destination Blocked:</strong> <code>{normalizedHost}</code> is on your blocked domains list. External navigation is disabled.
+            </div>
+          )}
           {viewMode === 'card' ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
               {/* Preview Hero Card */}
@@ -208,13 +248,37 @@ export default function LinkPreviewModal({ url, preview, onClose }) {
               </div>
             </div>
           ) : (
-            <div style={{ width: '100%', height: '55vh', position: 'relative', background: '#fff' }}>
-              <iframe
-                src={url}
-                title="Sandboxed Web Preview"
-                sandbox="allow-scripts allow-forms"
-                style={{ width: '100%', height: '100%', border: 'none' }}
-              />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {readerLoading ? (
+                <div style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--color-text-secondary)' }}>
+                  <div className="spinner" style={{ margin: '0 auto 0.75rem' }} />
+                  Extracting static scriptless snapshot & redirect chain...
+                </div>
+              ) : (
+                <>
+                  {inspectData?.redirectChain?.length > 0 && (
+                    <div style={{ padding: '0.75rem 1rem', borderRadius: 'var(--radius-md)', background: 'var(--color-bg-input)', border: '1px solid var(--color-border)', fontSize: '0.78rem' }}>
+                      <strong style={{ display: 'block', marginBottom: '0.35rem', color: 'var(--color-primary-light)' }}>Redirect Hop Chain ({inspectData.redirectChain.length})</strong>
+                      {inspectData.redirectChain.map((hop, idx) => (
+                        <div key={idx} className="mono truncate" style={{ fontSize: '0.72rem', color: 'var(--color-text-secondary)' }}>
+                          {idx + 1}. {hop.url || hop}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ padding: '1.25rem', borderRadius: 'var(--radius-lg)', background: 'var(--color-bg-card)', border: '1px solid var(--color-border)' }}>
+                    <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', color: '#34d399', fontWeight: 700, marginBottom: '0.4rem' }}>
+                      Scriptless Safe Reader Snapshot (Zero Third-Party Code Executed)
+                    </div>
+                    <h3 style={{ margin: '0 0 0.75rem', fontSize: '1.1rem', color: 'var(--color-text-primary)' }}>
+                      {readerData?.title || preview?.title || hostname}
+                    </h3>
+                    <div style={{ whiteSpace: 'pre-wrap', fontSize: '0.85rem', lineHeight: 1.65, color: 'var(--color-text-secondary)' }}>
+                      {readerData?.textContent || readerData?.excerpt || readerData?.error || 'Remote page did not return extractable reader content.'}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -251,14 +315,20 @@ export default function LinkPreviewModal({ url, preview, onClose }) {
               Cancel
             </button>
             <a
-              href={url}
+              href={isBlockedDomain ? undefined : url}
               target="_blank"
               rel="noopener noreferrer nofollow"
+              onClick={(e) => {
+                if (isBlockedDomain) {
+                  e.preventDefault();
+                  if (window.WoxToast) window.WoxToast.error(`Blocked by privacy policy: ${normalizedHost}`);
+                }
+              }}
               className="btn btn-primary btn-sm"
-              style={{ gap: '0.4rem', fontWeight: 600 }}
+              style={{ gap: '0.4rem', fontWeight: 600, opacity: isBlockedDomain ? 0.5 : 1 }}
             >
-              <span>Visit External Site</span>
-              <span>↗</span>
+              <span>{isBlockedDomain ? 'Domain Blocked' : 'Visit External Site'}</span>
+              {!isBlockedDomain && <span>↗</span>}
             </a>
           </div>
         </div>

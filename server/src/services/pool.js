@@ -34,10 +34,10 @@ export function getRandomDomain() {
 
 /**
  * Address pool lifecycle:
- * AVAILABLE (48h fresh) → ACTIVE → EXPIRED → PURGED (Deleted in Purelymail & Database)
+ * AVAILABLE (24h fresh) → ACTIVE → EXPIRED → PURGED (Deleted in Purelymail & Database)
  *
  * Pool ensures instant address generation for public temp mail
- * by pre-provisioning addresses via Purelymail API in continuous 48-hour cycles.
+ * by pre-provisioning addresses via Purelymail API in continuous 24-hour cycles.
  */
 
 /**
@@ -61,22 +61,38 @@ export async function getPoolStats() {
 }
 
 /**
- * Replenish the pool to the target size with a 24-hour expiration lifecycle.
+ * Replenish the pool to the target size (or an explicit count) with a 24-hour expiration lifecycle.
  * Creates new addresses in Purelymail and stores them as 'available'.
  */
-export async function replenishPool(lifespanHours = 24) {
-  const targetSetting = await query("SELECT value FROM settings WHERE key = 'pool_target_size'");
-  const target = parseInt(targetSetting.rows[0]?.value, 10) || parseInt(process.env.POOL_TARGET_SIZE, 10) || 5;
+export async function replenishPool(lifespanHours = 24, explicitCount = null) {
+  let hours = 24;
+  let overrideCount = explicitCount;
+  if (typeof lifespanHours === 'object' && lifespanHours !== null) {
+    hours = Number(lifespanHours.lifespanHours) || 24;
+    if (lifespanHours.count !== undefined && lifespanHours.count !== null) {
+      overrideCount = lifespanHours.count;
+    }
+  } else {
+    hours = Number(lifespanHours) || 24;
+  }
 
-  const stats = await getPoolStats();
-  const deficit = target - stats.available;
+  let deficit;
+  if (overrideCount !== undefined && overrideCount !== null) {
+    deficit = Math.max(0, Math.min(50, parseInt(overrideCount, 10) || 0));
+  } else {
+    const targetSetting = await query("SELECT value FROM settings WHERE key = 'pool_target_size'");
+    const target = parseInt(targetSetting.rows[0]?.value, 10) || parseInt(process.env.POOL_TARGET_SIZE, 10) || 5;
+
+    const stats = await getPoolStats();
+    deficit = target - stats.available;
+  }
 
   if (deficit <= 0) {
-    logger.debug({ available: stats.available, target }, 'Pool is full');
+    logger.debug('Pool is full or zero count requested');
     return 0;
   }
 
-  logger.info({ deficit, available: stats.available, target, lifespanHours }, 'Replenishing 24-hour pool');
+  logger.info({ deficit, lifespanHours: hours }, 'Replenishing 24-hour pool');
 
   const domain = process.env.DOMAIN_TEMP || 'mail.wox.world';
   let created = 0;
@@ -97,7 +113,7 @@ export async function replenishPool(lifespanHours = 24) {
            VALUES ($1, 'public', 'available', $2, NOW() + (INTERVAL '1 hour' * $3), NOW())
            ON CONFLICT (address) DO UPDATE
            SET status = 'available', imap_password = $2, expires_at = NOW() + (INTERVAL '1 hour' * $3)`,
-          [address, password, lifespanHours]
+          [address, password, hours]
         );
         return 1;
       } catch (err) {
@@ -233,9 +249,9 @@ export async function claimAddress(ipAddress, expiryHours = 24, customUsername =
   if (customDomain) {
     const cleanD = customDomain.toLowerCase().replace(/^@/, '').trim();
     if (cleanD === 'wox.world' || cleanD === permanentDomain) {
-      throw new Error('The permanent @wox.world domain is reserved for permanent accounts and cannot be used for disposable temporary mail.');
-    } else if (cleanD === 'mail.wox.world' || cleanD === defaultTempDomain) {
-      targetDomain = defaultTempDomain;
+      throw Object.assign(new Error('The permanent @wox.world domain is reserved for permanent accounts and cannot be used for disposable temporary mail.'), { statusCode: 400 });
+    } else if (getAvailableDomains().includes(cleanD)) {
+      targetDomain = cleanD;
     }
   }
 
@@ -291,6 +307,17 @@ export async function claimAddress(ipAddress, expiryHours = 24, customUsername =
   // 2. User-Generated Custom On-Demand Address (or custom domain)
   const username = isCustomUserGenerated ? cleanCustom : generateRandomUsername();
   const address = `${username}@${targetDomain}`;
+  const existingAddr = await query(
+    `SELECT id, status, expires_at FROM temp_addresses WHERE LOWER(address) = LOWER($1)`,
+    [address]
+  );
+  if (existingAddr.rows.length > 0) {
+    const row = existingAddr.rows[0];
+    if (row.status === 'active' && new Date(row.expires_at) > new Date()) {
+      throw Object.assign(new Error('This custom temporary address is already active'), { statusCode: 409 });
+    }
+  }
+
   const password = generateToken(16);
   const sessionToken = generateToken(24);
 

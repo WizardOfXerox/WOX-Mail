@@ -761,10 +761,10 @@
     transition: all 0.15s ease;
   }
   .filter-pill:hover, .filter-pill.active {
-    background: #7c3aed;
-    color: #ffffff;
-    border-color: #8b5cf6;
-    box-shadow: 0 0 12px rgba(124, 58, 237, 0.4);
+    background: var(--color-primary);
+    color: var(--color-on-primary, #ffffff);
+    border-color: var(--color-primary-light);
+    box-shadow: 0 0 12px var(--color-primary-glow);
   }
   .guide-security-callout {
     display: flex;
@@ -772,13 +772,13 @@
     gap: 1.25rem;
     padding: 1.5rem;
     margin-bottom: 2.5rem;
-    background: rgba(124, 58, 237, 0.08);
-    border-color: rgba(139, 92, 246, 0.25);
+    background: var(--color-primary-subtle);
+    border-color: var(--color-primary-glow);
   }
   .callout-icon {
     flex-shrink: 0;
     padding: 0.5rem;
-    background: rgba(124, 58, 237, 0.15);
+    background: var(--color-primary-subtle);
     border-radius: 12px;
   }
   .providers-grid {

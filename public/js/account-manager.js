@@ -21,6 +21,21 @@
     { bg: 'linear-gradient(135deg, #14b8a6, #0284c7)', text: '#ffffff' },
   ];
 
+  function getCsrfToken() {
+    const match = document.cookie.match(/woxmail_csrf=([^;]+)/);
+    return match ? match[1] : '';
+  }
+
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   function stringHash(str) {
     let hash = 0;
     for (let i = 0; i < (str || '').length; i++) {
@@ -100,8 +115,9 @@
         fetch('/api/auth/current-session', { credentials: 'include' })
           .then((res) => (res.ok ? res.json() : null))
           .then((data) => {
-            if (data && data.token) {
-              this.saveAccount(data.user || user, data.token);
+            const authSwitchToken = data?.switchToken || data?.token;
+            if (data && authSwitchToken) {
+              this.saveAccount(data.user || user, authSwitchToken);
               this.initNavDropdown();
             }
           })
@@ -172,7 +188,10 @@
         try {
           const res = await fetch('/api/auth/switch-account', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'x-csrf-token': getCsrfToken(),
+            },
             credentials: 'include',
             body: JSON.stringify({ token: target.token, email: target.email }),
           });

@@ -8,6 +8,7 @@
 import { createConnection } from '../services/imap.js';
 import * as complianceArchiveService from '../services/complianceArchiveService.js';
 import { processEmailForChatForward } from '../services/chatForwardService.js';
+import { processBounceIfApplicable } from '../services/bounceService.js';
 import { query } from '../config/database.js';
 import { get, setex } from '../config/redis.js';
 import { simpleParser } from 'mailparser';
@@ -200,6 +201,15 @@ export async function processInboundArchiveEmails() {
             } catch (fwdErr) {
               logger.debug({ err: fwdErr.message, rcpt }, 'Chat forward notification skipped or failed');
             }
+          }
+        }
+
+        // Process automated bounce/NDR ingestion safely
+        if (parsed) {
+          try {
+            await processBounceIfApplicable(parsed);
+          } catch (bounceErr) {
+            logger.warn({ uid, err: bounceErr.message }, 'Failed to process bounce notification in archive worker');
           }
         }
 

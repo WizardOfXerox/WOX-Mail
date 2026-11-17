@@ -11,7 +11,8 @@ export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, '..', 'public', 'dist'),
     emptyOutDir: true,
-    sourcemap: true,
+    cssCodeSplit: false,
+    sourcemap: false,
     minify: 'esbuild',
     rollupOptions: {
       input: {

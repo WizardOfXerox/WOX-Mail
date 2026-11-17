@@ -4,6 +4,7 @@
  */
 
 import pino from 'pino';
+import { isSafeUrl, safeFetch } from './linkPreviewService.js';
 
 const logger = pino({ name: 'unsubscribe-daemon' });
 
@@ -51,13 +52,20 @@ export async function executeUnsubscribe(listUnsubscribeHeader, listUnsubscribeP
     throw new Error('No valid List-Unsubscribe URL or mailto found in email headers');
   }
 
+  // SSRF pre-flight check before making any outbound HTTP request
+  if (httpUrl) {
+    const safety = await isSafeUrl(httpUrl);
+    if (!safety.safe) {
+      throw new Error(`SSRF Protection: Unsubscribe URL blocked (${safety.error || 'unsafe target'})`);
+    }
+  }
+
   // 1. If RFC 8058 One-Click HTTP POST endpoint is supported
   if (httpUrl && isOneClick) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000);
-
-      const res = await fetch(httpUrl, {
+      const res = await safeFetch(httpUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -67,23 +75,27 @@ export async function executeUnsubscribe(listUnsubscribeHeader, listUnsubscribeP
         signal: controller.signal,
       });
 
-      clearTimeout(timeout);
+      await res.body?.cancel().catch(() => {});
 
       if (res.ok) {
         return { success: true, method: 'RFC8058_HTTP_POST', message: 'Successfully unsubscribed via RFC 8058 One-Click POST.' };
       }
     } catch (err) {
+      if (err.message?.includes('SSRF Protection')) {
+        throw err;
+      }
       logger.warn({ err, httpUrl }, 'RFC 8058 POST failed, trying standard GET fallback');
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
   // 2. Standard HTTP GET fallback
   if (httpUrl) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000);
-
-      const res = await fetch(httpUrl, {
+      const res = await safeFetch(httpUrl, {
         method: 'GET',
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) WoxMail/1.0',
@@ -91,13 +103,18 @@ export async function executeUnsubscribe(listUnsubscribeHeader, listUnsubscribeP
         signal: controller.signal,
       });
 
-      clearTimeout(timeout);
+      await res.body?.cancel().catch(() => {});
 
       if (res.ok) {
         return { success: true, method: 'HTTP_GET', message: 'Successfully requested unsubscribe page.' };
       }
     } catch (err) {
+      if (err.message?.includes('SSRF Protection')) {
+        throw err;
+      }
       logger.warn({ err, httpUrl }, 'HTTP GET unsubscribe failed');
+    } finally {
+      clearTimeout(timeout);
     }
   }
 

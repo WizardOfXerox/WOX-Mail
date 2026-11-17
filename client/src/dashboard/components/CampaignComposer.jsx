@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { get, post } from '../../shared/api.js';
 import { compileEmail, renderBlock } from '../../shared/utils/emailTemplateCompiler.js';
 import { validateEmailHtml } from '../../shared/utils/emailCompatValidator.js';
 import { STARTER_TEMPLATES, getTemplateById } from '../../shared/templates/index.js';
@@ -63,9 +64,8 @@ export default function CampaignComposer({ lists = [], onSave, onCancel }) {
   // Fetch segments for chosen list
   useEffect(() => {
     if (!selectedListId) return;
-    fetch(`/api/campaigns/segments?list_id=${selectedListId}`, { credentials: 'include' })
-      .then(res => res.json())
-      .then(data => {
+    get(`/campaigns/segments?list_id=${encodeURIComponent(selectedListId)}`)
+      .then((data) => {
         if (data.segments) setSegments(data.segments);
       })
       .catch(() => {});
@@ -174,17 +174,11 @@ export default function CampaignComposer({ lists = [], onSave, onCancel }) {
     setCheckingSpam(true);
     setShowSpamModal(true);
     try {
-      const res = await fetch('/api/campaigns/spam-check', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          subject: subject || title,
-          htmlContent,
-          plainContent
-        })
+      const data = await post('/campaigns/spam-check', {
+        subject: subject || title,
+        htmlContent,
+        plainContent,
       });
-      const data = await res.json();
       setSpamAnalysis(data);
     } catch (err) {
       setSpamAnalysis({ error: err.message });
@@ -202,42 +196,30 @@ export default function CampaignComposer({ lists = [], onSave, onCancel }) {
 
   const handleTestSend = async () => {
     if (!testEmail || !testEmail.includes('@')) {
-      alert('Please enter a valid test recipient email address');
+      if (window.WoxToast) window.WoxToast.error('Please enter a valid test recipient email address');
       return;
     }
     setTesting(true);
     try {
-      const campRes = await fetch('/api/campaigns', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          listId: parseInt(selectedListId, 10),
-          title: title || 'Draft Campaign Test',
-          subject: subject || 'Newsletter Preview',
-          fromName,
-          fromEmail: fromEmail || undefined,
-          htmlContent,
-          plainContent,
-        }),
+      const campData = await post('/campaigns', {
+        listId: parseInt(selectedListId, 10),
+        title: title || 'Draft Campaign Test',
+        subject: subject || 'Newsletter Preview',
+        fromName,
+        fromEmail: fromEmail || undefined,
+        htmlContent,
+        plainContent,
       });
-      const campData = await campRes.json();
       if (!campData.campaign?.id) throw new Error('Failed to create test draft');
 
-      const testRes = await fetch(`/api/campaigns/${campData.campaign.id}/test`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ testEmail }),
-      });
-      const testData = await testRes.json();
+      const testData = await post(`/campaigns/${campData.campaign.id}/test`, { testEmail });
       if (testData.success) {
-        alert(`Test email sent successfully to ${testEmail}`);
+        if (window.WoxToast) window.WoxToast.success(`Test email sent to ${testEmail}`);
       } else {
-        alert(`Failed: ${testData.error || 'Check server logs'}`);
+        throw new Error(testData.error || 'Failed to send test email');
       }
     } catch (err) {
-      alert(`Error sending test email: ${err.message}`);
+      if (window.WoxToast) window.WoxToast.error(`Error sending test email: ${err.message}`);
     } finally {
       setTesting(false);
     }
@@ -245,7 +227,7 @@ export default function CampaignComposer({ lists = [], onSave, onCancel }) {
 
   const handleSaveCampaign = async (status = 'draft') => {
     if (!title.trim() || !subject.trim()) {
-      alert('Campaign Title and Email Subject are required.');
+      if (window.WoxToast) window.WoxToast.error('Campaign Title and Email Subject are required.');
       return;
     }
     setSaving(true);
@@ -262,20 +244,21 @@ export default function CampaignComposer({ lists = [], onSave, onCancel }) {
         status,
       };
 
-      const res = await fetch('/api/campaigns', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (data.campaign) {
-        onSave && onSave(data.campaign);
-      } else {
-        alert(`Save failed: ${data.error || 'Server error'}`);
+      const data = await post('/campaigns', payload);
+      if (!data.campaign) {
+        throw new Error(data.error || 'Server error');
       }
+
+      if (status === 'sending' && data.campaign.id) {
+        await post(`/campaigns/${data.campaign.id}/send`);
+        if (window.WoxToast) window.WoxToast.success('Campaign broadcast queued for delivery');
+      } else if (window.WoxToast) {
+        window.WoxToast.success('Campaign draft saved');
+      }
+
+      onSave && onSave(data.campaign);
     } catch (err) {
-      alert(`Error saving campaign: ${err.message}`);
+      if (window.WoxToast) window.WoxToast.error(`Error saving campaign: ${err.message}`);
     } finally {
       setSaving(false);
     }

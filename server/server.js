@@ -114,11 +114,11 @@ app.use(
         'style-src-elem': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         'font-src': ["'self'", 'https://fonts.gstatic.com', 'data:'],
         'img-src': ["'self'", 'data:', 'blob:', 'https:'],
-        'script-src': ["'self'", "'unsafe-inline'", 'https://js.hcaptcha.com', 'https://static.cloudflareinsights.com'],
-        'script-src-elem': ["'self'", "'unsafe-inline'", 'https://js.hcaptcha.com', 'https://static.cloudflareinsights.com'],
+        'script-src': ["'self'", "'unsafe-inline'", 'https://js.hcaptcha.com', 'https://*.hcaptcha.com', 'https://static.cloudflareinsights.com'],
+        'script-src-elem': ["'self'", "'unsafe-inline'", 'https://js.hcaptcha.com', 'https://*.hcaptcha.com', 'https://static.cloudflareinsights.com'],
         'script-src-attr': ["'self'", "'unsafe-inline'"],
-        'frame-src': ["'self'", 'https://newassets.hcaptcha.com', 'https://hcaptcha.com'],
-        'connect-src': ["'self'", 'https://fonts.googleapis.com', 'https://fonts.gstatic.com', 'https://api.hcaptcha.com', 'https://static.cloudflareinsights.com', 'wss:', 'ws:'],
+        'frame-src': ["'self'", 'https://newassets.hcaptcha.com', 'https://hcaptcha.com', 'https://*.hcaptcha.com'],
+        'connect-src': ["'self'", 'https://fonts.googleapis.com', 'https://fonts.gstatic.com', 'https://api.hcaptcha.com', 'https://*.hcaptcha.com', 'https://static.cloudflareinsights.com', 'wss:', 'ws:'],
         'worker-src': ["'self'", 'blob:'],
         'upgrade-insecure-requests': null,
       },
@@ -249,7 +249,11 @@ server.listen(PORT, () => {
   logger.info(`   Temp domain: ${process.env.DOMAIN_TEMP || 'mail.wox.world'}`);
 
   // Start background jobs (pool replenish, cleanup, purge)
-  startJobs();
+  if (process.env.DISABLE_INLINE_JOBS !== 'true') {
+    startJobs();
+  } else {
+    logger.info('[SERVER] Inline background jobs disabled (DISABLE_INLINE_JOBS=true)');
+  }
 });
 
 // ─── Graceful Shutdown ───────────────────────────────────

@@ -5,6 +5,7 @@ import { query } from '../config/database.js';
 import { hashPassword, verifyPassword, generateRecoveryCodes } from '../utils/crypto.js';
 import { validatePassword } from '../utils/validators.js';
 import * as apiKeyService from '../services/apiKeyService.js';
+import { modifyUser } from '../services/purelymail.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -98,7 +99,15 @@ router.put('/password',
       }
 
       const hash = await hashPassword(newPassword);
-      await query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [hash, req.user.id]);
+      await query('UPDATE users SET password_hash = $1, imap_password = $2, updated_at = NOW() WHERE id = $3', [hash, newPassword, req.user.id]);
+
+      if (req.user.email) {
+        try {
+          await modifyUser(req.user.email, { newPassword });
+        } catch (pmErr) {
+          console.warn(`[SettingsPassword] Purelymail password update notice for ${req.user.email}: ${pmErr.message}`);
+        }
+      }
 
       // Audit
       await query(
@@ -194,11 +203,19 @@ router.delete('/sessions/:id', async (req, res, next) => {
  */
 router.delete('/sessions', async (req, res, next) => {
   try {
-    // TODO: Exclude current session by JTI from token
-    await query(
-      'UPDATE user_sessions SET is_revoked = TRUE WHERE user_id = $1 AND is_revoked = FALSE',
-      [req.user.id]
-    );
+    const currentJti = req.jwtPayload?.jti;
+
+    if (currentJti) {
+      await query(
+        'UPDATE user_sessions SET is_revoked = TRUE WHERE user_id = $1 AND id != $2 AND is_revoked = FALSE',
+        [req.user.id, currentJti]
+      );
+    } else {
+      await query(
+        'UPDATE user_sessions SET is_revoked = TRUE WHERE user_id = $1 AND is_revoked = FALSE',
+        [req.user.id]
+      );
+    }
 
     res.json({ message: 'All other sessions revoked' });
   } catch (err) {
