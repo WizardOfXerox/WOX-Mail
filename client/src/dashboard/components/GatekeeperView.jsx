@@ -76,37 +76,68 @@ export default function GatekeeperView({ onBack }) {
       r.destination.toLowerCase().includes(ruleSearch.toLowerCase())
   );
 
+  const formatSenderHeading = (p) => {
+    const cleanName = String(p.name || '').trim();
+    const cleanEmail = String(p.email || '').trim();
+    if (!cleanName || cleanName.toLowerCase() === cleanEmail.toLowerCase()) {
+      return cleanEmail;
+    }
+    return `${cleanName} (${cleanEmail})`;
+  };
+
   return (
-    <div className="gatekeeper-view" style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, overflowY: 'auto', background: 'var(--color-bg-page)' }}>
+    <div className="gatekeeper-view">
       {/* Header Bar */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--color-border)', background: 'var(--color-bg-card)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={onBack} title="Back to Inbox">
+      <div className="gatekeeper-header">
+        <div className="gatekeeper-header-left">
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm gatekeeper-back-btn"
+            onClick={onBack}
+            title="Back to Inbox"
+          >
             ← Back
           </button>
-          <div>
-            <h2 style={{ margin: 0, fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-              <span>The Gatekeeper (Sender Screener)</span>
+          <div className="gatekeeper-title-wrap">
+            <h2 className="gatekeeper-title">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{ flexShrink: 0, color: 'var(--color-primary-light)' }}
+              >
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              </svg>
+              <span>The Gatekeeper</span>
+              <span className="gatekeeper-title-tag">Sender Screener</span>
             </h2>
-            <p className="text-secondary" style={{ margin: 0, fontSize: '0.75rem' }}>
+            <p className="text-secondary gatekeeper-subtitle">
               Quarantine and screen first-contact senders before they ever reach your inbox.
             </p>
           </div>
         </div>
 
         {/* Tab Toggle */}
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <div className="gatekeeper-tabs" role="tablist" aria-label="Gatekeeper sections">
           <button
             type="button"
-            className={`btn btn-sm ${activeTab === 'pending' ? 'btn-primary' : 'btn-secondary'}`}
+            role="tab"
+            aria-selected={activeTab === 'pending'}
+            className={`btn btn-sm gatekeeper-tab-btn ${activeTab === 'pending' ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => setActiveTab('pending')}
           >
             Pending Senders ({pending.length})
           </button>
           <button
             type="button"
-            className={`btn btn-sm ${activeTab === 'rules' ? 'btn-primary' : 'btn-secondary'}`}
+            role="tab"
+            aria-selected={activeTab === 'rules'}
+            className={`btn btn-sm gatekeeper-tab-btn ${activeTab === 'rules' ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => setActiveTab('rules')}
           >
             Active Rules ({rules.length})
@@ -115,7 +146,7 @@ export default function GatekeeperView({ onBack }) {
       </div>
 
       {/* Main Body */}
-      <div style={{ padding: '1.5rem', maxWidth: 900, margin: '0 auto', width: '100%' }}>
+      <div className="gatekeeper-body">
         {loading ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             {[...Array(4)].map((_, i) => (
@@ -132,7 +163,7 @@ export default function GatekeeperView({ onBack }) {
               </p>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
               <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }}>
                 Choose where emails from these new senders should be automatically routed:
               </div>
@@ -140,30 +171,24 @@ export default function GatekeeperView({ onBack }) {
               {pending.map((p) => (
                 <div
                   key={p.email}
-                  className="card"
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '0.75rem',
-                    border: '1px solid var(--color-border)',
-                  }}
+                  className="card gatekeeper-card"
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem' }}>
-                    <div>
-                      <strong style={{ fontSize: '1rem', color: 'var(--color-text-primary)' }}>
-                        {p.name ? `${p.name} (${p.email})` : p.email}
+                  <div className="gatekeeper-card-header">
+                    <div className="gatekeeper-sender-meta">
+                      <strong className="gatekeeper-sender-name">
+                        {formatSenderHeading(p)}
                       </strong>
-                      <div className="text-secondary" style={{ fontSize: '0.8125rem', marginTop: '0.2rem' }}>
+                      <div className="text-secondary gatekeeper-sender-subject">
                         Subject: <em>"{p.firstSubject}"</em>
                       </div>
                     </div>
-                    <span className="badge badge-purple" style={{ fontSize: '0.75rem' }}>
+                    <span className="badge badge-purple gatekeeper-count-badge">
                       {p.totalEmails} email{p.totalEmails > 1 ? 's' : ''} received
                     </span>
                   </div>
 
                   {/* Triage Buttons */}
-                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.25rem' }}>
+                  <div className="gatekeeper-actions">
                     <button
                       type="button"
                       className="btn btn-sm btn-primary"
@@ -203,11 +228,10 @@ export default function GatekeeperView({ onBack }) {
                     {p.domain && (
                       <button
                         type="button"
-                        className="btn btn-sm btn-ghost"
+                        className="btn btn-sm btn-ghost gatekeeper-allow-domain"
                         disabled={actionLoading[p.email]}
                         onClick={() => handleDecide(p.email, p.domain, 'inbox', 'domain')}
                         title={`Approve all senders from *@${p.domain}`}
-                        style={{ marginLeft: 'auto', fontSize: '0.75rem' }}
                       >
                         Allow Domain (*@{p.domain})
                       </button>
@@ -220,60 +244,67 @@ export default function GatekeeperView({ onBack }) {
         ) : (
           /* Rules Tab */
           <div>
-            <div style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="gatekeeper-rules-toolbar">
               <input
-                className="input"
+                className="input gatekeeper-rules-search"
                 placeholder="Search screening rules..."
                 value={ruleSearch}
                 onChange={(e) => setRuleSearch(e.target.value)}
-                style={{ maxWidth: 300 }}
               />
-              <span className="text-secondary" style={{ fontSize: '0.8125rem' }}>
+              <span className="text-secondary gatekeeper-rules-count">
                 {filteredRules.length} rule{filteredRules.length !== 1 ? 's' : ''}
               </span>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              {filteredRules.map((r) => (
-                <div
-                  key={r.id}
-                  className="card"
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '0.75rem 1rem',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <span className="mono" style={{ fontWeight: 600 }}>
-                      {r.match_type === 'domain' ? `@${r.sender_pattern}` : r.sender_pattern}
-                    </span>
-                    <span
-                      className={`badge ${
-                        r.destination === 'inbox'
-                          ? 'badge-green'
-                          : r.destination === 'feed'
-                          ? 'badge-purple'
-                          : r.destination === 'paper_trail'
-                          ? 'badge-blue'
-                          : 'badge-red'
-                      }`}
-                    >
-                      {r.destination.toUpperCase()}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-xs text-secondary"
-                    onClick={() => handleDeleteRule(r.id)}
-                    title="Remove rule"
+            {filteredRules.length === 0 ? (
+              <div className="card" style={{ textAlign: 'center', padding: '2.5rem 1.25rem' }}>
+                <h3 style={{ margin: '0 0 0.4rem', fontSize: '1rem' }}>
+                  {ruleSearch ? 'No Matching Rules' : 'No Active Screening Rules Yet'}
+                </h3>
+                <p className="text-secondary" style={{ margin: 0, fontSize: '0.85rem' }}>
+                  {ruleSearch
+                    ? 'Try a different sender address or destination filter.'
+                    : 'Screen senders from the Pending Senders tab to automatically route or block future emails.'}
+                </p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                {filteredRules.map((r) => (
+                  <div
+                    key={r.id}
+                    className="card gatekeeper-rule-row"
                   >
-                    Remove
-                  </button>
-                </div>
-              ))}
-            </div>
+                    <div className="gatekeeper-rule-meta">
+                      <span className="mono gatekeeper-rule-pattern">
+                        {r.match_type === 'domain' ? `@${r.sender_pattern}` : r.sender_pattern}
+                      </span>
+                      <span
+                        className={`badge ${
+                          r.destination === 'inbox'
+                            ? 'badge-green'
+                            : r.destination === 'feed'
+                            ? 'badge-purple'
+                            : r.destination === 'paper_trail'
+                            ? 'badge-blue'
+                            : 'badge-red'
+                        }`}
+                      >
+                        {r.destination.toUpperCase()}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs text-secondary"
+                      onClick={() => handleDeleteRule(r.id)}
+                      title="Remove rule"
+                      style={{ flexShrink: 0 }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

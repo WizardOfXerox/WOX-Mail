@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 const SHORTCUT_GROUPS = [
   {
@@ -49,6 +49,14 @@ const SHORTCUT_GROUPS = [
 
 export default function KeyboardShortcutsModal({ isOpen, onClose }) {
   const [filter, setFilter] = useState('');
+
+  useEffect(() => {
+    if (isOpen) {
+      setFilter('');
+      const timer = setTimeout(() => setFilter(''), 60);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -124,7 +132,7 @@ export default function KeyboardShortcutsModal({ isOpen, onClose }) {
         </div>
 
         {/* Filter Input */}
-        <div style={{ padding: '1rem 1.5rem 0.5rem' }}>
+        <div style={{ padding: '1rem 1.5rem 0.5rem', position: 'relative' }}>
           <input
             type="text"
             className="input"
@@ -132,8 +140,19 @@ export default function KeyboardShortcutsModal({ isOpen, onClose }) {
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             autoFocus
-            style={{ width: '100%', fontSize: '0.875rem' }}
+            style={{ width: '100%', fontSize: '0.875rem', paddingRight: filter ? '2rem' : undefined }}
           />
+          {filter && (
+            <button
+              type="button"
+              onClick={() => setFilter('')}
+              className="btn btn-ghost btn-xs"
+              style={{ position: 'absolute', right: '1.85rem', top: '1.35rem', color: 'var(--color-text-tertiary)', padding: '0.1rem 0.35rem' }}
+              title="Clear search"
+            >
+              ✕
+            </button>
+          )}
         </div>
 
         {/* Shortcuts Grid */}

@@ -23,6 +23,9 @@
   let audioContext = null;
   let notificationsEnabled = localStorage.getItem('woxmail_sound') !== 'false';
   let previousMessageCount = -1; // -1 indicates initial load so existing emails never trigger notification spam
+  let cachedRecentJson = '';
+  let deleteConfirmTimeout = null;
+  const MY_MAILBOXES_KEY = 'wox_my_temp_mailboxes';
 
   function getCsrfToken() {
     const match = document.cookie.match(/woxmail_csrf=([^;]+)/);
@@ -35,6 +38,125 @@
     }
     return '';
   }
+
+  function copyTextSafe(text) {
+    if (!text) return Promise.resolve();
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text).catch(() => fallbackCopyText(text));
+    }
+    return fallbackCopyText(text);
+  }
+
+  function fallbackCopyText(text) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      return Promise.resolve();
+    } catch (e) {
+      return Promise.reject(e);
+    }
+  }
+
+  function formatFileSize(bytes) {
+    if (!bytes || bytes <= 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  }
+
+  function extractActionLink(html, text) {
+    if (html) {
+      try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const anchors = Array.from(doc.querySelectorAll('a[href]'));
+        for (const a of anchors) {
+          const href = a.getAttribute('href') || '';
+          if (!/^https?:\/\//i.test(href)) continue;
+          const label = (a.textContent || '').trim().toLowerCase();
+          if (/(verify|confirm|activate|action|validate|get started|join|log in|sign in|access)/i.test(label) ||
+              /(verify|confirm|activate|token|signup|validation|auth)/i.test(href)) {
+            return href;
+          }
+        }
+      } catch {}
+    }
+    const match = (html || text || '').match(/https?:\/\/[^\s"'<>]+(?:verify|confirm|activate|action|token|validation|auth|signup)[^\s"'<>]*/i);
+    return match ? match[0] : null;
+  }
+
+  function saveToMyMailboxes(address, expiresAt) {
+    if (!address) return;
+    try {
+      let list = JSON.parse(localStorage.getItem(MY_MAILBOXES_KEY) || '[]');
+      if (!Array.isArray(list)) list = [];
+      list = list.filter((item) => item && item.address && item.address.toLowerCase() !== address.toLowerCase());
+      const now = Date.now();
+      list = list.filter((item) => !item.expiresAt || new Date(item.expiresAt).getTime() > now);
+      list.unshift({ address, expiresAt, updated: now });
+      list = list.slice(0, 5);
+      localStorage.setItem(MY_MAILBOXES_KEY, JSON.stringify(list));
+      renderMyMailboxes();
+    } catch {}
+  }
+
+  function removeFromMyMailboxes(e, address) {
+    if (e) e.stopPropagation();
+    try {
+      let list = JSON.parse(localStorage.getItem(MY_MAILBOXES_KEY) || '[]');
+      if (Array.isArray(list)) {
+        list = list.filter((item) => item && item.address && item.address.toLowerCase() !== address.toLowerCase());
+        localStorage.setItem(MY_MAILBOXES_KEY, JSON.stringify(list));
+      }
+      renderMyMailboxes();
+    } catch {}
+  }
+
+  function renderMyMailboxes() {
+    const strip = document.getElementById('my-mailboxes-strip');
+    const pills = document.getElementById('my-mailboxes-pills');
+    if (!strip || !pills) return;
+
+    try {
+      let list = JSON.parse(localStorage.getItem(MY_MAILBOXES_KEY) || '[]');
+      if (!Array.isArray(list)) list = [];
+      const now = Date.now();
+      list = list.filter((item) => !item.expiresAt || new Date(item.expiresAt).getTime() > now);
+
+      if (list.length === 0) {
+        strip.style.display = 'none';
+        pills.innerHTML = '';
+        return;
+      }
+
+      strip.style.display = 'block';
+      pills.innerHTML = list.map((item) => {
+        const isCurrent = currentAddress && item.address.toLowerCase() === currentAddress.toLowerCase();
+        const shortName = item.address.split('@')[0];
+        return `
+          <div class="my-mailbox-pill ${isCurrent ? 'active' : ''}" onclick="openPublicAddress('${escapeHtml(item.address)}', '${escapeHtml(item.expiresAt || '')}')" title="${escapeHtml(item.address)}">
+            <span class="mono">${escapeHtml(shortName)}</span>
+            <span class="pill-del" onclick="removeFromMyMailboxes(event, '${escapeHtml(item.address)}')" title="Remove from recent">&times;</span>
+          </div>
+        `;
+      }).join('');
+    } catch {}
+  }
+
+  window.copyActionLink = function (e, url) {
+    if (e) e.stopPropagation();
+    copyTextSafe(url).then(() => {
+      if (window.WoxToast) WoxToast.success('Verification link copied to clipboard!');
+    });
+  };
 
   // ─── Duration Selector ─────────────────────────────────
 
@@ -279,8 +401,10 @@
 
   window.copyOtp = function (e, code) {
     if (e) e.stopPropagation();
-    navigator.clipboard.writeText(code).then(() => {
+    copyTextSafe(code).then(() => {
       if (window.WoxToast) WoxToast.success(`Copied OTP code: ${code}`);
+    }).catch(() => {
+      if (window.WoxToast) WoxToast.error('Failed to copy code');
     });
   };
 
@@ -347,7 +471,7 @@
       const dateText = msg.date || msg.envelope?.date;
       const initial = (fromText.charAt(0) || 'M').toUpperCase();
 
-      const otpCode = extractOtpCode(subjectText);
+      const otpCode = extractOtpCode(subjectText) || extractOtpCode(msg.snippet || '') || extractOtpCode(msg.text || '');
       const otpMarkup = otpCode ? `
         <div>
           <button type="button" class="otp-quick-badge" onclick="copyOtp(event, '${escapeHtml(otpCode)}')" title="Click to copy verification code">
@@ -518,6 +642,65 @@
       if (fromEl) fromEl.textContent = typeof data.from === 'object' ? (data.from?.address || data.from?.name || 'Unknown') : (data.from || 'Unknown');
       if (dateEl) dateEl.textContent = data.date ? new Date(data.date).toLocaleString() : '';
 
+      // 1-Click Verification / Action Link Extractor & Banner
+      const actionBanner = document.getElementById('viewer-action-link-banner');
+      const actionUrl = extractActionLink(data.html, data.text);
+      if (actionUrl && actionBanner) {
+        actionBanner.style.display = 'block';
+        actionBanner.innerHTML = `
+          <div class="action-link-banner">
+            <div class="action-banner-content">
+              <svg class="icon-svg text-purple" style="width:20px;height:20px;flex-shrink:0;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              <div class="action-banner-text">
+                <span class="action-banner-label">1-Click Verification Link</span>
+                <span class="action-banner-url mono" title="${escapeHtml(actionUrl)}">${escapeHtml(actionUrl)}</span>
+              </div>
+            </div>
+            <div class="action-banner-actions">
+              <a href="${escapeHtml(actionUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-xs" style="padding: 0.35rem 0.75rem;">
+                <span>Open Link ↗</span>
+              </a>
+              <button type="button" class="btn btn-secondary btn-xs" onclick="copyActionLink(event, '${escapeHtml(actionUrl)}')">
+                <span>Copy Link</span>
+              </button>
+            </div>
+          </div>
+        `;
+      } else if (actionBanner) {
+        actionBanner.style.display = 'none';
+        actionBanner.innerHTML = '';
+      }
+
+      // Rich Attachment Cards
+      const attachmentsContainer = document.getElementById('viewer-attachments');
+      if (attachmentsContainer) {
+        if (Array.isArray(data.attachments) && data.attachments.length > 0) {
+          attachmentsContainer.style.display = 'grid';
+          attachmentsContainer.innerHTML = data.attachments.map((att, idx) => {
+            const filename = att.filename || `attachment-${idx + 1}`;
+            const sizeStr = formatFileSize(att.size);
+            const downloadUrl = `${API}/message/${encodeURIComponent(currentAddress)}/${uid}/attachment/${idx}`;
+            return `
+              <div class="attachment-chip">
+                <div style="display:flex;align-items:center;gap:0.4rem;min-width:0;flex:1;">
+                  <svg class="icon-svg text-purple" style="width:16px;height:16px;flex-shrink:0;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                  <div class="attachment-info">
+                    <span class="attachment-name" title="${escapeHtml(filename)}">${escapeHtml(filename)}</span>
+                    <span class="attachment-size">${sizeStr}</span>
+                  </div>
+                </div>
+                <a href="${downloadUrl}" download="${escapeHtml(filename)}" class="btn btn-ghost btn-xs" style="padding:0.2rem 0.4rem;" title="Download attachment">
+                  <svg class="icon-svg" style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                </a>
+              </div>
+            `;
+          }).join('');
+        } else {
+          attachmentsContainer.style.display = 'none';
+          attachmentsContainer.innerHTML = '';
+        }
+      }
+
       // OTP Quick Extraction & Banner
       const extractedOtp = extractOtpCode(subjectText) || extractOtpCode(data.text || '');
       if (extractedOtp && otpContainer) {
@@ -620,10 +803,14 @@
     const viewerEl = document.getElementById('message-viewer');
     const viewer = document.getElementById('viewer-body');
     const otpContainer = document.getElementById('viewer-otp-banner');
+    const actionBanner = document.getElementById('viewer-action-link-banner');
+    const attachmentsContainer = document.getElementById('viewer-attachments');
     if (viewerEl) viewerEl.style.display = 'none';
     if (listEl) listEl.style.display = 'block';
     if (viewer) viewer.innerHTML = '';
     if (otpContainer) otpContainer.innerHTML = '';
+    if (actionBanner) { actionBanner.style.display = 'none'; actionBanner.innerHTML = ''; }
+    if (attachmentsContainer) { attachmentsContainer.style.display = 'none'; attachmentsContainer.innerHTML = ''; }
     currentMessageUid = null;
     currentMessageRawText = '';
 
@@ -643,7 +830,7 @@
       if (window.WoxToast) WoxToast.info('No email text content to copy');
       return;
     }
-    navigator.clipboard.writeText(textToCopy).then(() => {
+    copyTextSafe(textToCopy).then(() => {
       if (window.WoxToast) WoxToast.success('Email content copied to clipboard!');
     }).catch(() => {
       if (window.WoxToast) WoxToast.error('Failed to copy content');
@@ -671,25 +858,89 @@
     }
   };
 
-  window.promptCustomAddress = async function () {
-    const domainSelect = document.getElementById('temp-domain-select');
-    const domain = domainSelect ? domainSelect.value : selectedDomain;
-    const defaultPrefix = currentAddress ? currentAddress.split('@')[0] : '';
-    const chosen = window.prompt(`Enter your custom username prefix for @${domain} (3-30 letters/numbers):`, defaultPrefix);
-    if (!chosen) return;
-    const cleanUsername = chosen.toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 30);
+  window.toggleCustomBar = function (forceState) {
+    const bar = document.getElementById('custom-handle-bar');
+    const customBtn = document.getElementById('custom-address-btn');
+    if (!bar) return;
+
+    const isCurrentlyOpen = bar.style.display !== 'none';
+    const shouldOpen = typeof forceState === 'boolean' ? forceState : !isCurrentlyOpen;
+
+    if (shouldOpen) {
+      window.toggleDurationBar(false);
+      bar.style.display = 'block';
+      if (customBtn) customBtn.classList.add('active');
+      const input = document.getElementById('custom-handle-input');
+      if (input) {
+        if (currentAddress) input.value = currentAddress.split('@')[0];
+        setTimeout(() => input.focus(), 60);
+      }
+    } else {
+      bar.style.display = 'none';
+      if (customBtn) customBtn.classList.remove('active');
+    }
+  };
+
+  window.applyCustomAddress = async function () {
+    const input = document.getElementById('custom-handle-input');
+    if (!input) return;
+    const val = input.value.trim().toLowerCase();
+    const cleanUsername = val.replace(/[^a-z0-9._-]/g, '').slice(0, 30);
     if (cleanUsername.length < 3) {
       if (window.WoxToast) WoxToast.error('Username must be at least 3 characters');
       return;
     }
-    await window.generateAddress(true, cleanUsername, domain);
+    window.toggleCustomBar(false);
+    await window.generateAddress(true, cleanUsername, 'mail.wox.world');
+  };
+
+  window.promptCustomAddress = window.toggleCustomBar;
+
+  window.extendCurrentMailbox = async function () {
+    if (!currentAddress) return;
+    const extendBtn = document.getElementById('extend-mailbox-btn');
+    if (extendBtn) extendBtn.disabled = true;
+
+    try {
+      const res = await fetch(`${API}/extend`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': getCsrfToken()
+        },
+        credentials: 'include',
+        body: JSON.stringify({ address: currentAddress, addHours: 24 })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (window.WoxToast) WoxToast.error(data.error || 'Failed to extend mailbox');
+        return;
+      }
+
+      if (data && data.expiresAt) {
+        startCountdown(data.expiresAt);
+        saveToMyMailboxes(currentAddress, data.expiresAt);
+        try {
+          localStorage.setItem('woxmail_temp_expiry', data.expiresAt);
+        } catch {}
+      }
+
+      if (window.WoxToast) {
+        WoxToast.success('Mailbox extended by 24 hours!');
+      }
+    } catch (err) {
+      console.error('Extend error:', err);
+      if (window.WoxToast) WoxToast.error('Network error extending mailbox');
+    } finally {
+      if (extendBtn) extendBtn.disabled = false;
+    }
   };
 
   // ─── Actions: Copy, QR, Delete ─────────────────────────
 
   window.copyAddress = function () {
     if (!currentAddress) return;
-    navigator.clipboard.writeText(currentAddress).then(() => {
+    copyTextSafe(currentAddress).then(() => {
       const btn = document.getElementById('copy-address-btn');
       if (btn) {
         const orig = btn.innerHTML;
@@ -698,7 +949,7 @@
       }
       if (window.WoxToast) WoxToast.success('Address copied to clipboard!');
     }).catch(() => {
-      if (window.WoxToast) WoxToast.error('Copy failed');
+      if (window.WoxToast) WoxToast.error('Failed to copy address');
     });
   };
 
@@ -754,7 +1005,39 @@
 
   window.deleteMailbox = async function () {
     if (!currentAddress) return;
-    if (!confirm('Purge and delete this temporary address immediately?')) return;
+    const delBtn = document.getElementById('delete-mailbox-btn') || document.querySelector('.address-actions-grid button[title*="Delete"]');
+
+    if (delBtn && !delBtn.dataset.confirming) {
+      delBtn.dataset.confirming = 'true';
+      delBtn.dataset.origHtml = delBtn.innerHTML;
+      delBtn.classList.remove('btn-ghost');
+      delBtn.classList.add('btn-danger');
+      delBtn.innerHTML = `
+        <svg class="icon-svg" style="width:13px;height:13px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        <span>Confirm?</span>
+      `;
+      if (window.WoxToast) WoxToast.info('Click Confirm within 4 seconds to purge');
+      deleteConfirmTimeout = setTimeout(() => {
+        if (delBtn) {
+          delBtn.removeAttribute('data-confirming');
+          delBtn.classList.remove('btn-danger');
+          delBtn.classList.add('btn-ghost');
+          delBtn.innerHTML = delBtn.dataset.origHtml || 'Delete';
+        }
+      }, 4000);
+      return;
+    }
+
+    if (deleteConfirmTimeout) {
+      clearTimeout(deleteConfirmTimeout);
+      deleteConfirmTimeout = null;
+    }
+    if (delBtn) {
+      delBtn.removeAttribute('data-confirming');
+      delBtn.classList.remove('btn-danger');
+      delBtn.classList.add('btn-ghost');
+      delBtn.innerHTML = delBtn.dataset.origHtml || 'Delete';
+    }
 
     const addrToDelete = currentAddress;
     try {
@@ -790,10 +1073,11 @@
       document.cookie = 'woxmail_temp=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT;';
     } catch {}
 
+    removeFromMyMailboxes(null, addrToDelete);
     currentAddress = null;
     history.replaceState(null, '', '/tempmail');
 
-    if (window.WoxToast) WoxToast.success('Mailbox deleted');
+    if (window.WoxToast) WoxToast.success('Mailbox purged');
     window.generateAddress(true);
   };
 
@@ -863,6 +1147,12 @@
       if (!list) return;
 
       const addresses = data.addresses || [];
+      const jsonStr = JSON.stringify(addresses);
+      if (!forceSync && jsonStr === cachedRecentJson) {
+        return;
+      }
+      cachedRecentJson = jsonStr;
+
       if (addresses.length === 0) {
         list.innerHTML = `<div class="empty-state text-secondary" style="padding: 1rem; text-align: center;">No other public addresses active right now.</div>`;
         return;
@@ -924,22 +1214,27 @@
 
     if (expiresAt && !isNaN(new Date(expiresAt).getTime())) {
       startCountdown(expiresAt);
+      saveToMyMailboxes(address, expiresAt);
     } else {
       try {
         const res = await fetch(`${API}/status/${encodeURIComponent(address)}`);
         const data = await res.json();
         if (data && data.expiresAt) {
           startCountdown(data.expiresAt);
+          saveToMyMailboxes(address, data.expiresAt);
         } else {
           startCountdown(new Date(Date.now() + 24 * 3600 * 1000).toISOString());
+          saveToMyMailboxes(address, new Date(Date.now() + 24 * 3600 * 1000).toISOString());
         }
       } catch {
         startCountdown(new Date(Date.now() + 24 * 3600 * 1000).toISOString());
+        saveToMyMailboxes(address, new Date(Date.now() + 24 * 3600 * 1000).toISOString());
       }
     }
 
     connectSSE(address);
     window.refreshInbox(false);
+    renderMyMailboxes();
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
@@ -949,7 +1244,7 @@
   };
 
   window.copyRecentAddress = function (address) {
-    navigator.clipboard.writeText(address)
+    copyTextSafe(address)
       .then(() => { if (window.WoxToast) WoxToast.success(`Copied: ${address}`); })
       .catch(() => { if (window.WoxToast) WoxToast.error('Copy failed'); });
   };
@@ -995,12 +1290,17 @@
         .then((data) => {
           if (data && data.expiresAt) {
             startCountdown(data.expiresAt);
+            saveToMyMailboxes(queryAddress, data.expiresAt);
           } else {
-            startCountdown(new Date(Date.now() + 24 * 3600 * 1000).toISOString());
+            const exp = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+            startCountdown(exp);
+            saveToMyMailboxes(queryAddress, exp);
           }
         })
         .catch(() => {
-          startCountdown(new Date(Date.now() + 24 * 3600 * 1000).toISOString());
+          const exp = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+          startCountdown(exp);
+          saveToMyMailboxes(queryAddress, exp);
         });
 
       connectSSE(queryAddress);
@@ -1023,6 +1323,7 @@
           } catch {}
 
           startCountdown(data.expiresAt);
+          saveToMyMailboxes(data.address, data.expiresAt);
           connectSSE(data.address);
           window.refreshInbox(false);
           window.loadRecentAddresses();
@@ -1039,11 +1340,19 @@
       }
     }
     
+    renderMyMailboxes();
     window.loadRecentAddresses();
-    recentInterval = setInterval(window.loadRecentAddresses, 3000);
+    recentInterval = setInterval(window.loadRecentAddresses, 15000);
     autoRefreshInterval = setInterval(() => {
       if (currentAddress) window.refreshInbox(false);
-    }, 3000);
+    }, 4000);
+
+    // Instant auto-sync when user returns to this tab from registration site
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && currentAddress) {
+        window.refreshInbox(false);
+      }
+    });
 
     // Start next purge cycle countdown ticker
     startPurgeCycleTimer();

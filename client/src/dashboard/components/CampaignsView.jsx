@@ -720,7 +720,11 @@ export default function CampaignsView() {
             <h3 style={{ margin: '0 0 1rem' }}>Embed Signup Form</h3>
             <textarea className="input mono" rows={8} readOnly value={embedHtml} />
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
-              <button type="button" className="btn btn-primary" onClick={() => { navigator.clipboard.writeText(embedHtml); alert('Copied to clipboard!'); }}>Copy Code</button>
+              <button type="button" className="btn btn-primary" onClick={() => {
+                navigator.clipboard.writeText(embedHtml);
+                if (window.WoxToast) window.WoxToast.success('Copied to clipboard!');
+                else alert('Copied to clipboard!');
+              }}>Copy Code</button>
             </div>
           </div>
         </div>

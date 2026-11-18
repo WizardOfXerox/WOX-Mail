@@ -68,6 +68,16 @@ const VALID_SECTIONS = [
   'signature', 'filters', 'sessions', 'contacts', 'history', 'danger',
 ];
 
+const notify = (msg, type = 'info') => {
+  if (window.WoxToast && typeof window.WoxToast[type] === 'function') {
+    window.WoxToast[type](msg);
+  } else if (window.WoxToast) {
+    window.WoxToast.info(msg);
+  } else {
+    alert(msg);
+  }
+};
+
 export default function App() {
   const { user, loading, refetch: refetchUser } = useUser();
   const { mode, setMode, metadata, allModes } = useExperienceMode();
@@ -958,7 +968,7 @@ function SecuritySection({ user, onUpdate, onNavigateDanger }) {
     try {
       await startStepUpChallenge();
     } catch (err) {
-      alert('Security challenge failed: ' + err.message);
+      notify('Security challenge failed: ' + err.message, 'error');
     }
   };
 
@@ -1278,11 +1288,11 @@ function DangerZoneSection({ user, onUpdate }) {
   const handleRequestDeletion = async (e) => {
     e.preventDefault();
     if (!password) {
-      alert('Please enter your current password.');
+      notify('Please enter your current password.', 'warning');
       return;
     }
     if (!confirmedCheck) {
-      alert('Please confirm that you understand the 14-day deletion grace period.');
+      notify('Please confirm that you understand the 14-day deletion grace period.', 'warning');
       return;
     }
     setSubmitting(true);
@@ -1296,7 +1306,7 @@ function DangerZoneSection({ user, onUpdate }) {
       fetchStatus();
       if (onUpdate) onUpdate();
     } catch (err) {
-      alert(err.message || 'Failed to schedule account deletion.');
+      notify(err.message || 'Failed to schedule account deletion.', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -1310,7 +1320,7 @@ function DangerZoneSection({ user, onUpdate }) {
       fetchStatus();
       if (onUpdate) onUpdate();
     } catch (err) {
-      alert(err.message || 'Failed to cancel deletion.');
+      notify(err.message || 'Failed to cancel deletion.', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -1748,11 +1758,11 @@ function AliasesSection({ user }) {
     e.preventDefault();
     if (style === 'custom') {
       if (!customHandle.trim()) {
-        alert('Please enter a custom alias handle');
+        notify('Please enter a custom alias handle', 'warning');
         return;
       }
       if (!availability || !availability.available) {
-        alert(availability?.reason || 'Please wait for address availability verification');
+        notify(availability?.reason || 'Please wait for address availability verification', 'warning');
         return;
       }
     }
@@ -1770,7 +1780,7 @@ function AliasesSection({ user }) {
       fetchAliases();
       setTimeout(() => setMsg(null), 3500);
     } catch (err) {
-      alert(err.message || 'Failed to generate alias');
+      notify(err.message || 'Failed to generate alias', 'error');
     }
   };
 
@@ -1780,7 +1790,7 @@ function AliasesSection({ user }) {
       fetchAliases();
       if (window.WoxToast) window.WoxToast.success(`Alias ${!isEnabled ? 'enabled' : 'disabled'}`);
     } catch (err) {
-      alert(err.message);
+      notify(err.message, 'error');
     }
   };
 
@@ -1791,7 +1801,7 @@ function AliasesSection({ user }) {
       fetchAliases();
       if (window.WoxToast) window.WoxToast.info('Alias deleted');
     } catch (err) {
-      alert(err.message);
+      notify(err.message, 'error');
     }
   };
 
@@ -2166,7 +2176,7 @@ function FiltersSection() {
   const handleCreate = async (e) => {
     e.preventDefault();
     if (needsActionValue && !actionValue.trim()) {
-      alert(`Please enter a ${action === 'forward' ? 'forwarding email address' : action === 'label' ? 'label name' : 'target folder'}.`);
+      notify(`Please enter a ${action === 'forward' ? 'forwarding email address' : action === 'label' ? 'label name' : 'target folder'}.`, 'warning');
       return;
     }
     try {
@@ -2181,7 +2191,7 @@ function FiltersSection() {
       setName(''); setValue(''); setActionValue('');
       fetchFilters();
     } catch (err) {
-      alert(err.message);
+      notify(err.message, 'error');
     }
   };
 
@@ -2190,7 +2200,7 @@ function FiltersSection() {
       await del(`/settings/filters/${id}`);
       fetchFilters();
     } catch (err) {
-      alert(err.message);
+      notify(err.message, 'error');
     }
   };
 
@@ -2319,7 +2329,7 @@ function ScreenerRulesSection() {
       setPattern('');
       fetchRules();
     } catch (err) {
-      alert(err.message);
+      notify(err.message, 'error');
     }
   };
 
@@ -2328,7 +2338,7 @@ function ScreenerRulesSection() {
       await del(`/mail/screener/rules/${id}`);
       fetchRules();
     } catch (err) {
-      alert(err.message);
+      notify(err.message, 'error');
     }
   };
 
@@ -2432,17 +2442,17 @@ function WebhooksSection() {
       fetchWebhooks();
       setTimeout(() => setMsg(null), 3000);
     } catch (err) {
-      alert(err.message);
+      notify(err.message, 'error');
     }
   };
 
   const handleTest = async (id) => {
     try {
       const res = await post(`/mail/webhooks/${id}/test`, {});
-      alert(`Test ping dispatched! Status: ${res.result?.status || 'Sent'}`);
+      notify(`Test ping dispatched! Status: ${res.result?.status || 'Sent'}`, 'success');
       fetchWebhooks();
     } catch (err) {
-      alert(err.message);
+      notify(err.message, 'error');
     }
   };
 
@@ -2452,7 +2462,7 @@ function WebhooksSection() {
       await del(`/mail/webhooks/${id}`);
       fetchWebhooks();
     } catch (err) {
-      alert(err.message);
+      notify(err.message, 'error');
     }
   };
 
@@ -2840,10 +2850,10 @@ function DeadManSection() {
         finalInstructions,
         beneficiaryEmails: emails,
       });
-      alert('Dead Man\'s Switch configuration saved successfully!');
+      notify('Dead Man\'s Switch configuration saved successfully!', 'success');
       loadData();
     } catch (err) {
-      alert('Save failed: ' + err.message);
+      notify('Save failed: ' + err.message, 'error');
     } finally {
       setSaving(false);
     }
@@ -2852,10 +2862,10 @@ function DeadManSection() {
   const handleCheckin = async () => {
     try {
       const res = await post('/deadman/checkin');
-      alert(res.message);
+      notify(res.message, 'success');
       loadData();
     } catch (err) {
-      alert('Checkin failed: ' + err.message);
+      notify('Checkin failed: ' + err.message, 'error');
     }
   };
 
@@ -2935,7 +2945,7 @@ function FeedRssSection() {
       const res = await post('/settings/feed-rss/token');
       setFeedUrl(res.feedUrl);
     } catch (err) {
-      alert('Error generating RSS token: ' + err.message);
+      notify('Error generating RSS token: ' + err.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -2960,7 +2970,7 @@ function FeedRssSection() {
             <label className="text-secondary" style={{ fontSize: '0.8125rem', display: 'block', marginBottom: 4 }}>Your Private Atom / RSS 2.0 Feed URL:</label>
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
               <input type="text" className="input mono" readOnly value={feedUrl} style={{ fontSize: '0.8125rem' }} />
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => { navigator.clipboard.writeText(feedUrl); alert('Copied feed URL to clipboard!'); }} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => { navigator.clipboard.writeText(feedUrl); notify('Copied feed URL to clipboard!', 'success'); }} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
                 <span>Copy</span>
               </button>

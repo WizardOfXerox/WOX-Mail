@@ -23,12 +23,27 @@ export default function ContextMenu({ x, y, items = [], onClose, title }) {
   const [activeSubmenuIdx, setActiveSubmenuIdx] = useState(null);
   const [drilldownStack, setDrilldownStack] = useState([]); // for mobile drilldown { title, items }
 
+  // Drag down to dismiss gesture state for mobile grab bar / header
+  const dragStartYRef = useRef(null);
+  const [dragOffset, setDragOffset] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+
   // Resize listener for mobile switch
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth <= 768);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Lock body scroll while mobile action sheet is open to prevent background movement
+  useEffect(() => {
+    if (!isMobile) return;
+    const origOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = origOverflow;
+    };
+  }, [isMobile]);
 
   // Viewport collision bounds calculation for desktop
   useEffect(() => {
@@ -50,9 +65,12 @@ export default function ContextMenu({ x, y, items = [], onClose, title }) {
     }
   }, [x, y, isMobile]);
 
-  // Click outside & Escape / Arrow keyboard handling
+  // Click outside & Escape / Arrow keyboard handling & Scroll isolation
   useEffect(() => {
     const handleClickOutside = (e) => {
+      // On mobile, the bottom sheet is a modal with its own backdrop overlay.
+      // Tapping the backdrop overlay handles dismiss. Don't close on touch events outside menuRef.
+      if (isMobile) return;
       if (menuRef.current && !menuRef.current.contains(e.target)) {
         onClose();
       }
@@ -102,18 +120,61 @@ export default function ContextMenu({ x, y, items = [], onClose, title }) {
       }
     };
 
+    const handleScroll = (e) => {
+      // 1. If scroll occurred inside the context menu / bottom sheet, NEVER close
+      if (menuRef.current && menuRef.current.contains(e.target)) {
+        return;
+      }
+      // 2. On mobile, bottom sheet is a modal overlay - never close on any scroll
+      if (isMobile) {
+        return;
+      }
+      // 3. On desktop floating popover, close when scrolling background page
+      onClose();
+    };
+
     window.addEventListener('mousedown', handleClickOutside);
     window.addEventListener('touchstart', handleClickOutside);
     window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('scroll', onClose, true);
+    window.addEventListener('scroll', handleScroll, true);
 
     return () => {
       window.removeEventListener('mousedown', handleClickOutside);
       window.removeEventListener('touchstart', handleClickOutside);
       window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('scroll', onClose, true);
+      window.removeEventListener('scroll', handleScroll, true);
     };
-  }, [onClose, items, focusedIdx, activeSubmenuIdx, drilldownStack]);
+  }, [onClose, items, focusedIdx, activeSubmenuIdx, drilldownStack, isMobile]);
+
+  // Touch gesture handlers for mobile sheet grab pill (deliberate swipe-down to dismiss)
+  const handleGrabTouchStart = (e) => {
+    if (e.touches && e.touches[0]) {
+      dragStartYRef.current = e.touches[0].clientY;
+      setIsDragging(true);
+    }
+  };
+
+  const handleGrabTouchMove = (e) => {
+    if (dragStartYRef.current === null || !e.touches || !e.touches[0]) return;
+    const deltaY = e.touches[0].clientY - dragStartYRef.current;
+    if (deltaY > 0) {
+      // Damped downward offset so small nudges don't jerk the sheet
+      const damped = deltaY < 50 ? deltaY * 0.5 : 25 + (deltaY - 50) * 0.75;
+      setDragOffset(damped);
+    } else {
+      setDragOffset(0);
+    }
+  };
+
+  const handleGrabTouchEnd = () => {
+    setIsDragging(false);
+    // Requires an intentional drag of at least 130px to dismiss
+    if (dragOffset > 130) {
+      onClose();
+    }
+    setDragOffset(0);
+    dragStartYRef.current = null;
+  };
 
   // Current items for mobile action sheet
   const activeMobileItems = drilldownStack.length > 0
@@ -133,6 +194,7 @@ export default function ContextMenu({ x, y, items = [], onClose, title }) {
           zIndex: 9999,
           background: 'rgba(0, 0, 0, 0.65)',
           backdropFilter: 'blur(4px)',
+          WebkitBackdropFilter: 'blur(4px)',
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'flex-end',
@@ -146,64 +208,110 @@ export default function ContextMenu({ x, y, items = [], onClose, title }) {
           ref={menuRef}
           className="context-menu-sheet"
           style={{
-            background: 'var(--color-bg-card)',
-            borderTopLeftRadius: 'var(--radius-lg)',
-            borderTopRightRadius: 'var(--radius-lg)',
-            borderTop: '1px solid var(--color-border)',
-            padding: '1rem',
-            maxHeight: '80vh',
+            background: 'var(--color-bg-card, #13111c)',
+            borderTopLeftRadius: 'var(--radius-lg, 16px)',
+            borderTopRightRadius: 'var(--radius-lg, 16px)',
+            borderTop: '1px solid var(--color-border, rgba(255, 255, 255, 0.1))',
+            padding: '0.75rem 1rem 1rem 1rem',
+            paddingBottom: 'max(1rem, env(safe-area-inset-bottom, 1rem))',
+            maxHeight: '92vh',
             display: 'flex',
             flexDirection: 'column',
             gap: '0.5rem',
             animation: 'slideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
             boxShadow: '0 -8px 30px rgba(0, 0, 0, 0.5)',
+            transform: dragOffset > 0 ? `translateY(${dragOffset}px)` : 'none',
+            transition: isDragging ? 'none' : 'transform 0.2s ease-out',
           }}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Grab Bar */}
+          {/* Grab Pill Bar (Drag-to-dismiss is restricted ONLY to this grab pill handle) */}
           <div
+            className="context-menu-grab-handle"
+            onTouchStart={handleGrabTouchStart}
+            onTouchMove={handleGrabTouchMove}
+            onTouchEnd={handleGrabTouchEnd}
             style={{
-              width: 36,
-              height: 4,
-              borderRadius: 2,
-              background: 'var(--color-border)',
-              margin: '0 auto 0.5rem auto',
+              padding: '0.35rem 0',
+              margin: '-0.35rem auto 0.25rem auto',
+              width: '100%',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              cursor: 'grab',
+              touchAction: 'none',
             }}
-          />
+          >
+            <div
+              style={{
+                width: 44,
+                height: 5,
+                borderRadius: 3,
+                background: isDragging ? 'var(--color-primary, #a855f7)' : 'var(--color-border, rgba(255, 255, 255, 0.25))',
+                transition: 'background 0.15s ease',
+              }}
+            />
+          </div>
 
-          {/* Header with Back Button for Drilldown */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 0.25rem 0.5rem 0.25rem', borderBottom: '1px solid var(--color-border)' }}>
-            {drilldownStack.length > 0 ? (
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                style={{ padding: '0.25rem 0.5rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-                onClick={() => setDrilldownStack((prev) => prev.slice(0, -1))}
+          {/* Header with Back Button for Drilldown or Title & Close (Normal touchable header) */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 0.25rem 0.35rem 0.25rem', borderBottom: '1px solid var(--color-border, rgba(255, 255, 255, 0.1))', minHeight: 32 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', overflow: 'hidden', flex: 1, minWidth: 0 }}>
+              {drilldownStack.length > 0 && (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  style={{ padding: '0.2rem 0.45rem', display: 'flex', alignItems: 'center', gap: '0.25rem', flexShrink: 0 }}
+                  onClick={() => setDrilldownStack((prev) => prev.slice(0, -1))}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                  <span>Back</span>
+                </button>
+              )}
+              <span
+                style={{
+                  fontSize: '0.875rem',
+                  fontWeight: 600,
+                  color: 'var(--color-text-secondary, #a1a1aa)',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+                title={activeMobileTitle}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-                <span>Back</span>
-              </button>
-            ) : (
-              <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>
                 {activeMobileTitle}
               </span>
-            )}
+            </div>
             <button
               type="button"
               className="btn btn-ghost btn-sm"
               onClick={onClose}
-              style={{ padding: '0.25rem' }}
+              style={{ padding: '0.25rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
               aria-label="Close"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
 
-          {/* Items List */}
-          <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.25rem', paddingBottom: '0.5rem' }}>
+          {/* Items List - Fully Scrollable without Dismissal */}
+          <div
+            className="context-menu-items-list"
+            style={{
+              flex: '1 1 auto',
+              minHeight: 0,
+              overflowY: 'auto',
+              WebkitOverflowScrolling: 'touch',
+              overscrollBehaviorY: 'contain',
+              touchAction: 'pan-y',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.35rem',
+              paddingBottom: 'max(1.75rem, env(safe-area-inset-bottom, 1.75rem))',
+              paddingRight: '2px',
+            }}
+          >
             {activeMobileItems.map((item, idx) => {
               if (item.divider) {
-                return <div key={`div-${idx}`} style={{ height: 1, background: 'var(--color-border)', margin: '0.25rem 0' }} />;
+                return <div key={`div-${idx}`} style={{ height: 1, background: 'var(--color-border, rgba(255, 255, 255, 0.1))', margin: '0.25rem 0', flexShrink: 0 }} />;
               }
 
               const hasChildren = item.children && item.children.length > 0;
@@ -226,27 +334,28 @@ export default function ContextMenu({ x, y, items = [], onClose, title }) {
                     justifyContent: 'space-between',
                     width: '100%',
                     padding: '0.75rem 1rem',
-                    background: 'var(--color-bg-hover)',
-                    border: '1px solid var(--color-border)',
-                    borderRadius: 'var(--radius-md)',
-                    color: item.danger ? 'var(--color-error)' : 'var(--color-text-primary)',
+                    background: 'var(--color-bg-hover, rgba(255, 255, 255, 0.05))',
+                    border: '1px solid var(--color-border, rgba(255, 255, 255, 0.08))',
+                    borderRadius: 'var(--radius-md, 8px)',
+                    color: item.danger ? 'var(--color-error, #ef4444)' : 'var(--color-text-primary, #ffffff)',
                     fontSize: '0.9375rem',
                     fontWeight: 500,
                     cursor: 'pointer',
                     textAlign: 'left',
                     minHeight: 48,
+                    flexShrink: 0,
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                     {item.icon && (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', color: item.danger ? 'var(--color-error)' : 'var(--color-primary-light)' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', color: item.danger ? 'var(--color-error, #ef4444)' : 'var(--color-primary-light, #c084fc)' }}>
                         {item.icon}
                       </span>
                     )}
                     <span>{item.label}</span>
                   </div>
                   {hasChildren ? (
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-text-tertiary)' }}><polyline points="9 18 15 12 9 6"/></svg>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-text-tertiary, #71717a)' }}><polyline points="9 18 15 12 9 6"/></svg>
                   ) : item.shortcut ? (
                     <span className="mono text-tertiary" style={{ fontSize: '0.75rem' }}>
                       {item.shortcut}
@@ -259,7 +368,7 @@ export default function ContextMenu({ x, y, items = [], onClose, title }) {
             <button
               type="button"
               className="btn btn-secondary"
-              style={{ width: '100%', marginTop: '0.5rem', minHeight: 48, justifyContent: 'center' }}
+              style={{ width: '100%', marginTop: '0.5rem', minHeight: 48, justifyContent: 'center', flexShrink: 0 }}
               onClick={onClose}
             >
               Cancel

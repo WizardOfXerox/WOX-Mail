@@ -36,7 +36,11 @@
           </span>
           <span class="badge badge-purple" id="status-badge">Active</span>
         </div>
-        <div class="mailbox-header-right">
+        <div class="mailbox-header-right" style="display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap;">
+          <button type="button" class="btn btn-ghost btn-xs text-purple" id="extend-mailbox-btn" onclick="extendCurrentMailbox()" title="Extend mailbox lifetime by 24 hours" style="border: 1px dashed rgba(168, 85, 247, 0.45); padding: 0.2rem 0.55rem; border-radius: var(--radius-pill); font-size: 0.75rem; display: inline-flex; align-items: center; gap: 0.25rem;">
+            <svg class="icon-svg" style="width:12px;height:12px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+            <span>Extend (+24h)</span>
+          </button>
           <span class="countdown-badge" id="countdown-text" style="font-size: 0.75rem; padding: 0.25rem 0.65rem;">
             <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             Loading...
@@ -63,7 +67,7 @@
           <select id="temp-domain-select" class="btn btn-secondary" style="padding: 0.4rem 0.6rem; font-size: 0.8125rem; font-family: var(--font-mono); cursor: default;" title="Disposable domain: @mail.wox.world">
             <option value="mail.wox.world" selected>@mail.wox.world</option>
           </select>
-          <button type="button" class="btn btn-secondary" onclick="promptCustomAddress()" title="Choose a custom username prefix">
+          <button type="button" class="btn btn-secondary" onclick="toggleCustomBar()" id="custom-address-btn" title="Choose a custom username prefix">
             <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
             <span>Custom</span>
           </button>
@@ -71,7 +75,7 @@
             <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="5" height="5" x="3" y="3" rx="1"/><rect width="5" height="5" x="16" y="3" rx="1"/><rect width="5" height="5" x="3" y="16" rx="1"/><path d="M21 16h-3a2 2 0 0 0-2 2v3"/><path d="M21 21v.01"/><path d="M12 7v3a2 2 0 0 1-2 2H7"/><path d="M3 12h.01"/><path d="M12 3h.01"/><path d="M12 16v.01"/><path d="M16 12h1"/><path d="M21 12v.01"/><path d="M12 21v-1"/></svg>
             <span>QR</span>
           </button>
-          <button type="button" class="btn btn-ghost text-secondary" onclick="deleteMailbox()" title="Delete and purge this mailbox immediately">
+          <button type="button" class="btn btn-ghost text-secondary" id="delete-mailbox-btn" onclick="deleteMailbox()" title="Delete and purge this mailbox immediately">
             <svg class="icon-svg text-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
             <span>Delete</span>
           </button>
@@ -94,6 +98,31 @@
           <button type="button" class="btn btn-ghost btn-xs duration-close-btn" onclick="toggleDurationBar(false)" title="Cancel">
             <svg class="icon-svg" style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
           </button>
+        </div>
+      </div>
+
+      <!-- Custom Username Handle Drawer (Appears when 'Custom' is clicked) -->
+      <div class="custom-handle-bar" id="custom-handle-bar" style="display: none; margin-top: 0.75rem; padding: 0.75rem 1rem; background: var(--color-bg-elevated); border: 1px solid var(--color-border); border-radius: var(--radius-md);">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap;">
+          <div style="display: flex; align-items: center; gap: 0.5rem; flex: 1; min-width: 240px;">
+            <span class="text-secondary" style="font-size: 0.8125rem; font-weight: 600; white-space: nowrap;">Custom Username:</span>
+            <div style="display: flex; align-items: center; background: var(--color-bg-card); border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 0 0.5rem; flex: 1;">
+              <input type="text" id="custom-handle-input" placeholder="e.g. myalias" class="mono" style="border: none; background: transparent; padding: 0.4rem 0.2rem; outline: none; color: var(--color-text-primary); font-size: 0.875rem; width: 100%;" onkeydown="if(event.key==='Enter')applyCustomAddress()" />
+              <span class="text-secondary mono" style="font-size: 0.8125rem;">@mail.wox.world</span>
+            </div>
+          </div>
+          <div style="display: flex; gap: 0.4rem; align-items: center;">
+            <button type="button" class="btn btn-primary btn-xs" onclick="applyCustomAddress()">Create</button>
+            <button type="button" class="btn btn-ghost btn-xs" onclick="toggleCustomBar(false)">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- My Saved Temp Mailboxes History Switcher -->
+      <div id="my-mailboxes-strip" style="display: none; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--color-border-subtle);">
+        <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+          <span class="text-secondary" style="font-size: 0.75rem; font-weight: 600;">My Recent:</span>
+          <div id="my-mailboxes-pills" style="display: flex; gap: 0.35rem; flex-wrap: wrap; align-items: center;"></div>
         </div>
       </div>
     </div>
@@ -175,7 +204,9 @@
             <span id="viewer-date"></span>
           </div>
         </div>
+        <div id="viewer-action-link-banner" style="display:none; margin-bottom: 0.85rem;"></div>
         <div id="viewer-otp-banner"></div>
+        <div id="viewer-attachments" class="viewer-attachments-grid" style="display:none; margin-bottom: 0.85rem;"></div>
         <div id="viewer-body" class="viewer-content-box"></div>
       </div>
 
@@ -273,7 +304,7 @@
   </div>
 </div>
 
-`, scripts: '<script src="/js/tempmail.js?v=4.0"></script>' }) %>
+`, scripts: '<script src="/js/tempmail.js?v=4.2"></script>' }) %>
 
 <style>
   .tempmail-wrapper {
@@ -1059,9 +1090,129 @@
     .keyboard-shortcuts-bar { display: none; }
   }
 
+  /* Sovereign TempMail Power Enhancements */
+  .action-link-banner {
+    background: linear-gradient(135deg, rgba(124, 58, 237, 0.16), rgba(59, 130, 246, 0.12));
+    border: 1px solid rgba(168, 85, 247, 0.35);
+    border-radius: var(--radius-md);
+    padding: 0.85rem 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .action-banner-content {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    min-width: 0;
+    flex: 1;
+  }
+  .action-banner-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .action-banner-label {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: var(--color-text-primary);
+  }
+  .action-banner-url {
+    font-size: 0.75rem;
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 480px;
+  }
+  .action-banner-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-shrink: 0;
+  }
+
+  .viewer-attachments-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 0.5rem;
+    padding: 0.75rem;
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+  }
+  .attachment-chip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-sm);
+    min-width: 0;
+  }
+  .attachment-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+  }
+  .attachment-name {
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--color-text-primary);
+  }
+  .attachment-size {
+    font-size: 0.6875rem;
+    color: var(--color-text-tertiary);
+  }
+
+  .my-mailbox-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.2rem 0.55rem;
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-pill);
+    font-size: 0.75rem;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .my-mailbox-pill:hover,
+  .my-mailbox-pill.active {
+    background: var(--color-bg-card);
+    border-color: var(--color-primary);
+    color: var(--color-text-primary);
+  }
+  .my-mailbox-pill .pill-del {
+    opacity: 0.5;
+    padding: 0 0.15rem;
+    border-radius: 50%;
+  }
+  .my-mailbox-pill .pill-del:hover {
+    opacity: 1;
+    color: var(--color-error);
+  }
+
+  .btn-danger {
+    background: rgba(239, 68, 68, 0.18) !important;
+    border: 1px solid rgba(239, 68, 68, 0.5) !important;
+    color: #ef4444 !important;
+  }
+
   @media (max-width: 480px) {
     .address-actions-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.4rem; }
     .duration-bar-content { flex-wrap: wrap; }
     .duration-pills { flex-wrap: wrap; width: 100%; }
+    .action-link-banner { flex-direction: column; align-items: stretch; }
+    .action-banner-actions { width: 100%; justify-content: flex-end; }
   }
 </style>

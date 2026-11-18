@@ -61,7 +61,8 @@ export default function AdminTickets() {
       setThreadData(data);
       setSelectedTicketId(id);
     } catch (err) {
-      alert('Failed to load thread: ' + err.message);
+      if (window.WoxToast) window.WoxToast.error('Failed to load thread: ' + err.message);
+      else alert('Failed to load thread: ' + err.message);
     }
   };
 
@@ -77,7 +78,8 @@ export default function AdminTickets() {
       fetchTickets();
       if (selectedTicketId === ticketId) fetchThread(ticketId);
     } catch (err) {
-      alert('Failed to update status: ' + err.message);
+      if (window.WoxToast) window.WoxToast.error('Failed to update status: ' + err.message);
+      else alert('Failed to update status: ' + err.message);
     }
   };
 
@@ -97,7 +99,8 @@ export default function AdminTickets() {
         fetchTickets();
       }
     } catch (err) {
-      alert('Failed to post reply: ' + err.message);
+      if (window.WoxToast) window.WoxToast.error('Failed to post reply: ' + err.message);
+      else alert('Failed to post reply: ' + err.message);
     } finally {
       setSending(false);
     }

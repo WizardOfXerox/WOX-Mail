@@ -613,25 +613,50 @@ router.get('/message/:uid', async (req, res, next) => {
       ).catch(() => {});
     }
 
-    // Read Tracking / Open Receipt lookup
+    // Read Tracking / Open Receipt lookup (strictly for Outbound / Sent emails dispatched by the user)
     let trackingInfo = null;
-    try {
-      const recipientEmail = parsed.to?.value?.[0]?.address || '';
-      const subj = parsed.subject || '';
-      if (recipientEmail || subj) {
-        const trackRes = await query(
-          `SELECT id, tracking_token, subject, recipient_email, sent_at, opened_at, open_count, last_user_agent
-           FROM email_tracking
-           WHERE user_id = $1 AND (recipient_email = $2 OR subject = $3)
-           ORDER BY sent_at DESC LIMIT 1`,
-          [req.user.id, recipientEmail, subj]
-        );
-        if (trackRes.rows.length > 0) {
-          trackingInfo = trackRes.rows[0];
+    const isOutboundFolder = /^(sent|outbox)/i.test(folder || '');
+    const userEmail = (req.user.email || '').toLowerCase();
+    const fromAddress = (parsed.from?.value?.[0]?.address || '').toLowerCase();
+    const isSentByUser = isOutboundFolder || (fromAddress && fromAddress === userEmail);
+
+    if (isSentByUser) {
+      try {
+        // 1. Check if the message HTML contains an embedded tracking pixel token
+        const pixelMatch = parsed.html ? parsed.html.match(/\/api\/analytics\/pixel\/([a-f0-9]{24,64})\.png/i) : null;
+        if (pixelMatch && pixelMatch[1]) {
+          const trackByToken = await query(
+            `SELECT id, tracking_token, subject, recipient_email, sent_at, opened_at, open_count, last_user_agent
+             FROM email_tracking
+             WHERE user_id = $1 AND tracking_token = $2
+             LIMIT 1`,
+            [req.user.id, pixelMatch[1]]
+          );
+          if (trackByToken.rows.length > 0) {
+            trackingInfo = trackByToken.rows[0];
+          }
         }
+
+        // 2. Fallback: match by BOTH recipient AND subject if in sent/outbox folder
+        if (!trackingInfo) {
+          const recipientEmail = parsed.to?.value?.[0]?.address || '';
+          const subj = parsed.subject || '';
+          if (recipientEmail && subj) {
+            const trackRes = await query(
+              `SELECT id, tracking_token, subject, recipient_email, sent_at, opened_at, open_count, last_user_agent
+               FROM email_tracking
+               WHERE user_id = $1 AND recipient_email = $2 AND subject = $3
+               ORDER BY sent_at DESC LIMIT 1`,
+              [req.user.id, recipientEmail, subj]
+            );
+            if (trackRes.rows.length > 0) {
+              trackingInfo = trackRes.rows[0];
+            }
+          }
+        }
+      } catch (trackErr) {
+        logger.debug({ err: trackErr.message }, 'Failed to lookup tracking for message');
       }
-    } catch (trackErr) {
-      logger.debug({ err: trackErr.message }, 'Failed to lookup tracking for message');
     }
 
     // RFC 8058 & RFC 2369 List-Unsubscribe Extraction

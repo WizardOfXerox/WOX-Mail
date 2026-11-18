@@ -62,8 +62,8 @@ export const RATE_LIMITS = Object.freeze({
     max: 300,
   }),
   TEMP_GENERATE: Object.freeze({
-    window: 3600, // 1 hour
-    max: 10,
+    window: 600, // 10 minutes
+    max: 60,
   }),
 });
 

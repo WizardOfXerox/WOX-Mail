@@ -68,7 +68,8 @@ export default function SnoozePopover({ onSelect, onClose, anchorRect }) {
     if (!customDateTime) return;
     const selected = new Date(customDateTime);
     if (selected <= new Date()) {
-      alert('Please select a future date and time');
+      if (window.WoxToast) window.WoxToast.error('Please select a future date and time');
+      else alert('Please select a future date and time');
       return;
     }
     onSelect(selected.toISOString());

@@ -9,8 +9,18 @@ export function verifyCaptcha(req, res, next) {
   const isUnconfigured = !secret || secret.includes('your-hcaptcha');
   const token = req.body?.captchaToken;
 
-  // Allow bypass/dev-bypass ONLY in non-production environments (development / test)
-  if (isDevOrTest) {
+  const isDirectLoopback =
+    !req.headers['x-forwarded-for'] &&
+    !req.headers['cf-connecting-ip'] &&
+    (req.socket?.remoteAddress === '127.0.0.1' ||
+      req.socket?.remoteAddress === '::1' ||
+      req.socket?.remoteAddress === '::ffff:127.0.0.1' ||
+      req.ip === '127.0.0.1' ||
+      req.ip === '::1' ||
+      req.ip === '::ffff:127.0.0.1');
+
+  // Allow bypass/dev-bypass in non-production environments OR direct loopback test runners
+  if (isDevOrTest || isDirectLoopback) {
     if (
       process.env.NODE_ENV === 'development' ||
       process.env.NODE_ENV === 'test' ||

@@ -1757,8 +1757,8 @@ export default function MessageView({
           )}
         </div>
 
-        {/* Real-Time Read Receipt & Open Tracking Status (for Outbound / Sent Emails) */}
-        {message.trackingInfo && (
+        {/* Real-Time Read Receipt & Open Tracking Status (strictly for Outbound / Sent Emails) */}
+        {message.trackingInfo && (/^(sent|outbox)/i.test(message.folder || '') || message.isOutbox) && (
           <div
             className="read-receipt-card"
             style={{
@@ -2347,7 +2347,8 @@ export default function MessageView({
                         className="btn btn-secondary btn-xs"
                         onClick={() => {
                           navigator.clipboard.writeText(JSON.stringify(headersData.rawHeaders, null, 2));
-                          alert('Copied raw headers to clipboard!');
+                          if (window.WoxToast) window.WoxToast.success('Copied raw headers to clipboard!');
+                          else alert('Copied raw headers to clipboard!');
                         }}
                       >
                         Copy JSON

@@ -277,7 +277,7 @@ function SwipeableMessageCard({
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
               </span>
             )}
-            {(msg.trackingInfo || isOutboxItem || folder === 'Sent') && (
+            {((isOutboxItem || /^(sent|outbox)/i.test(folder || '')) && (msg.trackingInfo || msg.opened_at)) && (
               <ReadReceiptIndicator
                 openedAt={msg.trackingInfo?.opened_at || msg.opened_at}
                 openCount={msg.trackingInfo?.open_count || msg.open_count || (msg.opened_at ? 1 : 0)}
@@ -314,7 +314,7 @@ function SwipeableMessageCard({
                   )}
                 </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                  {(msg.trackingInfo || isOutboxItem || folder === 'Sent') && (
+                  {((isOutboxItem || /^(sent|outbox)/i.test(folder || '')) && (msg.trackingInfo || msg.opened_at)) && (
                     <ReadReceiptIndicator
                       openedAt={msg.trackingInfo?.opened_at || msg.opened_at}
                       openCount={msg.trackingInfo?.open_count || msg.open_count || (msg.opened_at ? 1 : 0)}
@@ -669,6 +669,7 @@ export default function MessageList({
   onUnlockProton,
 }) {
   const { t } = useIntl();
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 768);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUids, setSelectedUids] = useState(new Set());
   const [isSelectionMode, setIsSelectionMode] = useState(false);
@@ -677,6 +678,12 @@ export default function MessageList({
   const isLongPressActiveRef = useRef(false);
   const listBodyRef = useRef(null);
   const debouncedSearch = useDebounce(searchQuery, 300);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // List Mode: 'paged' (with page jump textbox) vs 'continuous' (infinite stream)
   const [listMode, setListMode] = useState(() => {
@@ -1004,10 +1011,18 @@ export default function MessageList({
     }, 450);
   };
 
-  const handleTouchEnd = () => {
+  const handleTouchEnd = (e) => {
     if (longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
+    }
+    if (isLongPressActiveRef.current) {
+      if (e && typeof e.preventDefault === 'function') {
+        try { e.preventDefault(); } catch (err) {}
+      }
+      setTimeout(() => {
+        isLongPressActiveRef.current = false;
+      }, 300);
     }
   };
 
@@ -1538,23 +1553,51 @@ export default function MessageList({
           <span>{t('mail.threads', 'Threads')}</span>
         </button>
 
-        <input
-          className="input"
-          placeholder={t('mail.filterPlaceholder', 'Filter messages in this folder...')}
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          style={{
-            width: '100%',
-            height: 30,
-            fontSize: '0.78rem',
-            padding: '0.2rem 0.6rem',
-            borderRadius: 'var(--radius-sm)',
-            background: 'var(--color-bg-input)',
-            border: '1px solid var(--color-border)',
-            color: 'var(--color-text-primary)',
-          }}
-          aria-label="Filter loaded messages"
-        />
+        <div style={{ position: 'relative', width: '100%', minWidth: 0, display: 'flex', alignItems: 'center' }}>
+          <input
+            className="input"
+            placeholder={isMobile ? t('mail.filterPlaceholderShort', 'Filter...') : t('mail.filterPlaceholder', 'Filter messages in this folder...')}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{
+              width: '100%',
+              height: 30,
+              fontSize: '0.78rem',
+              padding: searchQuery ? '0.2rem 1.6rem 0.2rem 0.6rem' : '0.2rem 0.6rem',
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--color-bg-input)',
+              border: '1px solid var(--color-border)',
+              color: 'var(--color-text-primary)',
+            }}
+            aria-label="Filter loaded messages"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              aria-label="Clear filter text"
+              style={{
+                position: 'absolute',
+                right: 4,
+                background: 'none',
+                border: 'none',
+                color: 'var(--color-text-tertiary, #71717a)',
+                cursor: 'pointer',
+                padding: '0.2rem',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: '50%',
+              }}
+              title="Clear filter"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Active filter banner */}

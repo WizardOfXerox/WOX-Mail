@@ -590,7 +590,8 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
                 className="btn btn-ghost btn-xs"
                 onClick={() => {
                   navigator.clipboard.writeText(sentSuccessData.passcode);
-                  alert('Passcode copied to clipboard!');
+                  if (window.WoxToast) window.WoxToast.success('Passcode copied to clipboard!');
+                  else alert('Passcode copied to clipboard!');
                 }}
               >
                 Copy PIN
@@ -1528,7 +1529,8 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
                   className="btn btn-primary btn-sm"
                   onClick={() => {
                     if (!pgpPassphrase) {
-                      alert('Passphrase required to encrypt');
+                      if (window.WoxToast) window.WoxToast.error('Passphrase required to encrypt');
+                      else alert('Passphrase required to encrypt');
                       return;
                     }
                     setPgpEncrypt(true);

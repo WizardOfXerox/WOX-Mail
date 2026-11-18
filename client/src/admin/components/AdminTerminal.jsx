@@ -109,7 +109,8 @@ export default function AdminTerminal() {
   const copyAllOutput = () => {
     const text = history.map((h) => h.text).join('\n');
     navigator.clipboard.writeText(text);
-    alert('Console output copied to clipboard!');
+    if (window.WoxToast) window.WoxToast.success('Console output copied to clipboard!');
+    else alert('Console output copied to clipboard!');
   };
 
   return (

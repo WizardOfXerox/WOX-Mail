@@ -812,22 +812,35 @@ export default function App() {
 
       {/* Mobile Top App Bar */}
       <header className="dashboard-mobile-header hide-desktop">
-        <button
-          type="button"
-          className="btn btn-ghost btn-icon"
-          onClick={() => setSidebarOpen(true)}
-          aria-label="Open folders menu"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-        </button>
-        <span className="dashboard-mobile-title">
-          {activeFolder === 'INBOX' ? 'Inbox' : activeFolder === '__all_inboxes' || activeFolder === 'All Inboxes' ? 'All Inboxes' : activeFolder.replace('__', '').replace(/_/g, ' ')}
-        </span>
-        <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center', flexShrink: 0 }}>
+        <div className="dashboard-mobile-left">
+          <button
+            type="button"
+            className="btn btn-ghost btn-icon dashboard-mobile-icon-btn"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Open folders menu"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
+          <span className="dashboard-mobile-title">
+            {activeFolder === 'INBOX'
+              ? 'Inbox'
+              : activeFolder === '__all_inboxes' || activeFolder === 'All Inboxes'
+              ? 'All Inboxes'
+              : activeFolder === '__gatekeeper'
+              ? 'Gatekeeper'
+              : activeFolder === '__campaigns'
+              ? 'Campaigns'
+              : activeFolder
+                  .replace(/^__/, '')
+                  .replace(/_/g, ' ')
+                  .replace(/\b\w/g, (c) => c.toUpperCase())}
+          </span>
+        </div>
+        <div className="dashboard-mobile-actions">
           {user?.is_admin && (
             <a
               href="/admin"
-              className="btn btn-ghost btn-icon"
+              className="btn btn-ghost btn-icon dashboard-mobile-icon-btn"
               title="Admin Control Panel"
               aria-label="Admin Control Panel"
               style={{ color: 'var(--color-primary-light)' }}
@@ -837,7 +850,7 @@ export default function App() {
           )}
           <a
             href="/settings"
-            className="btn btn-ghost btn-icon"
+            className="btn btn-ghost btn-icon dashboard-mobile-icon-btn"
             title="Settings"
             aria-label="Settings"
           >
@@ -845,7 +858,7 @@ export default function App() {
           </a>
           <button
             type="button"
-            className="btn btn-ghost btn-icon"
+            className="btn btn-ghost btn-icon dashboard-mobile-icon-btn"
             onClick={() => setAccountSwitcherOpen(true)}
             title="Switch Account"
             aria-label="Switch Account"
@@ -867,7 +880,7 @@ export default function App() {
           </button>
           <button
             type="button"
-            className="btn btn-primary btn-sm"
+            className="btn btn-primary dashboard-mobile-compose-btn"
             onClick={() => { setReplyData(null); setComposing(true); }}
             aria-label="Compose email"
           >
@@ -875,7 +888,7 @@ export default function App() {
           </button>
           <button
             type="button"
-            className="btn btn-ghost btn-icon"
+            className="btn btn-ghost btn-icon dashboard-mobile-icon-btn"
             onClick={toggleDock}
             aria-label="Productivity dock"
           >

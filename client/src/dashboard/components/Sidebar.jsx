@@ -638,7 +638,11 @@ export default function Sidebar({
               if (window.triggerPWAInstall) {
                 window.triggerPWAInstall();
               } else {
-                alert('To install WoxMail:\n• On Chrome/Edge: Click the install icon in the address bar (⊕).\n• On iPhone/iPad: Tap Share -> Add to Home Screen.');
+                if (window.WoxToast) {
+                  window.WoxToast.info('To install: On Chrome/Edge click ⊕ in the address bar. On iOS tap Share -> Add to Home Screen.');
+                } else {
+                  alert('To install WoxMail:\n• On Chrome/Edge: Click the install icon in the address bar (⊕).\n• On iPhone/iPad: Tap Share -> Add to Home Screen.');
+                }
               }
             }}
             style={{ color: 'var(--color-primary-light)', fontWeight: 600 }}

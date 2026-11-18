@@ -53,7 +53,8 @@ export default function SchedulePopover({ onSchedule, onClose, anchorRect }) {
     if (!customDateTime) return;
     const d = new Date(customDateTime);
     if (d <= new Date()) {
-      alert('Please choose a future time');
+      if (window.WoxToast) window.WoxToast.error('Please choose a future time');
+      else alert('Please choose a future time');
       return;
     }
     onSchedule(d.toISOString());

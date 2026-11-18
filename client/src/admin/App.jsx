@@ -646,7 +646,8 @@ function UsersTab() {
       setUsers((prev) => prev.map((x) => x.id === u.id ? { ...x, is_suspended: !x.is_suspended, status: !x.is_suspended ? 'suspended' : 'active' } : x));
       if (window.WoxToast) window.WoxToast.success(`User ${u.username} ${u.is_suspended ? 'unsuspended' : 'suspended'}`);
     } catch (err) {
-      alert('Failed to update user status: ' + err.message);
+      if (window.WoxToast) window.WoxToast.error('Failed to update user status: ' + err.message);
+      else alert('Failed to update user status: ' + err.message);
     }
   };
 
