@@ -3,8 +3,16 @@
  * High-performance PWA offline caching, installability, and push notification handler.
  */
 
-const CACHE_NAME = 'woxmail-pwa-v4';
+const CACHE_NAME = 'woxmail-pwa-v5';
 const OFFLINE_FALLBACK_URL = '/';
+const PUBLIC_CACHEABLE_HTML_PATHS = new Set([
+  '/',
+  '/login',
+  '/tempmail',
+  '/setup-guide',
+  '/privacy',
+  '/terms'
+]);
 
 const PRECACHE_ASSETS = [
   '/',
@@ -68,8 +76,8 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // A1. React Application Bundles in /dist/ (Network First to prevent stale chunk import 404s)
-  if (url.pathname.startsWith('/dist/')) {
+  // A1. Application Bundles & Scripts/Styles (/dist/, /js/, /css/) — Network First to prevent stale deploys
+  if (url.pathname.startsWith('/dist/') || url.pathname.startsWith('/js/') || url.pathname.startsWith('/css/')) {
     event.respondWith(
       fetch(request)
         .then((networkResponse) => {
@@ -84,13 +92,11 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // A2. Static Asset requests (CSS, JS libraries, Images, Local Fonts)
+  // A2. Immutable Static Assets (Images, Brand Icons, Local Fonts)
   if (
-    url.pathname.startsWith('/css/') ||
-    url.pathname.startsWith('/js/') ||
     url.pathname.startsWith('/assets/') ||
     url.pathname.startsWith('/brand/') ||
-    ['style', 'script', 'image', 'font'].includes(request.destination)
+    ['image', 'font'].includes(request.destination)
   ) {
     event.respondWith(
       caches.match(request).then((cachedResponse) => {
@@ -110,12 +116,13 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // B. HTML Navigations (Network First)
+  // B. HTML Navigations (Network First; ONLY cache public non-sensitive pages with no query tokens)
   if (request.mode === 'navigate' || request.destination === 'document') {
+    const canCacheHtml = !url.search && PUBLIC_CACHEABLE_HTML_PATHS.has(url.pathname);
     event.respondWith(
       fetch(request)
         .then((response) => {
-          if (response && response.status === 200 && response.type === 'basic') {
+          if (canCacheHtml && response && response.status === 200 && response.type === 'basic') {
             const responseClone = response.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(request, responseClone)).catch(() => {});
           }
@@ -163,6 +170,7 @@ self.addEventListener('push', (event) => {
 // 5. Notification Click Handler
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  if (event.action === 'close') return;
   const targetUrl = event.notification.data?.url || '/dashboard';
 
   event.waitUntil(

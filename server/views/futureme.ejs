@@ -115,7 +115,7 @@
             id="sender-email"
             class="input"
             placeholder="you@example.com"
-            value="${typeof user !== 'undefined' && user ? user.email : ''}"
+            value="${typeof user !== 'undefined' && user ? String(user.email || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') : ''}"
             required
           />
         </div>
@@ -258,10 +258,25 @@
   let selectedPreset = '1y';
   let activeUnlockId = null;
 
+  function getCsrfToken() {
+    const m = document.cookie.match(/woxmail_csrf=([^;]+)/);
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   function insertPrompt(text) {
     const body = document.getElementById('body-input');
     if (!body.value || confirm('Replace message with this prompt?')) {
-      body.value = text + '\n\n';
+      body.value = text + String.fromCharCode(10, 10);
       body.focus();
     }
   }
@@ -374,7 +389,11 @@
 
       const res = await fetch('/api/futureme/letters', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': getCsrfToken(),
+        },
+        credentials: 'include',
         body: JSON.stringify({
           senderEmail,
           recipientEmail,
@@ -447,35 +466,42 @@
         var lockBadge = l.is_locked ? '<span class="badge badge-amber" style="font-size: 0.7rem;">Passcode Locked</span>' : '<span class="badge badge-green" style="font-size: 0.7rem;">Open</span>';
         var statusBadgeClass = isDelivered ? 'badge-green' : isScheduled ? 'badge-purple' : 'badge-amber';
 
+        var safeId = encodeURIComponent(String(l.id));
+        var safeSubject = escapeHtml(l.subject || 'Untitled Letter');
+        var safeCategory = escapeHtml(l.category || 'General');
+        var safeRecipient = escapeHtml(l.recipient_email || '');
+        var safeStatus = escapeHtml(String(l.status || '').toUpperCase());
+        var safeBody = escapeHtml(l.body || '');
+
         var unlockBtn = '';
         if (l.is_locked && isScheduled) {
-          unlockBtn = '<button type="button" class="btn btn-secondary btn-xs" onclick="openUnlockModal(\'' + l.id + '\')">Unlock & Peek</button>';
+          unlockBtn = '<button type="button" class="btn btn-secondary btn-xs" data-unlock-id="' + safeId + '" onclick="openUnlockModal(this.dataset.unlockId)">Unlock &amp; Peek</button>';
         }
         var cancelBtn = '';
         if (isScheduled) {
-          cancelBtn = '<button type="button" class="btn btn-ghost btn-xs" style="color: var(--color-error);" onclick="cancelLetter(\'' + l.id + '\')">Cancel</button>';
+          cancelBtn = '<button type="button" class="btn btn-ghost btn-xs" style="color: var(--color-error);" data-cancel-id="' + safeId + '" onclick="cancelLetter(this.dataset.cancelId)">Cancel</button>';
         }
 
-        return '<div class="vault-letter-card" id="letter-' + l.id + '">' +
+        return '<div class="vault-letter-card" id="letter-' + safeId + '">' +
           '<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.5rem;">' +
             '<div>' +
-              '<h4 style="margin: 0 0 0.25rem 0; font-size: 1.1rem; color: #fff;">' + (l.subject || 'Untitled Letter') + '</h4>' +
+              '<h4 style="margin: 0 0 0.25rem 0; font-size: 1.1rem; color: var(--color-text-primary);">' + safeSubject + '</h4>' +
               '<div style="display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap;">' +
-                '<span class="badge badge-purple" style="font-size: 0.7rem;">' + (l.category || 'General') + '</span>' +
-                '<span class="text-secondary" style="font-size: 0.75rem;">To: ' + (l.recipient_email || '') + '</span>' +
-                '<span class="text-secondary" style="font-size: 0.75rem;">• ' + (l.word_count || 0) + ' words</span>' +
+                '<span class="badge badge-purple" style="font-size: 0.7rem;">' + safeCategory + '</span>' +
+                '<span class="text-secondary" style="font-size: 0.75rem;">To: ' + safeRecipient + '</span>' +
+                '<span class="text-secondary" style="font-size: 0.75rem;">• ' + (Number(l.word_count) || 0) + ' words</span>' +
               '</div>' +
             '</div>' +
             '<div style="display: flex; gap: 0.35rem; align-items: center;">' +
               lockBadge +
-              '<span class="badge ' + statusBadgeClass + '" style="font-size: 0.7rem;">' + l.status.toUpperCase() + '</span>' +
+              '<span class="badge ' + statusBadgeClass + '" style="font-size: 0.7rem;">' + safeStatus + '</span>' +
             '</div>' +
           '</div>' +
           '<div style="font-size: 0.8125rem; color: var(--color-text-secondary); margin-bottom: 0.75rem;">' +
-            'Delivery Target: <strong>' + targetDate + '</strong>' +
+            'Delivery Target: <strong>' + escapeHtml(targetDate) + '</strong>' +
           '</div>' +
-          '<div id="body-preview-' + l.id + '" style="background: var(--color-bg-card); padding: 0.75rem 1rem; border-radius: var(--radius-sm); font-size: 0.875rem; color: var(--color-text-secondary); border: 1px solid var(--color-border); white-space: pre-wrap; font-family: Georgia, serif; line-height: 1.6; margin-bottom: 0.75rem;">' +
-            (l.body || '') +
+          '<div id="body-preview-' + safeId + '" style="background: var(--color-bg-card); padding: 0.75rem 1rem; border-radius: var(--radius-sm); font-size: 0.875rem; color: var(--color-text-secondary); border: 1px solid var(--color-border); white-space: pre-wrap; font-family: Georgia, serif; line-height: 1.6; margin-bottom: 0.75rem;">' +
+            safeBody +
           '</div>' +
           '<div style="display: flex; justify-content: flex-end; gap: 0.5rem;">' +
             unlockBtn +
@@ -514,7 +540,10 @@
     try {
       var res = await fetch('/api/futureme/my-letters/' + activeUnlockId + '/unlock', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': getCsrfToken(),
+        },
         credentials: 'include',
         body: JSON.stringify({ passcode: passcode }),
       });
@@ -526,8 +555,8 @@
 
       var previewEl = document.getElementById('body-preview-' + activeUnlockId);
       if (previewEl) {
-        previewEl.innerHTML = data.body;
-        previewEl.style.color = '#ffffff';
+        previewEl.textContent = data.body || '';
+        previewEl.style.color = 'var(--color-text-primary)';
         previewEl.style.borderColor = 'var(--color-success)';
       }
 
@@ -548,6 +577,7 @@
     try {
       var res = await fetch('/api/futureme/my-letters/' + id, {
         method: 'DELETE',
+        headers: { 'x-csrf-token': getCsrfToken() },
         credentials: 'include',
       });
       var data = await res.json();

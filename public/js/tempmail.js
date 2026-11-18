@@ -758,13 +758,20 @@
 
     const addrToDelete = currentAddress;
     try {
-      await fetch(`${API}/delete/${encodeURIComponent(addrToDelete)}`, {
+      const delRes = await fetch(`${API}/delete/${encodeURIComponent(addrToDelete)}`, {
         method: 'DELETE',
         headers: { 'x-csrf-token': getCsrfToken() },
         credentials: 'include'
       });
+      if (!delRes.ok && delRes.status !== 404) {
+        const errData = await delRes.json().catch(() => ({}));
+        if (window.WoxToast) WoxToast.error(errData.error || 'Failed to delete mailbox');
+        return;
+      }
     } catch (e) {
       console.error('Delete request error:', e);
+      if (window.WoxToast) WoxToast.error('Network error while deleting mailbox');
+      return;
     }
 
     if (sseReconnectTimer) {
@@ -948,10 +955,13 @@
   };
 
   function escapeHtml(str) {
-    if (!str) return '';
-    const div = document.createElement('div');
-    div.textContent = String(str);
-    return div.innerHTML;
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   function formatDate(dateStr) {

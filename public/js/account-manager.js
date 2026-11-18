@@ -290,11 +290,11 @@
 
         item.innerHTML = `
           <div class="account-avatar" style="background: ${style.bg}; color: ${style.text};">
-            ${initials}
+            ${escapeHtml(initials)}
           </div>
           <div class="account-details">
-            <div class="account-name">${acc.displayName || acc.username} ${acc.isAdmin ? '<span class="admin-pill">Admin</span>' : ''}</div>
-            <div class="account-email">${acc.email}</div>
+            <div class="account-name">${escapeHtml(acc.displayName || acc.username)} ${acc.isAdmin ? '<span class="admin-pill">Admin</span>' : ''}</div>
+            <div class="account-email">${escapeHtml(acc.email)}</div>
           </div>
           <button type="button" class="account-remove-btn" title="Remove account from device" aria-label="Remove account">
             ✕
@@ -347,11 +347,11 @@
       selectedCard.innerHTML = `
         <div class="selected-account-inner">
           <div class="account-avatar" style="background: ${style.bg}; color: ${style.text}; width: 48px; height: 48px; font-size: 1.15rem;">
-            ${initials}
+            ${escapeHtml(initials)}
           </div>
           <div class="account-details" style="flex: 1;">
-            <div class="account-name" style="font-size: 1.05rem;">${acc.displayName || acc.username}</div>
-            <div class="account-email">${acc.email}</div>
+            <div class="account-name" style="font-size: 1.05rem;">${escapeHtml(acc.displayName || acc.username)}</div>
+            <div class="account-email">${escapeHtml(acc.email)}</div>
           </div>
           <button type="button" class="btn btn-ghost btn-xs" onclick="WoxAccountManager.showChooser()" style="color: var(--color-primary-light); font-weight: 600;">
             ← Switch
@@ -461,11 +461,11 @@
 
         item.innerHTML = `
           <div class="account-avatar-sm" style="background: ${style.bg}; color: ${style.text};">
-            ${initials}
+            ${escapeHtml(initials)}
           </div>
           <div class="nav-account-info">
-            <div class="nav-account-name">${acc.displayName || acc.username} ${acc.isAdmin ? '<span class="admin-badge" style="font-size:0.6rem;">Admin</span>' : ''}</div>
-            <div class="nav-account-email">${acc.email}</div>
+            <div class="nav-account-name">${escapeHtml(acc.displayName || acc.username)} ${acc.isAdmin ? '<span class="admin-badge" style="font-size:0.6rem;">Admin</span>' : ''}</div>
+            <div class="nav-account-email">${escapeHtml(acc.email)}</div>
           </div>
           <button type="button" class="nav-account-switch-tag" style="border: none; cursor: pointer;">
             Switch

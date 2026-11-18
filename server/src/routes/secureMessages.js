@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authenticate, loadUser } from '../middleware/auth.js';
+import { authSensitiveLimiter } from '../middleware/rateLimit.js';
 import { validate } from '../middleware/validate.js';
 import {
   createSecureMessage,
@@ -138,7 +139,7 @@ const unlockSchema = validate({
   passcode: { type: 'string', required: true },
 });
 
-router.post('/secure/unlock', unlockSchema, unlockHandler);
-router.post('/unlock', unlockSchema, unlockHandler);
+router.post('/secure/unlock', authSensitiveLimiter, unlockSchema, unlockHandler);
+router.post('/unlock', authSensitiveLimiter, unlockSchema, unlockHandler);
 
 export default router;

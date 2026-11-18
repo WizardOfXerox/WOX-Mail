@@ -3,11 +3,11 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, verifyActiveJwt } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/admin.js';
 import { validate } from '../middleware/validate.js';
 import { query } from '../config/database.js';
-import { generateToken, hashPassword } from '../utils/crypto.js';
+import { generateToken, hashPassword, timingSafeEqual } from '../utils/crypto.js';
 import { createUser, deleteUser, modifyUser } from '../services/purelymail.js';
 import { createConnection } from '../services/imap.js';
 import { createTransporter } from '../services/smtp.js';
@@ -27,19 +27,27 @@ import { refreshBlockList } from '../middleware/ipBlock.js';
 
 const router = Router();
 
+function isHttpsRequest(req) {
+  return !!(req.secure || req.headers['x-forwarded-proto'] === 'https');
+}
+
 /**
  * GET /api/admin/impersonate/exit & /impersonate-exit
- * Publicly reachable exit route: Restores original admin session from backup cookie.
+ * Publicly reachable exit route: Restores original admin session from verified backup cookie.
  */
 router.get(['/impersonate/exit', '/impersonate-exit'], async (req, res) => {
   const backupToken = req.cookies?.woxmail_admin_backup;
   if (backupToken) {
-    res.cookie('woxmail_token', backupToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 86400 * 1000,
-    });
+    const verified = await verifyActiveJwt(backupToken);
+    if (verified?.user?.is_admin) {
+      res.cookie('woxmail_token', backupToken, {
+        httpOnly: true,
+        secure: isHttpsRequest(req),
+        sameSite: 'strict',
+        path: '/',
+        maxAge: 86400 * 1000,
+      });
+    }
     res.clearCookie('woxmail_admin_backup', { path: '/' });
   }
   res.redirect('/admin');
@@ -611,8 +619,9 @@ router.get('/impersonate/temp/:address', async (req, res, next) => {
     if (currentAdminToken) {
       res.cookie('woxmail_admin_backup', currentAdminToken, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
+        secure: isHttpsRequest(req),
+        sameSite: 'strict',
+        path: '/',
         maxAge: 86400 * 1000,
       });
     }
@@ -625,8 +634,9 @@ router.get('/impersonate/temp/:address', async (req, res, next) => {
 
     res.cookie('woxmail_temp', sessionToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: isHttpsRequest(req),
+      sameSite: 'strict',
+      path: '/',
       maxAge: 86400 * 30 * 1000,
     });
 
@@ -681,16 +691,18 @@ router.get('/impersonate/:id', async (req, res, next) => {
     if (currentAdminToken) {
       res.cookie('woxmail_admin_backup', currentAdminToken, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
+        secure: isHttpsRequest(req),
+        sameSite: 'strict',
+        path: '/',
         maxAge: 86400 * 1000,
       });
     }
 
     res.cookie('woxmail_token', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: isHttpsRequest(req),
+      sameSite: 'strict',
+      path: '/',
       maxAge: 3600 * 1000,
     });
 
@@ -1066,13 +1078,45 @@ router.post('/blocked-ips',
  */
 router.delete('/blocked-ips/:ip', async (req, res, next) => {
   try {
-    await query('DELETE FROM blocked_ips WHERE ip_address = $1', [req.params.ip]);
+    const raw = decodeURIComponent(req.params.ip || '');
+    await query('DELETE FROM blocked_ips WHERE ip_address = $1 OR id::text = $1', [raw]);
     await refreshBlockList();
     res.json({ message: 'IP unblocked' });
   } catch (err) {
     next(err);
   }
 });
+
+/**
+ * POST /api/admin/make-admin
+ * Elevate an existing user by email to root administrator.
+ */
+router.post('/make-admin',
+  validate({ email: { type: 'string', required: true } }),
+  async (req, res, next) => {
+    try {
+      const targetEmail = req.body.email.trim().toLowerCase();
+      const userRes = await query(
+        'SELECT id, username, email, is_admin FROM users WHERE LOWER(email) = $1',
+        [targetEmail]
+      );
+      if (userRes.rows.length === 0) {
+        return res.status(404).json({ error: `User not found: ${targetEmail}` });
+      }
+      const target = userRes.rows[0];
+      if (!target.is_admin) {
+        await query('UPDATE users SET is_admin = TRUE, updated_at = NOW() WHERE id = $1', [target.id]);
+        await query(
+          `INSERT INTO audit_log (user_id, action, details, ip_address) VALUES ($1, $2, $3, $4)`,
+          [req.user.id, 'admin_elevate_user', JSON.stringify({ targetId: target.id, targetEmail: target.email }), req.ip]
+        ).catch(() => {});
+      }
+      res.json({ success: true, message: `${target.email} is now an administrator.`, user: { ...target, is_admin: true } });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
 // ═════════════════════════════════════════════════════════
 // POOL MANAGEMENT
@@ -1584,14 +1628,22 @@ router.get('/backups', async (req, res, next) => {
  */
 router.get('/backups/download/:filename', async (req, res, next) => {
   try {
-    const filename = path.basename(req.params.filename);
-    const backupDir = process.env.BACKUP_DIR || path.join(process.cwd(), 'backups');
-    const filePath = path.join(backupDir, filename);
+    const filename = path.basename(String(req.params.filename || ''));
+    if (!filename || !/^[a-zA-Z0-9._-]+\.(sql|gz|json|zip)$/i.test(filename)) {
+      return res.status(400).json({ error: 'Invalid backup filename' });
+    }
+    const backupDir = path.resolve(process.env.BACKUP_DIR || path.join(process.cwd(), 'backups'));
+    const filePath = path.resolve(backupDir, filename);
+
+    if (!filePath.startsWith(backupDir + path.sep)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
 
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'Backup file not found' });
     }
 
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     res.download(filePath, filename);
   } catch (err) {
     next(err);
@@ -2051,16 +2103,31 @@ router.post('/ediscovery/verify-hash', async (req, res, next) => {
     if (!id) return res.status(400).json({ error: 'Archive ID is required' });
 
     const msgRes = await query(
-      `SELECT id, subject, body_html, body_text, checksum, sent_or_received_at FROM compliance_archive WHERE id = $1`,
+      `SELECT id, direction, sender_address, recipient_addresses, subject, body_html, body_text, checksum, sent_or_received_at
+       FROM compliance_archive WHERE id = $1`,
       [id]
     );
     if (msgRes.rowCount === 0) return res.status(404).json({ error: 'Archived email not found' });
 
     const msg = msgRes.rows[0];
-    const rawContent = (msg.subject || '') + '\n' + (msg.body_html || msg.body_text || '');
-    const calculatedHash = crypto.createHash('sha256').update(rawContent, 'utf8').digest('hex');
+    const { calculateChecksum } = await import('../services/complianceArchiveService.js');
+    const recipients = Array.isArray(msg.recipient_addresses)
+      ? msg.recipient_addresses
+      : (typeof msg.recipient_addresses === 'string' && msg.recipient_addresses.startsWith('{')
+          ? msg.recipient_addresses.slice(1, -1).split(',').filter(Boolean)
+          : []);
 
-    const isValid = calculatedHash === msg.checksum;
+    const calculatedHash = calculateChecksum({
+      direction: msg.direction,
+      senderAddress: msg.sender_address,
+      recipientAddresses: recipients,
+      subject: msg.subject,
+      bodyText: msg.body_text,
+      bodyHtml: msg.body_html,
+      sentOrReceivedAt: msg.sent_or_received_at,
+    });
+
+    const isValid = timingSafeEqual(String(calculatedHash || ''), String(msg.checksum || ''));
 
     res.json({
       id: msg.id,
@@ -2107,6 +2174,7 @@ router.get('/ediscovery/export', async (req, res, next) => {
 
     res.setHeader('Content-Type', 'application/mbox');
     res.setHeader('Content-Disposition', 'attachment; filename="woxmail_ediscovery_export.mbox"');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     res.send(mbox);
   } catch (err) {
     next(err);

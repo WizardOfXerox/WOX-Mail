@@ -139,8 +139,12 @@ export default function AdminDomainsTab() {
               alignItems: 'center',
               justifyContent: 'space-between',
               padding: '1.25rem',
-              background: 'linear-gradient(135deg, rgba(124, 58, 237, 0.1) 0%, rgba(26, 26, 46, 0.9) 100%)',
+              background: 'linear-gradient(135deg, var(--color-primary-subtle) 0%, var(--color-bg-card) 100%)',
               border: '1px solid var(--color-primary-glow)',
+              borderRadius: 'var(--radius-lg)',
+              color: 'var(--color-text-primary)',
+              flexWrap: 'wrap',
+              gap: '0.75rem',
             }}
           >
             <div>

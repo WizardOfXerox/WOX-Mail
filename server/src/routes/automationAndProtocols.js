@@ -126,7 +126,7 @@ router.post('/mail/unsubscribe', requireAuth, async (req, res) => {
 
 // ─── 5. DNS Deliverability Health Probe ─────────────────────────
 
-router.get('/admin/dns-health', requireAuth, async (req, res) => {
+router.get('/admin/dns-health', requireAuth, requireAdmin, async (req, res) => {
   try {
     const domain = req.query.domain || process.env.DOMAIN_PERMANENT || 'wox.world';
     const audit = await auditDomainDnsHealth(domain);

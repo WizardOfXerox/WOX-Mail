@@ -70,6 +70,16 @@ export function buildSegmentWhereClause(listId, rules, startParamIndex = 2) {
  * Create a new audience segment.
  */
 export async function createSegment(userId, listId, { name, description = '', rules = {} }) {
+  const listCheck = await query(
+    `SELECT id FROM mailing_lists WHERE id = $1 AND user_id = $2`,
+    [listId, userId]
+  );
+  if (listCheck.rows.length === 0) {
+    const err = new Error('Mailing list not found or access denied');
+    err.status = 403;
+    throw err;
+  }
+
   const result = await query(
     `INSERT INTO subscriber_segments (user_id, list_id, name, description, rules)
      VALUES ($1, $2, $3, $4, $5)
@@ -86,7 +96,7 @@ export async function listSegments(userId, listId) {
   let q = `
     SELECT ss.*, ml.name AS list_name
     FROM subscriber_segments ss
-    JOIN mailing_lists ml ON ml.id = ss.list_id
+    JOIN mailing_lists ml ON ml.id = ss.list_id AND ml.user_id = $1
     WHERE ss.user_id = $1
   `;
   const params = [userId];
@@ -109,7 +119,7 @@ export async function getSegment(userId, segmentId) {
   const result = await query(
     `SELECT ss.*, ml.name AS list_name
      FROM subscriber_segments ss
-     JOIN mailing_lists ml ON ml.id = ss.list_id
+     JOIN mailing_lists ml ON ml.id = ss.list_id AND ml.user_id = $2
      WHERE ss.id = $1 AND ss.user_id = $2`,
     [segmentId, userId]
   );

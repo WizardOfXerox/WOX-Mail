@@ -17,12 +17,16 @@ export function getRPConfig() {
   const rpID = process.env.RP_ID || (process.env.NODE_ENV === 'production' ? domain : 'localhost');
   const rpName = 'WoxMail Sovereign Privacy Suite';
   const expectedOrigins = [
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'http://127.0.0.1:3000',
-    'http://127.0.0.1:3001',
     `https://${domain}`,
     `https://mail.${domain}`,
+    ...(process.env.NODE_ENV !== 'production'
+      ? [
+          'http://localhost:3000',
+          'http://localhost:3001',
+          'http://127.0.0.1:3000',
+          'http://127.0.0.1:3001',
+        ]
+      : []),
   ];
 
   return { rpID, rpName, expectedOrigins };

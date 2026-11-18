@@ -387,14 +387,14 @@ export default function GlobalAnnouncements({
               width: '100%',
               maxWidth: '560px',
               maxHeight: '85vh',
-              background: '#16162a',
-              border: '1px solid #2a2a4a',
+              background: 'var(--color-bg-card)',
+              border: '1px solid var(--color-border)',
               borderRadius: '1rem',
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.45)',
               display: 'flex',
               flexDirection: 'column',
               overflow: 'hidden',
-              color: '#f0f0f5',
+              color: 'var(--color-text-primary)',
             }}
           >
             {/* Modal Header */}
@@ -404,8 +404,8 @@ export default function GlobalAnnouncements({
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 padding: '1rem 1.25rem',
-                borderBottom: '1px solid #2a2a4a',
-                background: '#1a1a32',
+                borderBottom: '1px solid var(--color-border)',
+                background: 'var(--color-bg-elevated)',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
@@ -416,7 +416,7 @@ export default function GlobalAnnouncements({
                     style={{
                       fontSize: '1.05rem',
                       fontWeight: 700,
-                      color: '#f0f0f5',
+                      color: 'var(--color-text-primary)',
                       margin: 0,
                     }}
                   >

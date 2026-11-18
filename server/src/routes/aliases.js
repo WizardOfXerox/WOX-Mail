@@ -24,7 +24,7 @@ router.get('/', async (req, res, next) => {
     const userEmail = (req.user.email || '').toLowerCase();
     if (userEmail.includes('@proton.') || userEmail.includes('@pm.me')) {
       try {
-        const protonRes = await getProtonAddresses(userEmail);
+        const protonRes = await getProtonAddresses(userEmail, req.user.id);
         if (protonRes?.addresses) {
           const existingAddrs = new Set(aliases.map((a) => (a.alias_address || a.address || '').toLowerCase()));
           for (const pa of protonRes.addresses) {
@@ -139,9 +139,13 @@ router.post('/',
  */
 router.put('/:id', async (req, res, next) => {
   try {
+    const aliasId = parseInt(req.params.id, 10);
+    if (!Number.isInteger(aliasId) || aliasId <= 0) {
+      return res.status(400).json({ error: 'Invalid alias ID' });
+    }
     const alias = await aliasManager.updateAlias(
       req.user.id,
-      parseInt(req.params.id, 10),
+      aliasId,
       req.body
     );
     if (!alias) return res.status(404).json({ error: 'Alias not found' });
@@ -157,7 +161,11 @@ router.put('/:id', async (req, res, next) => {
  */
 router.delete('/:id', async (req, res, next) => {
   try {
-    const deleted = await aliasManager.deleteAlias(req.user.id, parseInt(req.params.id, 10));
+    const aliasId = parseInt(req.params.id, 10);
+    if (!Number.isInteger(aliasId) || aliasId <= 0) {
+      return res.status(400).json({ error: 'Invalid alias ID' });
+    }
+    const deleted = await aliasManager.deleteAlias(req.user.id, aliasId);
     if (!deleted) return res.status(404).json({ error: 'Alias not found' });
     res.json({ message: 'Alias deleted' });
   } catch (err) {
@@ -171,7 +179,11 @@ router.delete('/:id', async (req, res, next) => {
  */
 router.get('/:id/stats', async (req, res, next) => {
   try {
-    const stats = await aliasManager.getAliasStats(req.user.id, parseInt(req.params.id, 10));
+    const aliasId = parseInt(req.params.id, 10);
+    if (!Number.isInteger(aliasId) || aliasId <= 0) {
+      return res.status(400).json({ error: 'Invalid alias ID' });
+    }
+    const stats = await aliasManager.getAliasStats(req.user.id, aliasId);
     if (!stats) return res.status(404).json({ error: 'Alias not found' });
     res.json({ stats });
   } catch (err) {

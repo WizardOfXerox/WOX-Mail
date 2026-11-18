@@ -313,10 +313,21 @@
           }
         }
 
-        // Success — redirect to dashboard
+        // Success — honor strictly same-origin relative ?redirect=/... param or default to /dashboard
+        const getSafeRedirect = (raw) => {
+          if (!raw || !raw.startsWith('/') || raw.startsWith('//') || raw.includes('\\')) return '/dashboard';
+          try {
+            const parsed = new URL(raw, window.location.origin);
+            return parsed.origin === window.location.origin ? (parsed.pathname + parsed.search + parsed.hash) : '/dashboard';
+          } catch {
+            return '/dashboard';
+          }
+        };
+        const rawRedirect = new URLSearchParams(window.location.search).get('redirect') || '';
+        const safeRedirect = getSafeRedirect(rawRedirect);
         WoxToast.success('Welcome back!');
         setTimeout(() => {
-          window.location.href = '/dashboard';
+          window.location.href = safeRedirect;
         }, 500);
       } catch {
         WoxToast.error('Network error. Try again.');
@@ -379,9 +390,19 @@
           }
         }
 
+        const rawOtpRedirect = new URLSearchParams(window.location.search).get('redirect') || '';
+        let safeOtpRedirect = '/dashboard';
+        if (rawOtpRedirect.startsWith('/') && !rawOtpRedirect.startsWith('//') && !rawOtpRedirect.includes('\\')) {
+          try {
+            const parsedOtp = new URL(rawOtpRedirect, window.location.origin);
+            if (parsedOtp.origin === window.location.origin) {
+              safeOtpRedirect = parsedOtp.pathname + parsedOtp.search + parsedOtp.hash;
+            }
+          } catch {}
+        }
         WoxToast.success('Welcome back!');
         setTimeout(() => {
-          window.location.href = '/dashboard';
+          window.location.href = safeOtpRedirect;
         }, 500);
       } catch {
         WoxToast.error('Network error. Try again.');
@@ -545,6 +566,10 @@
         });
 
         const data = await res.json();
+        if (!res.ok) {
+          WoxToast.error(data.error || 'Failed to send reset link.');
+          return;
+        }
         WoxToast.success(data.message || 'If an account exists, a reset link has been sent.');
       } catch {
         WoxToast.error('Network error.');

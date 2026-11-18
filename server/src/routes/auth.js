@@ -5,10 +5,10 @@ import { v4 as uuidv4 } from 'uuid';
 import dns from 'dns/promises';
 import { query } from '../config/database.js';
 import { setex as redisSetex, get as redisGet, del as redisDel } from '../config/redis.js';
-import { hashPassword, verifyPassword, generateToken, generateRecoveryCodes } from '../utils/crypto.js';
+import { hashPassword, verifyPassword, generateToken, generateRecoveryCodes, timingSafeEqual } from '../utils/crypto.js';
 import { isValidEmail, validateUsername, validatePassword, isValidInviteCode } from '../utils/validators.js';
 import { authenticate, requireAuth } from '../middleware/auth.js';
-import { loginLimiter } from '../middleware/rateLimit.js';
+import { loginLimiter, authSensitiveLimiter } from '../middleware/rateLimit.js';
 import { validate } from '../middleware/validate.js';
 import { JWT_COOKIE_NAME } from '../config/constants.js';
 import * as otpService from '../services/otp.js';
@@ -34,28 +34,93 @@ function getSwitchJwtSecret() {
   return crypto.createHash('sha256').update(`woxmail-device-switch:${process.env.JWT_SECRET}`).digest('hex');
 }
 
-function mintSwitchToken(user) {
+function mintSwitchToken(user, tokenOrJti = null) {
+  let jti = null;
+  if (typeof tokenOrJti === 'string' && tokenOrJti.length > 0) {
+    if (tokenOrJti.includes('.')) {
+      jti = jwt.decode(tokenOrJti)?.jti || null;
+    } else {
+      jti = tokenOrJti;
+    }
+  }
+  const payload = { userId: user.id, type: 'device_switch', email: user.email };
+  if (jti) payload.jti = jti;
   return jwt.sign(
-    { userId: user.id, type: 'device_switch', email: user.email },
+    payload,
     getSwitchJwtSecret(),
     { expiresIn: process.env.JWT_REMEMBER_EXPIRES_IN || '30d' }
   );
 }
 
-function verifySwitchToken(candidateToken) {
+async function verifySwitchToken(candidateToken) {
+  let decoded = null;
   try {
-    const decoded = jwt.verify(candidateToken, getSwitchJwtSecret());
-    if (decoded && decoded.type === 'device_switch' && decoded.userId) {
-      return decoded;
+    const d = jwt.verify(candidateToken, getSwitchJwtSecret());
+    if (d && d.type === 'device_switch' && d.userId && !d.impersonated) {
+      decoded = d;
     }
   } catch {
     // Fallback to legacy access JWT signed with JWT_SECRET if still cached
   }
-  const legacy = jwt.verify(candidateToken, process.env.JWT_SECRET);
-  if (legacy && legacy.userId && (!legacy.type || legacy.type === 'access' || legacy.type === 'device_switch')) {
-    return legacy;
+
+  if (!decoded) {
+    try {
+      const legacy = jwt.verify(candidateToken, process.env.JWT_SECRET);
+      if (
+        legacy &&
+        legacy.userId &&
+        !legacy.impersonated &&
+        (!legacy.type || legacy.type === 'access' || legacy.type === 'device_switch')
+      ) {
+        decoded = legacy;
+      }
+    } catch {
+      return null;
+    }
   }
-  return null;
+
+  if (!decoded || !decoded.userId || decoded.impersonated) return null;
+
+  // Enforce session revocation so logged-out / password-reset sessions cannot be revived
+  if (decoded.jti) {
+    const sessRes = await query(
+      'SELECT is_revoked, expires_at FROM user_sessions WHERE id = $1 AND user_id = $2',
+      [decoded.jti, decoded.userId]
+    );
+    if (
+      sessRes.rows.length === 0 ||
+      sessRes.rows[0].is_revoked === true ||
+      new Date(sessRes.rows[0].expires_at) <= new Date()
+    ) {
+      return null;
+    }
+  } else {
+    // Legacy switch tokens without jti require at least one active non-revoked session for the user
+    const activeRes = await query(
+      'SELECT 1 FROM user_sessions WHERE user_id = $1 AND is_revoked = FALSE AND expires_at > NOW() LIMIT 1',
+      [decoded.userId]
+    );
+    if (activeRes.rows.length === 0) {
+      return null;
+    }
+  }
+
+  return decoded;
+}
+
+function findMatchingRecoveryCodeIndex(codes, submittedCode) {
+  const normalized = String(submittedCode || '').trim().toUpperCase();
+  if (!normalized || !Array.isArray(codes)) return -1;
+  const hashedSubmitted = `sha256:${crypto.createHash('sha256').update(normalized).digest('hex')}`;
+  for (let i = 0; i < codes.length; i++) {
+    const entry = String(codes[i] || '');
+    if (entry.startsWith('sha256:')) {
+      if (timingSafeEqual(entry, hashedSubmitted)) return i;
+    } else if (timingSafeEqual(entry.toUpperCase(), normalized)) {
+      return i;
+    }
+  }
+  return -1;
 }
 
 function encryptOtpSecret(secret) {
@@ -184,7 +249,7 @@ async function logAuthEvent(userId, success, req, reason = null) {
 /**
  * Validate an invite code in real-time (existence, format, is_used, expiration).
  */
-router.get('/validate-invite/:code', async (req, res) => {
+router.get('/validate-invite/:code', authSensitiveLimiter, async (req, res) => {
   try {
     const rawCode = (req.params.code || '').trim();
     if (!rawCode || !isValidInviteCode(rawCode)) {
@@ -218,6 +283,7 @@ router.get('/validate-invite/:code', async (req, res) => {
 // ─── POST /api/auth/register ─────────────────────────────
 
 router.post('/register',
+  authSensitiveLimiter,
   validate({
     username: { type: 'string', required: true, min: 3, max: 30 },
     password: { type: 'string', required: true, min: 8 },
@@ -281,27 +347,45 @@ router.post('/register',
         return res.status(409).json({ error: 'This email address is already registered' });
       }
 
-      // Create mailbox in Purelymail
-      try {
-        await createUser(email, password);
-      } catch (pmErr) {
-        console.warn(`[Register] Purelymail user creation notice for ${email}: ${pmErr.message}`);
+      // Atomically claim invite code to prevent TOCTOU race redemption
+      const claimedInvite = await query(
+        'UPDATE invite_codes SET is_used = TRUE, used_at = NOW() WHERE id = $1 AND is_used = FALSE AND (expires_at IS NULL OR expires_at > NOW()) RETURNING id',
+        [inviteRecord.id]
+      );
+      if (claimedInvite.rows.length === 0) {
+        return res.status(400).json({ error: 'This invite code has already been redeemed or expired' });
       }
 
       // Hash password and create user
-      const passwordHash = await hashPassword(password);
-      const result = await query(
-        `INSERT INTO users (email, username, password_hash, imap_password, invite_code_used)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING id, email, username, display_name, is_admin, created_at`,
-        [email, username.toLowerCase(), passwordHash, password, actualCode]
-      );
+      let result;
+      try {
+        // Create mailbox in Purelymail
+        try {
+          await createUser(email, password);
+        } catch (pmErr) {
+          console.warn(`[Register] Purelymail user creation notice for ${email}: ${pmErr.message}`);
+        }
 
-      // Mark invite as used
-      await query(
-        'UPDATE invite_codes SET is_used = TRUE, used_by = $1, used_at = NOW() WHERE code = $2',
-        [result.rows[0].id, actualCode]
-      );
+        const passwordHash = await hashPassword(password);
+        result = await query(
+          `INSERT INTO users (email, username, password_hash, imap_password, invite_code_used)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING id, email, username, display_name, is_admin, created_at`,
+          [email, username.toLowerCase(), passwordHash, password, actualCode]
+        );
+
+        await query(
+          'UPDATE invite_codes SET used_by = $1 WHERE id = $2',
+          [result.rows[0].id, inviteRecord.id]
+        );
+      } catch (insertErr) {
+        // Release claimed invite if user creation failed
+        await query(
+          'UPDATE invite_codes SET is_used = FALSE, used_at = NULL WHERE id = $1 AND used_by IS NULL',
+          [inviteRecord.id]
+        ).catch(() => {});
+        throw insertErr;
+      }
 
       // Audit log
       await query(
@@ -312,7 +396,7 @@ router.post('/register',
 
       // Issue token
       const token = await issueToken(res, result.rows[0], req);
-      const switchToken = mintSwitchToken(result.rows[0]);
+      const switchToken = mintSwitchToken(result.rows[0], token);
 
       // Dispatch WoxMail branded welcome email in background
       sendWoxWelcomeEmail(email, { isTemp: false }).catch((err) => {
@@ -556,7 +640,7 @@ router.post('/login',
             return res.json({
               user: { id: newUser.id, email: newUser.email, username: newUser.username },
               token,
-              switchToken: mintSwitchToken(newUser),
+              switchToken: mintSwitchToken(newUser, token),
               message: `Connected and logged in with ${serverConfig.name}!`,
             });
           } else {
@@ -572,7 +656,7 @@ router.post('/login',
               : serverConfig.provider === 'yahoo'
               ? 'Yahoo login failed: Generate an App Password in your Yahoo Account Security page.'
               : serverConfig.provider === 'custom'
-              ? `Custom IMAP login failed: Could not connect to ${serverConfig.imap_host}:${serverConfig.imap_port}. Check your server hostname, port, and mailbox credentials. (${testRes.imap.error || ''})`
+              ? 'Custom IMAP login failed: Could not verify credentials with the specified mail server. Check your server hostname, port, and mailbox credentials.'
               : `${serverConfig.name} login failed: Invalid email or password. See /setup-guide for setup walkthroughs.`;
             return res.status(401).json({ error: helpMsg });
           }
@@ -627,40 +711,44 @@ router.post('/login',
           const domain = user.email.split('@')[1];
           const accRes = await query('SELECT * FROM connected_accounts WHERE user_id = $1 AND is_default = TRUE LIMIT 1', [user.id]);
           const acc = accRes.rows[0];
-          const finalImapHost = String(imap_host || acc?.imap_host || `mail.${domain}`).trim();
-          const finalImapPort = Number(imap_port || acc?.imap_port) || 993;
-          const finalSmtpHost = String(smtp_host || acc?.smtp_host || `mail.${domain}`).trim();
-          const finalSmtpPort = Number(smtp_port || acc?.smtp_port) || 465;
+          // SECURITY: Never accept caller-supplied imap_host/smtp_host for an existing user —
+          // only re-verify against the user's already-stored server configuration to prevent account takeover.
+          if (acc && acc.imap_host) {
+            const finalImapHost = String(acc.imap_host).trim();
+            const finalImapPort = Number(acc.imap_port) || 993;
+            const finalSmtpHost = String(acc.smtp_host || acc.imap_host).trim();
+            const finalSmtpPort = Number(acc.smtp_port) || 465;
 
-          const testRes = await testConnection({
-            provider: 'custom',
-            imap_host: finalImapHost,
-            imap_port: finalImapPort,
-            imap_secure: imap_secure !== false,
-            smtp_host: finalSmtpHost,
-            smtp_port: finalSmtpPort,
-            smtp_secure: smtp_secure !== false,
-            email: user.email,
-            password,
-          });
-
-          if (testRes.imap.success) {
-            passwordValid = true;
-            const newHash = await hashPassword(password);
-            await query('UPDATE users SET password_hash = $1 WHERE id = $2', [newHash, user.id]);
-            await connectAccount(user.id, {
+            const testRes = await testConnection({
               provider: 'custom',
-              email: user.email,
-              password,
-              display_name: `${domain} (Custom IMAP)`,
               imap_host: finalImapHost,
               imap_port: finalImapPort,
-              imap_secure: imap_secure !== false,
+              imap_secure: acc.imap_secure !== false,
               smtp_host: finalSmtpHost,
               smtp_port: finalSmtpPort,
-              smtp_secure: smtp_secure !== false,
-              is_default: true,
+              smtp_secure: acc.smtp_secure !== false,
+              email: user.email,
+              password,
             });
+
+            if (testRes.imap.success) {
+              passwordValid = true;
+              const newHash = await hashPassword(password);
+              await query('UPDATE users SET password_hash = $1 WHERE id = $2', [newHash, user.id]);
+              await connectAccount(user.id, {
+                provider: 'custom',
+                email: user.email,
+                password,
+                display_name: acc.display_name || `${domain} (Custom IMAP)`,
+                imap_host: finalImapHost,
+                imap_port: finalImapPort,
+                imap_secure: acc.imap_secure !== false,
+                smtp_host: finalSmtpHost,
+                smtp_port: finalSmtpPort,
+                smtp_secure: acc.smtp_secure !== false,
+                is_default: true,
+              });
+            }
           }
         }
       }
@@ -689,7 +777,7 @@ router.post('/login',
       res.json({
         user: { id: user.id, email: user.email, username: user.username },
         token,
-        switchToken: mintSwitchToken(user),
+        switchToken: mintSwitchToken(user, token),
       });
     } catch (err) {
       next(err);
@@ -700,6 +788,7 @@ router.post('/login',
 // ─── POST /api/auth/verify-otp ──────────────────────────
 
 router.post('/verify-otp',
+  authSensitiveLimiter,
   validate({
     ticket: { type: 'string', required: true },
     code: { type: 'string', required: true, min: 6, max: 16 },
@@ -716,10 +805,12 @@ router.post('/verify-otp',
 
       let userId;
       let isRemember = true;
+      let attempts = 0;
       try {
         const parsed = typeof ticketData === 'string' ? JSON.parse(ticketData) : ticketData;
         userId = parsed?.userId;
         if (parsed?.remember !== undefined) isRemember = !!parsed.remember;
+        attempts = Number(parsed?.attempts) || 0;
       } catch {
         return res.status(401).json({ error: 'Invalid ticket data' });
       }
@@ -744,7 +835,7 @@ router.post('/verify-otp',
       const isValidOTP = otpService.verifyCode(code, plainOtpSecret);
 
       if (!isValidOTP) {
-        // Try recovery code
+        // Try recovery code (timing-safe)
         let codes = [];
         if (recovery_codes) {
           try {
@@ -753,21 +844,22 @@ router.post('/verify-otp',
             codes = [];
           }
         }
-        if (codes.length > 0) {
-          const codeIndex = codes.indexOf(code.toUpperCase());
-          if (codeIndex !== -1) {
-            // Consume recovery code (one-time use)
-            codes.splice(codeIndex, 1);
-            await query('UPDATE users SET recovery_codes = $1 WHERE id = $2', [
-              JSON.stringify(codes),
-              userId,
-            ]);
-          } else {
-            await logAuthEvent(userId, false, req, 'Invalid OTP');
-            return res.status(401).json({ error: 'Invalid 2FA code' });
-          }
+        const codeIndex = codes.length > 0 ? findMatchingRecoveryCodeIndex(codes, code) : -1;
+        if (codeIndex !== -1) {
+          // Consume recovery code (one-time use)
+          codes.splice(codeIndex, 1);
+          await query('UPDATE users SET recovery_codes = $1 WHERE id = $2', [
+            JSON.stringify(codes),
+            userId,
+          ]);
         } else {
+          attempts += 1;
           await logAuthEvent(userId, false, req, 'Invalid OTP');
+          if (attempts >= 5) {
+            await redisDel(`otp_ticket:${ticket}`);
+            return res.status(401).json({ error: 'Too many invalid 2FA attempts. Please sign in again.' });
+          }
+          await redisSetex(`otp_ticket:${ticket}`, 300, JSON.stringify({ userId, remember: isRemember, attempts }));
           return res.status(401).json({ error: 'Invalid 2FA code' });
         }
       }
@@ -782,7 +874,7 @@ router.post('/verify-otp',
       res.json({
         user: { id: user.rows[0].id, email: user.rows[0].email, username: user.rows[0].username },
         token,
-        switchToken: mintSwitchToken(user.rows[0]),
+        switchToken: mintSwitchToken(user.rows[0], token),
       });
     } catch (err) {
       next(err);
@@ -794,12 +886,10 @@ router.post('/verify-otp',
 
 router.post('/logout', authenticate, async (req, res, next) => {
   try {
-    // Revoke the current session
-    if (req.tokenType === 'access') {
-      const decoded = jwt.decode(req.cookies?.[JWT_COOKIE_NAME] || '');
-      if (decoded?.jti) {
-        await query('UPDATE user_sessions SET is_revoked = TRUE WHERE id = $1', [decoded.jti]);
-      }
+    // Revoke the current session (works for both cookie and Bearer JWTs)
+    const jti = req.jwtPayload?.jti || jwt.decode(req.cookies?.[JWT_COOKIE_NAME] || '')?.jti;
+    if (jti) {
+      await query('UPDATE user_sessions SET is_revoked = TRUE WHERE id = $1', [jti]);
     }
 
     // Clear cookie
@@ -829,13 +919,14 @@ router.post('/refresh', authenticate, async (req, res, next) => {
 // ─── GET /api/auth/me ───────────────────────────────────
 
 router.get('/me', requireAuth, (req, res) => {
-  res.json({ user: req.user });
+  const { password_hash, otp_secret, recovery_codes, imap_password, ...safeUser } = req.user;
+  res.json({ user: safeUser });
 });
 
 // ─── GET /api/auth/current-session ──────────────────────
 
 router.get('/current-session', requireAuth, (req, res) => {
-  const switchToken = mintSwitchToken(req.user);
+  const switchToken = mintSwitchToken(req.user, req.jwtPayload?.jti || null);
   res.json({
     user: {
       id: req.user.id,
@@ -863,7 +954,7 @@ router.post('/switch-account', async (req, res, next) => {
 
     if (candidateToken) {
       try {
-        const decoded = verifySwitchToken(candidateToken);
+        const decoded = await verifySwitchToken(candidateToken);
         if (decoded && decoded.userId) {
           const userRes = await query(
             'SELECT id, email, username, display_name, is_admin, is_suspended FROM users WHERE id = $1',
@@ -888,8 +979,8 @@ router.post('/switch-account', async (req, res, next) => {
     }
 
     // Issue fresh token and update HTTP-only cookie for target user
-    await issueToken(res, targetUser, req);
-    const nextSwitchToken = mintSwitchToken(targetUser);
+    const issuedToken = await issueToken(res, targetUser, req);
+    const nextSwitchToken = mintSwitchToken(targetUser, issuedToken);
     await logAuthEvent(targetUser.id, true, req, 'account_switch');
 
     return res.json({
@@ -1009,6 +1100,7 @@ router.post('/regenerate-recovery', requireAuth, async (req, res, next) => {
 // ─── POST /api/auth/forgot-password ─────────────────────
 
 router.post('/forgot-password',
+  authSensitiveLimiter,
   validate({ email: { type: 'email', required: true } }),
   async (req, res, next) => {
     try {
@@ -1114,6 +1206,7 @@ router.post('/forgot-password',
 // ─── POST /api/auth/reset-password ──────────────────────
 
 router.post('/reset-password',
+  authSensitiveLimiter,
   validate({
     token: { type: 'string', required: true },
     password: { type: 'string', required: true, min: 8 },
@@ -1160,6 +1253,7 @@ router.post('/reset-password',
 // ─── POST /api/auth/recover-with-code ───────────────────
 
 router.post('/recover-with-code',
+  authSensitiveLimiter,
   validate({
     email: { type: 'email', required: true },
     recoveryCode: { type: 'string', required: true },
@@ -1169,6 +1263,11 @@ router.post('/recover-with-code',
     try {
       const normalizedEmail = req.body.email.toLowerCase().trim();
       const { recoveryCode, newPassword } = req.body;
+
+      const passwordCheck = validatePassword(newPassword);
+      if (!passwordCheck.valid) {
+        return res.status(400).json({ error: 'Weak password', details: passwordCheck.errors });
+      }
 
       const result = await query(
         'SELECT id, recovery_codes FROM users WHERE LOWER(email) = $1',
@@ -1181,7 +1280,7 @@ router.post('/recover-with-code',
 
       const user = result.rows[0];
       if (!user.recovery_codes) {
-        return res.status(401).json({ error: 'No recovery codes set' });
+        return res.status(401).json({ error: 'Invalid email or recovery code' });
       }
 
       let codes = [];
@@ -1190,7 +1289,7 @@ router.post('/recover-with-code',
       } catch {
         codes = [];
       }
-      const codeIndex = codes.indexOf(recoveryCode.toUpperCase());
+      const codeIndex = findMatchingRecoveryCodeIndex(codes, recoveryCode);
 
       if (codeIndex === -1) {
         return res.status(401).json({ error: 'Invalid email or recovery code' });
@@ -1234,7 +1333,7 @@ const handleSwitchSession = async (req, res, next) => {
       return res.status(400).json({ error: 'Token is required to switch session' });
     }
 
-    const decoded = verifySwitchToken(candidateToken);
+    const decoded = await verifySwitchToken(candidateToken);
     if (!decoded || !decoded.userId) {
       return res.status(401).json({ error: 'Invalid or expired session token. Please log in again.' });
     }
@@ -1248,8 +1347,8 @@ const handleSwitchSession = async (req, res, next) => {
     }
 
     const user = userRes.rows[0];
-    await issueToken(res, user, req);
-    const nextSwitchToken = mintSwitchToken(user);
+    const issuedToken = await issueToken(res, user, req);
+    const nextSwitchToken = mintSwitchToken(user, issuedToken);
 
     res.json({
       success: true,

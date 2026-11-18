@@ -149,14 +149,16 @@ export default function AttachmentPreviewModal({
 
   // Keyboard close
   useEffect(() => {
+    if (!attachment) return;
     const handleKeyDown = (e) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
-
-  if (!attachment) return null;
+  }, [onClose, attachment]);
 
   // Touch zoom & pan handlers
   const handleTouchStart = (e) => {
@@ -240,6 +242,8 @@ export default function AttachmentPreviewModal({
     const q = sheetSearch.toLowerCase();
     return sheetData.dataRows.filter((r) => r.some((cell) => String(cell).toLowerCase().includes(q)));
   }, [sheetData, sheetSearch]);
+
+  if (!attachment) return null;
 
   const copyText = () => {
     const textToCopy = textContent || officeData?.fullText || '';

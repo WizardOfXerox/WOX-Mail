@@ -110,9 +110,29 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
   useEffect(() => {
     if (!originalMessage) return;
 
-    const fromName = originalMessage.from?.name || (typeof originalMessage.from === 'string' ? originalMessage.from : originalMessage.from?.address) || originalMessage.from_name || originalMessage.sender || 'Unknown';
-    const fromAddr = (typeof originalMessage.from === 'string' ? originalMessage.from : originalMessage.from?.address) || originalMessage.from?.email || originalMessage.sender || '';
+    const extractAddr = (val) => {
+      if (!val) return '';
+      if (typeof val === 'string') return val.trim();
+      if (Array.isArray(val)) return extractAddr(val[0]);
+      if (typeof val === 'object') {
+        if (Array.isArray(val.value) && val.value.length > 0) return extractAddr(val.value[0]);
+        return String(val.address || val.email || val.text || '').trim();
+      }
+      return '';
+    };
+
+    const fromName = originalMessage.from?.name || (Array.isArray(originalMessage.from) ? originalMessage.from[0]?.name : '') || extractAddr(originalMessage.from) || originalMessage.from_name || originalMessage.sender || 'Unknown';
+    const fromAddr = extractAddr(originalMessage.from) || extractAddr(originalMessage.sender) || '';
     const quotedDate = originalMessage.date ? new Date(originalMessage.date).toLocaleString() : '';
+
+    const escapeQuoteHtml = (str) =>
+      String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/\n/g, '<br>');
 
     if (replyData?.forward) {
       const prefix = originalMessage.subject?.toLowerCase().startsWith('fwd:') ? '' : 'Fwd: ';
@@ -121,12 +141,12 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
       setQuotedInfo({
         header: `---------- Forwarded message ---------\nFrom: ${fromName} <${fromAddr}>\nDate: ${quotedDate}\nSubject: ${originalMessage.subject || ''}`,
         text: originalMessage.text || '',
-        html: originalMessage.html || `<p style="margin: 0;">${(originalMessage.text || '').replace(/\n/g, '<br>')}</p>`,
+        html: originalMessage.html || `<p style="margin: 0;">${escapeQuoteHtml(originalMessage.text)}</p>`,
         type: 'forward',
       });
     } else {
       // Reply
-      const replyTo = originalMessage.replyTo?.address || originalMessage.replyTo || fromAddr || '';
+      const replyTo = extractAddr(originalMessage.replyTo) || fromAddr || '';
       setTo(replyTo);
 
       if (replyData?.replyAll) {
@@ -152,7 +172,7 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
       setQuotedInfo({
         header: `On ${quotedDate}, ${fromName} <${fromAddr}> wrote:`,
         text: originalMessage.text || '',
-        html: originalMessage.html || `<p style="margin: 0;">${(originalMessage.text || '').replace(/\n/g, '<br>')}</p>`,
+        html: originalMessage.html || `<p style="margin: 0;">${escapeQuoteHtml(originalMessage.text)}</p>`,
         type: 'reply',
       });
     }
@@ -165,11 +185,33 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
     }, 120);
   }, [originalMessage, replyData, user, activeAccount]);
 
+  // Apply selected template body/subject or quick-compose recipient
+  useEffect(() => {
+    if (replyData?.to) {
+      const toStr = typeof replyData.to === 'string'
+        ? replyData.to
+        : (Array.isArray(replyData.to) ? (replyData.to[0]?.address || String(replyData.to[0] || '')) : (replyData.to?.address || String(replyData.to || '')));
+      setTo(toStr);
+      setTimeout(() => subjectRef.current?.focus(), 60);
+    }
+    if (replyData?.templateBody !== undefined) {
+      if (replyData.templateSubject) setSubject(replyData.templateSubject);
+      const html = replyData.templateBody || '';
+      setBody(html);
+      setTimeout(() => {
+        if (editorRef.current) editorRef.current.innerHTML = html;
+      }, 60);
+    }
+  }, [replyData]);
+
   // Focus to field on mount & listen for Escape key to close modal (WCAG 2.2 AA)
   useEffect(() => {
-    if (!replyData) toRef.current?.focus();
+    if (!replyData || (replyData?.templateBody !== undefined && !replyData?.to)) toRef.current?.focus();
     const handleKeyDown = (e) => {
-      if (e.key === 'Escape' && !showSchedulePopover) onClose();
+      if (e.key === 'Escape' && !showSchedulePopover) {
+        e.stopPropagation();
+        onClose();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -577,7 +619,7 @@ export default function ComposeModal({ user, activeAccount, replyData, originalM
       <div className="compose-modal card" style={{ maxWidth: 740 }}>
         <div className="compose-header">
           <h3 id="compose-modal-title">
-            {replyData?.forward ? 'Forward' : replyData ? 'Reply' : 'New Message'}
+            {replyData?.forward ? 'Forward' : (replyData && replyData?.templateBody === undefined && !replyData?.to) ? 'Reply' : 'New Message'}
           </h3>
           <button type="button" className="btn btn-ghost btn-xs" onClick={onClose} aria-label="Close compose modal">
             ✕

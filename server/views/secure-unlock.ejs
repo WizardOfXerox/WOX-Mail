@@ -352,7 +352,7 @@
   <script src="/js/theme.js"></script>
   <script src="/js/interactive-bg.js" defer></script>
   <script>
-    const token = '<%= token %>' || window.location.pathname.split('/').filter(Boolean).pop();
+    const token = <%- JSON.stringify(String(token || '')).replace(/</g, '\\u003c') %> || window.location.pathname.split('/').filter(Boolean).pop();
     const pinInputs = Array.from(document.querySelectorAll('.pin-box'));
 
     // PIN auto-navigation, Enter submission, and paste handler
@@ -450,11 +450,19 @@
           document.getElementById('burn-notice').style.display = 'flex';
         }
 
-        // Populate dynamic watermark overlay
+        // Populate dynamic watermark overlay safely via DOM API (no HTML injection)
         if (data.watermarkEnabled) {
-          const wmText = `CONFIDENTIAL • ${data.recipientEmail} • ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+          const wmText = `CONFIDENTIAL • ${data.recipientEmail || ''} • ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`;
           const overlay = document.getElementById('watermark-overlay');
-          overlay.innerHTML = Array(28).fill(`<div class="watermark-text">${wmText}</div>`).join('');
+          overlay.textContent = '';
+          const frag = document.createDocumentFragment();
+          for (let i = 0; i < 28; i++) {
+            const div = document.createElement('div');
+            div.className = 'watermark-text';
+            div.textContent = wmText;
+            frag.appendChild(div);
+          }
+          overlay.appendChild(frag);
         }
       } catch (err) {
         errorBox.textContent = err.message;

@@ -361,6 +361,7 @@ export default function CampaignsView() {
             className="btn btn-primary btn-sm"
             onClick={() => setIsComposing(true)}
             disabled={lists.length === 0}
+            title={lists.length === 0 ? 'Create a mailing list in the Audience tab before composing a campaign' : 'Compose a new email campaign'}
           >
             Compose Campaign
           </button>
@@ -383,9 +384,20 @@ export default function CampaignsView() {
               <p className="text-secondary" style={{ maxWidth: 450, margin: '0 auto 1.5rem', fontSize: '0.875rem' }}>
                 Design branded newsletters using our hybrid Notion block editor with spam score checks and responsive previews.
               </p>
-              <button type="button" className="btn btn-primary btn-sm" onClick={() => setIsComposing(true)} disabled={lists.length === 0}>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => setIsComposing(true)}
+                disabled={lists.length === 0}
+                title={lists.length === 0 ? 'Create a mailing list in the Audience tab first' : 'Compose your first campaign'}
+              >
                 Create Your First Campaign
               </button>
+              {lists.length === 0 && (
+                <p className="text-secondary" style={{ fontSize: '0.78rem', marginTop: '0.65rem' }}>
+                  Create a mailing list in the <strong>Audience &amp; Lists</strong> tab first to enable campaign broadcasting.
+                </p>
+              )}
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>

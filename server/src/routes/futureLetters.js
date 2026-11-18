@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import jwt from 'jsonwebtoken';
 import { JWT_COOKIE_NAME } from '../config/constants.js';
-import { authenticate, loadUser } from '../middleware/auth.js';
+import { authenticate, loadUser, verifyActiveJwt } from '../middleware/auth.js';
+import { authSensitiveLimiter } from '../middleware/rateLimit.js';
 import { validate } from '../middleware/validate.js';
 import {
   createFutureLetter,
@@ -18,13 +18,13 @@ const router = Router();
 /**
  * Optional authentication helper: Extracts user if JWT is present, but doesn't block guests.
  */
-function optionalAuth(req, res, next) {
-  const token = req.cookies?.[JWT_COOKIE_NAME] || req.headers.authorization?.replace('Bearer ', '');
+async function optionalAuth(req, res, next) {
+  const token = req.cookies?.[JWT_COOKIE_NAME] || req.headers.authorization?.replace('Bearer ', '').trim();
   if (!token) return next();
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.userId = decoded.userId;
-  } catch {}
+  const active = await verifyActiveJwt(token);
+  if (active?.user) {
+    req.userId = active.user.id;
+  }
   next();
 }
 
@@ -34,6 +34,7 @@ function optionalAuth(req, res, next) {
  */
 router.post(
   '/letters',
+  authSensitiveLimiter,
   optionalAuth,
   validate({
     senderEmail: { type: 'email', required: true },
@@ -145,6 +146,7 @@ router.get('/my-letters', authenticate, loadUser, async (req, res, next) => {
  */
 router.post(
   '/my-letters/:id/unlock',
+  authSensitiveLimiter,
   authenticate,
   loadUser,
   validate({ passcode: { type: 'string', required: true } }),

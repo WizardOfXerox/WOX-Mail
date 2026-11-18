@@ -9,6 +9,7 @@ import ContextMenu from './ContextMenu.jsx';
 import ReadReceiptIndicator from './ReadReceiptIndicator.jsx';
 import { getFolderIcon } from './Sidebar.jsx';
 import { useIntl } from '../../i18n/IntlProvider.jsx';
+import { get, post } from '../../shared/api.js';
 
 /**
  * Normalizes subject for conversation grouping by removing Re:, Fwd:, [EXTERNAL], [Spam], etc.
@@ -1142,14 +1143,20 @@ export default function MessageList({
           label: labelName,
           onClick: async () => {
             try {
-              await fetch(`/api/mail/tag`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ uid: msg.uid, tag: labelName.toLowerCase(), folder }),
-              });
-              if (window.WoxToast) window.WoxToast.success(`Tag '${labelName}' applied`);
-            } catch {
-              if (window.WoxToast) window.WoxToast.info(`Tag '${labelName}' marked`);
+              const existing = await get('/mail/labels').catch(() => ({ labels: [] }));
+              let target = (existing.labels || []).find((l) => String(l.name || '').toLowerCase() === labelName.toLowerCase());
+              if (!target) {
+                const created = await post('/mail/labels', { name: labelName, color: '#7c3aed' });
+                target = created.label || created;
+              }
+              if (target?.id) {
+                await post('/mail/labels/apply', { messageUids: [msg.uid], addLabelIds: [target.id] });
+                if (window.WoxToast) window.WoxToast.success(`Label '${labelName}' applied`);
+              } else {
+                throw new Error('Could not resolve label ID');
+              }
+            } catch (err) {
+              if (window.WoxToast) window.WoxToast.error(err.message || `Failed to apply label '${labelName}'`);
             }
           },
         })),
@@ -1159,14 +1166,15 @@ export default function MessageList({
         icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 14 14"/></svg>,
         onClick: async () => {
           try {
-            await fetch(`/api/followup/schedule`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ messageId: msg.messageId || msg.uid, days: 3, recipient: senderAddr }),
+            await post('/followup/schedule', {
+              messageId: String(msg.messageId || msg.uid),
+              recipientEmail: senderAddr,
+              subject: msg.subject || '(No Subject)',
+              remindAfterDays: 3,
             });
-            if (window.WoxToast) window.WoxToast.success(`Follow-up reminder set: bump in 3 days if no reply`);
-          } catch {
-            if (window.WoxToast) window.WoxToast.success(`Follow-up scheduled for 3 days`);
+            if (window.WoxToast) window.WoxToast.success('Follow-up reminder set: bump in 3 days if no reply');
+          } catch (err) {
+            if (window.WoxToast) window.WoxToast.error(err.message || 'Failed to schedule follow-up reminder');
           }
         },
       },
@@ -1230,13 +1238,7 @@ export default function MessageList({
     e.stopPropagation();
     try {
       if (window.WoxToast) window.WoxToast.info('Retrying email delivery...');
-      const res = await fetch(`/api/mail/outbox/${outboxId}/retry`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Retry failed');
+      await post(`/mail/outbox/${outboxId}/retry`);
       if (window.WoxToast) window.WoxToast.success('Email delivered successfully!');
       if (onRefresh) onRefresh();
     } catch (err) {

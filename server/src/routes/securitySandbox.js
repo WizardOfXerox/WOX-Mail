@@ -66,38 +66,19 @@ router.get('/proxy-image', async (req, res) => {
       return res.status(400).send('Invalid protocol');
     }
 
-    const safety = await isSafeUrl(rawUrl);
-    if (!safety.safe) {
-      return res.status(400).send('Blocked: Target resolves to local/private network address');
-    }
+    // Delegate to hardened imageProxy (SSRF DNS-pinning, image MIME allowlist, SVG sanitization, 5 MB cap, active timeout)
+    const { fetchImage } = await import('../services/imageProxy.js');
+    const { buffer, contentType } = await fetchImage(rawUrl);
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6000);
-
-    const upstream = await safeFetch(rawUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) WoxMailImageProxy/1.0',
-        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-      },
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeout);
-
-    if (!upstream.ok) {
-      return res.status(upstream.status).send('Failed to fetch image upstream');
-    }
-
-    const contentType = upstream.headers.get('content-type') || 'image/png';
     res.setHeader('Content-Type', contentType);
     res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=86400, immutable');
     res.setHeader('X-Content-Type-Options', 'nosniff');
-
-    const buffer = await upstream.arrayBuffer();
-    return res.send(Buffer.from(buffer));
+    res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+    return res.send(buffer);
   } catch (err) {
-    logger.warn({ err, url: req.query?.url }, 'Failed to proxy remote image');
-    return res.status(502).send('Image proxy error');
+    logger.warn({ err: err?.message, url: req.query?.url }, 'Failed to proxy remote image');
+    const status = String(err?.message || '').includes('SSRF') || String(err?.message || '').includes('Unsupported') ? 400 : 502;
+    return res.status(status).send('Image proxy error');
   }
 });
 

@@ -9,6 +9,7 @@ import EmailPrivacyModal, { getStoredPrivacyPrefs, saveStoredPrivacyPrefs } from
 import QuotedTextFolder from './QuotedTextFolder.jsx';
 import { cleanEmailAddress, cleanSenderName, decodeMimeWords, cleanSnippet } from '../../shared/utils/mimeDecoder.js';
 import { formatDate } from '../../shared/utils/formatters.js';
+import { get, post, put, del } from '../../shared/api.js';
 
 const NOTE_COLORS = [
   { id: 'purple', bg: 'rgba(124, 58, 237, 0.08)', text: '#f3e8ff', border: 'rgba(124, 58, 237, 0.35)', accent: '#a78bfa', dot: '#a78bfa', label: 'Amethyst' },
@@ -112,9 +113,8 @@ export default function MessageView({
     if (msgUid !== message?.uid && !threadDetailsMap[msgUid]) {
       try {
         const targetFolder = msgFolder || message?.folder || 'INBOX';
-        const res = await fetch(`/api/mail/folder/${encodeURIComponent(targetFolder)}/message/${msgUid}`, { credentials: 'include' });
-        if (res.ok) {
-          const data = await res.json();
+        const data = await get(`/mail/message/${msgUid}?folder=${encodeURIComponent(targetFolder)}`);
+        if (data) {
           setThreadDetailsMap((prev) => ({ ...prev, [msgUid]: data.message || data }));
         }
       } catch (err) {
@@ -311,18 +311,12 @@ export default function MessageView({
     if (!message?.uid) return;
     setIsSavingNote(true);
     try {
-      const res = await fetch(`/api/notes/${message.uid}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          folder: message.folder || 'INBOX',
-          noteText: textToSave,
-          color: colorToSave || noteColor,
-        }),
+      const data = await put(`/notes/${message.uid}`, {
+        folder: message.folder || 'INBOX',
+        noteText: textToSave,
+        color: colorToSave || noteColor,
       });
-      const data = await res.json();
-      if (data.note) {
+      if (data?.note) {
         setNote(data.note);
       } else {
         setNote(null);
@@ -330,6 +324,7 @@ export default function MessageView({
       }
     } catch (err) {
       console.error('Failed to save note', err);
+      if (window.WoxToast) window.WoxToast.error(err.message || 'Failed to save note');
     } finally {
       setIsSavingNote(false);
     }
@@ -338,16 +333,14 @@ export default function MessageView({
   const deleteNote = async () => {
     if (!message?.uid) return;
     try {
-      await fetch(`/api/notes/${message.uid}?folder=${encodeURIComponent(message.folder || 'INBOX')}`, {
-        method: 'DELETE',
-        credentials: 'include',
-      });
+      await del(`/notes/${message.uid}?folder=${encodeURIComponent(message.folder || 'INBOX')}`);
       setNote(null);
       setNoteText('');
       setShowNoteBox(false);
       setIsEditingNote(false);
     } catch (err) {
       console.error('Failed to delete note', err);
+      if (window.WoxToast) window.WoxToast.error(err.message || 'Failed to delete note');
     }
   };
 
@@ -405,10 +398,7 @@ export default function MessageView({
     }
 
     const iframe = iframeRef.current;
-    const doc = iframe.contentDocument;
-    if (!doc) return;
-    doc.open();
-    doc.write(`
+    const htmlDocument = `
       <!DOCTYPE html>
       <html>
       <head>
@@ -478,9 +468,29 @@ export default function MessageView({
           ` : ''}
         </style>
       </head>
-      <body>${processedHtml}</body>
+      <body>${processedHtml}${allowScriptsThisEmail ? `<script>(function(){function r(){try{parent.postMessage({type:'wox_iframe_height',h:document.body.scrollHeight},'*');}catch(e){}}window.addEventListener('load',r);setTimeout(r,120);})();</script>` : ''}</body>
       </html>
-    `);
+    `;
+
+    // When scripts are explicitly allowed, omit allow-same-origin on the iframe and render via srcdoc
+    // so untrusted scripts cannot escape the sandbox or access parent DOM/cookies.
+    if (allowScriptsThisEmail) {
+      iframe.style.height = '420px';
+      iframe.srcdoc = htmlDocument;
+      const handleMsg = (ev) => {
+        if (ev.source !== iframe.contentWindow) return;
+        if (ev.data?.type === 'wox_iframe_height' && Number.isFinite(Number(ev.data.h))) {
+          iframe.style.height = Math.max(200, Math.min(12000, Number(ev.data.h) + 32)) + 'px';
+        }
+      };
+      window.addEventListener('message', handleMsg);
+      return () => window.removeEventListener('message', handleMsg);
+    }
+
+    const doc = iframe.contentDocument;
+    if (!doc) return;
+    doc.open();
+    doc.write(htmlDocument);
     doc.close();
 
     const resize = () => {
@@ -560,12 +570,7 @@ export default function MessageView({
               onClick: async () => {
                 try {
                   if (window.WoxToast) window.WoxToast.info('Inspecting domain & SSL certificate...');
-                  const res = await fetch('/api/security/inspect-link', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url: link.href }),
-                  });
-                  const data = await res.json();
+                  const data = await post('/security/inspect-link', { url: link.href });
                   if (data.success && data.report) {
                     setSecurityReport(data.report);
                   } else {
@@ -614,7 +619,11 @@ export default function MessageView({
             {
               label: 'Open in New Tab',
               icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>,
-              onClick: () => window.open(link.href, '_blank', 'noopener,noreferrer'),
+              onClick: () => {
+                if (/^https?:\/\//i.test(link.href || '')) {
+                  window.open(link.href, '_blank', 'noopener,noreferrer');
+                }
+              },
             },
           ],
         });
@@ -939,9 +948,13 @@ export default function MessageView({
                       {detail.attachments.map((att, attIdx) => (
                         <a
                           key={attIdx}
-                          href={att.url || `/api/mail/attachment/${att.id || att.filename}`}
+                          href={
+                            att.url && (/^https?:\/\//i.test(att.url) || att.url.startsWith('/'))
+                              ? att.url
+                              : `/api/mail/attachment/${encodeURIComponent(att.id || att.filename || 'file')}`
+                          }
                           target="_blank"
-                          rel="noreferrer"
+                          rel="noopener noreferrer"
                           className="btn btn-secondary btn-xs"
                           style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
                         >
@@ -1597,9 +1610,7 @@ export default function MessageView({
                     onClick={async () => {
                       try {
                         if (window.WoxToast) window.WoxToast.info('Retrying send...');
-                        const res = await fetch(`/api/mail/outbox/${message.outboxId}/retry`, { method: 'POST', credentials: 'include' });
-                        const data = await res.json();
-                        if (!res.ok) throw new Error(data.error || 'Retry failed');
+                        await post(`/mail/outbox/${message.outboxId}/retry`);
                         if (window.WoxToast) window.WoxToast.success('Email sent successfully!');
                         if (onBack) onBack();
                       } catch (err) {
@@ -1616,9 +1627,7 @@ export default function MessageView({
                     className="btn btn-secondary btn-xs"
                     onClick={async () => {
                       try {
-                        const res = await fetch(`/api/mail/outbox/${message.outboxId}/cancel`, { method: 'POST', credentials: 'include' });
-                        const data = await res.json();
-                        if (!res.ok) throw new Error(data.error || 'Cancel failed');
+                        await post(`/mail/outbox/${message.outboxId}/cancel`);
                         if (window.WoxToast) window.WoxToast.info('Message cancelled and removed from outbox.');
                         if (onBack) onBack();
                       } catch (err) {
@@ -1824,18 +1833,16 @@ export default function MessageView({
               }}
               onClick={async () => {
                 try {
-                  const res = await fetch(`/api/mail/unsubscribe/${message.uid}?folder=${encodeURIComponent(message.folder || 'INBOX')}`, {
-                    method: 'POST',
-                    credentials: 'include',
-                  });
-                  const data = await res.json();
-                  if (data.method === 'browser' && data.url) {
-                    window.open(data.url, '_blank');
+                  const data = await post(`/mail/unsubscribe/${message.uid}?folder=${encodeURIComponent(message.folder || 'INBOX')}`);
+                  if (data.method === 'browser' && data.url && /^https?:\/\//i.test(data.url)) {
+                    window.open(data.url, '_blank', 'noopener,noreferrer');
                   } else {
-                    alert(data.message || 'Unsubscribe request completed.');
+                    if (window.WoxToast) window.WoxToast.success(data.message || 'Unsubscribe request completed.');
+                    else alert(data.message || 'Unsubscribe request completed.');
                   }
                 } catch (err) {
-                  alert('Unsubscribe failed: ' + err.message);
+                  if (window.WoxToast) window.WoxToast.error('Unsubscribe failed: ' + err.message);
+                  else alert('Unsubscribe failed: ' + err.message);
                 }
               }}
               title="RFC 8058 One-Click List Unsubscribe"
@@ -1968,7 +1975,7 @@ export default function MessageView({
             <iframe
               key={`email-body-${message.uid}-${allowScriptsThisEmail ? 'scripts' : 'safe'}-${allowImagesThisEmail ? 'images' : 'noimages'}`}
               ref={iframeRef}
-              sandbox={allowScriptsThisEmail ? "allow-scripts allow-same-origin allow-popups allow-forms" : "allow-same-origin allow-popups"}
+              sandbox={allowScriptsThisEmail ? "allow-scripts allow-popups allow-forms" : "allow-same-origin allow-popups"}
               className="viewer-iframe"
               title="Email content"
             />

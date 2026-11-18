@@ -111,6 +111,47 @@ export async function loadUser(req, res, next) {
 }
 
 /**
+ * Verify a JWT string against signature, active session table (not revoked/expired),
+ * and non-suspended user record. Safe for secondary routes outside requireAuth().
+ * @param {string} token
+ * @returns {Promise<{ decoded: object, user: object } | null>}
+ */
+export async function verifyActiveJwt(token) {
+  if (!token || typeof token !== 'string') return null;
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (!decoded || !decoded.userId) return null;
+
+    if (decoded.jti && !decoded.impersonated) {
+      const sessRes = await query(
+        'SELECT is_revoked, expires_at FROM user_sessions WHERE id = $1',
+        [decoded.jti]
+      );
+      if (
+        sessRes.rows.length === 0 ||
+        sessRes.rows[0].is_revoked === true ||
+        new Date(sessRes.rows[0].expires_at) <= new Date()
+      ) {
+        return null;
+      }
+    }
+
+    const userRes = await query(
+      `SELECT id, email, username, display_name, is_admin, is_suspended, imap_password
+       FROM users WHERE id = $1`,
+      [decoded.userId]
+    );
+    if (userRes.rows.length === 0 || userRes.rows[0].is_suspended) {
+      return null;
+    }
+
+    return { decoded, user: userRes.rows[0] };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Combined middleware: authenticate + loadUser in one call.
  */
 export function requireAuth(req, res, next) {
@@ -118,5 +159,27 @@ export function requireAuth(req, res, next) {
     if (err) return next(err);
     if (res.headersSent) return;
     loadUser(req, res, next);
+  });
+}
+
+/**
+ * Optional authentication: populates req.user/req.userId when a valid JWT is present,
+ * otherwise proceeds cleanly as an unauthenticated guest without sending 401.
+ */
+export function optionalAuth(req, res, next) {
+  const hasToken = Boolean(
+    req.cookies?.[JWT_COOKIE_NAME] ||
+    (req.headers.authorization && req.headers.authorization.startsWith('Bearer '))
+  );
+  if (!hasToken) return next();
+
+  const noopRes = {
+    status() { return this; },
+    json() { return this; },
+    headersSent: false,
+  };
+  authenticate(req, noopRes, (err) => {
+    if (err || !req.userId) return next();
+    loadUser(req, noopRes, () => next());
   });
 }

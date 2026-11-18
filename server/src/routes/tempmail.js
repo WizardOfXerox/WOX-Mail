@@ -6,12 +6,12 @@ import { createConnection, fetchMessages, fetchMessage, getInboxMessageCount, de
 import { createTransporter, sendEmail } from '../services/smtp.js';
 import { simpleParser } from 'mailparser';
 import { sanitizeEmail } from '../services/emailSanitizer.js';
-import { hashPassword, verifyPassword, generateToken } from '../utils/crypto.js';
+import { hashPassword, verifyPassword, generateToken, timingSafeEqual } from '../utils/crypto.js';
 import { validateUsername, isValidEmail } from '../utils/validators.js';
 import { parsePagination, paginationMeta, isPurelymailWelcomeEmail } from '../utils/helpers.js';
 import { verifyCaptcha } from '../middleware/captcha.js';
 import { requireTempAuth } from '../middleware/tempAuth.js';
-import { tempGenerateLimiter } from '../middleware/rateLimit.js';
+import { tempGenerateLimiter, authSensitiveLimiter } from '../middleware/rateLimit.js';
 import { validate } from '../middleware/validate.js';
 import { TEMP_COOKIE_NAME, TIERS } from '../config/constants.js';
 import * as linkPreviewService from '../services/linkPreviewService.js';
@@ -35,7 +35,7 @@ function normalizeIp(ip) {
 function verifyPersonalAccess(req, addrRecord) {
   if (addrRecord && addrRecord.tier === 'personal') {
     const token = req.cookies?.[TEMP_COOKIE_NAME] || req.headers['x-temp-token'] || req.headers['x-session-token'];
-    if (!token || !addrRecord.session_token || token !== addrRecord.session_token) {
+    if (!token || !addrRecord.session_token || !timingSafeEqual(String(token), String(addrRecord.session_token))) {
       return false;
     }
   }
@@ -189,33 +189,6 @@ router.post('/generate',
         isCustom: Boolean(address.isCustom),
         tier: 'public',
       });
-    } catch (err) {
-      next(err);
-    }
-  }
-);
-
-/**
- * POST /api/tempmail/personal/batch-delete
- * Batch delete selected messages from personal temp mailbox.
- */
-router.post('/personal/batch-delete',
-  requireTempAuth,
-  validate({
-    uids: { type: 'array', required: true, items: { type: 'number' } },
-  }),
-  async (req, res, next) => {
-    try {
-      const { uids } = req.body;
-      const { tempUser } = req;
-      if (!tempUser || tempUser.tier !== 'personal') {
-        return res.status(403).json({ error: 'Forbidden' });
-      }
-
-      const client = await getTempIMAPConnection(tempUser.address, tempUser.imap_password);
-      const deletedCount = await deleteMessages(client, 'INBOX', uids);
-
-      res.json({ success: true, deletedCount });
     } catch (err) {
       next(err);
     }
@@ -499,11 +472,20 @@ router.get('/message/:address/:uid/attachment/:index', async (req, res, next) =>
       }
     }
 
-    res.setHeader('Content-Type', contentType);
+    const safeContentType = String(contentType || 'application/octet-stream').replace(/[\r\n\x00-\x1f\x7f]/g, '').trim() || 'application/octet-stream';
+    const isDangerousInline = /^(text\/html|application\/xhtml\+xml|image\/svg\+xml|application\/xml|text\/xml|text\/javascript|application\/javascript|application\/ecmascript|text\/xsl|application\/mathml\+xml|message\/rfc822)/i.test(safeContentType);
+    const safeFilename = String(filename || 'attachment').replace(/[\r\n\x00-\x1f\x7f"/\\]/g, '_');
+    const disposition = isPreview && !isDangerousInline ? 'inline' : 'attachment';
+
+    res.setHeader('Content-Type', isDangerousInline ? 'application/octet-stream' : safeContentType);
     res.setHeader(
       'Content-Disposition',
-      `${isPreview ? 'inline' : 'attachment'}; filename="${encodeURIComponent(filename)}"`
+      `${disposition}; filename="${safeFilename}"; filename*=UTF-8''${encodeURIComponent(filename)}`
     );
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    if (disposition === 'inline') {
+      res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data:; media-src 'self'; sandbox");
+    }
     if (att.size) res.setHeader('Content-Length', att.size);
 
     res.send(att.content);
@@ -966,6 +948,7 @@ router.post('/personal/create',
  * Re-login to a personal temp address.
  */
 router.post('/personal/login',
+  authSensitiveLimiter,
   validate({
     address: { type: 'string', required: true },
     password: { type: 'string', required: true },
@@ -1156,6 +1139,7 @@ router.post('/personal/batch-delete',
       res.json({
         success: true,
         deletedCount: validUids.length,
+        deleted: validUids,
         uids: validUids,
       });
     } catch (err) {
@@ -1185,7 +1169,18 @@ router.post('/personal/change-password',
       }
 
       const newHash = await hashPassword(newPassword);
-      await query('UPDATE temp_addresses SET password_hash = $1 WHERE id = $2', [newHash, req.tempUser.id]);
+      const newSessionToken = generateToken(32);
+      await query(
+        'UPDATE temp_addresses SET password_hash = $1, session_token = $2 WHERE id = $3',
+        [newHash, newSessionToken, req.tempUser.id]
+      );
+      res.cookie(TEMP_COOKIE_NAME, newSessionToken, {
+        httpOnly: true,
+        secure: isHttpsRequest(req),
+        sameSite: 'strict',
+        path: '/',
+        maxAge: 60 * 24 * 60 * 60 * 1000,
+      });
 
       res.json({ message: 'Password updated successfully' });
     } catch (err) {

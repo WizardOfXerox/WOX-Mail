@@ -155,9 +155,8 @@ export default function App() {
         color: '#6d4aff',
       });
 
-      // Probe backend session liveness
-      fetch(`/api/proton/sync/status?email=${encodeURIComponent(user.email)}`)
-        .then((res) => res.json())
+      // Probe backend session liveness (using authenticated API client)
+      get(`/proton/sync/status?email=${encodeURIComponent(user.email)}`)
         .then((data) => {
           if (data && data.active) {
             setIsProtonUnlocked(true);
@@ -350,7 +349,7 @@ export default function App() {
     'd': () => { if (selectedUid) handleBatchDelete([selectedUid]); },
     's': () => { if (selectedUid) handleStar(selectedUid); },
     'u': () => { if (selectedUid) handleBatchMarkUnread([selectedUid]); },
-    'Ctrl+k': () => setCmdPaletteOpen(true),
+    'Ctrl+k': () => setCmdPaletteOpen((prev) => !prev),
     'Ctrl+1': () => changeLayoutMode('list'),
     'Ctrl+2': () => changeLayoutMode('vertical'),
     'Ctrl+3': () => changeLayoutMode('horizontal'),
@@ -392,6 +391,11 @@ export default function App() {
       handleFolderChange('__campaigns');
     } else if (appId === 'kanban') {
       setShowKanban(true);
+    } else if (appId === 'calendar') {
+      setDockOpen(true);
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('woxmail:dock-tab', { detail: { tab: 'agenda' } }));
+      }, 40);
     } else if (appId === 'support') {
       setShowSupportModal(true);
     } else if (appId === 'tempmail') {
@@ -404,6 +408,19 @@ export default function App() {
       window.location.href = '/settings';
     }
   };
+
+  // Honor deep-link query params (?app=gatekeeper|campaigns|kanban|support|calendar or ?view=calendar)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const appParam = params.get('app');
+    const viewParam = params.get('view');
+    if (appParam && ['gatekeeper', 'campaigns', 'kanban', 'support', 'calendar'].includes(appParam)) {
+      handleSelectApp(appParam);
+    } else if (viewParam === 'calendar') {
+      handleSelectApp('calendar');
+    }
+  }, []);
 
   // ─── Actions & Batch Handlers ───────────────────────────
   const handleStar = async (uid) => {
@@ -713,6 +730,12 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    if (!userLoading && window.WoxLoader) {
+      window.WoxLoader.done();
+    }
+  }, [userLoading]);
+
   if (userLoading) return null;
 
   const isSpecialView = activeFolder.startsWith('__');
@@ -906,7 +929,16 @@ export default function App() {
         ) : activeFolder === '__campaigns' ? (
           <CampaignsView />
         ) : showKanban ? (
-          <KanbanBoard onClose={() => setShowKanban(false)} />
+          <KanbanBoard
+            onClose={() => setShowKanban(false)}
+            onOpenEmail={(uid, folder) => {
+              setShowKanban(false);
+              if (folder && folder !== activeFolder) {
+                handleFolderChange(folder);
+              }
+              if (uid) setSelectedUid(uid);
+            }}
+          />
         ) : (
           /* Normal Mailbox Layout: Mobile Full-Screen or Desktop Split/List */
           isMobile ? (
@@ -1201,7 +1233,8 @@ export default function App() {
               activeMessage={message}
               onClose={toggleDock}
               onComposeTo={(recipient) => {
-                setReplyData(null);
+                const emailAddr = typeof recipient === 'string' ? recipient.trim() : (recipient?.email || '');
+                setReplyData(emailAddr ? { to: emailAddr } : null);
                 setComposing(true);
               }}
               onFilterBySender={(senderEmail) => {
@@ -1251,6 +1284,10 @@ export default function App() {
           else if (action === 'gatekeeper') { handleFolderChange('__gatekeeper'); }
           else if (action === 'campaigns') { handleFolderChange('__campaigns'); }
           else if (action === 'kanban') { setShowKanban(true); }
+          else if (action === 'calendar') {
+            setDockOpen(true);
+            window.dispatchEvent(new CustomEvent('woxmail:dock-tab', { detail: { tab: 'agenda' } }));
+          }
           else if (action === 'templates') { setTemplatePickerOpen(true); }
           else if (action === 'accounts') { setAccountSwitcherOpen(true); }
           else if (action === 'support') { setShowSupportModal(true); }
@@ -1299,7 +1336,10 @@ export default function App() {
       {templatePickerOpen && (
         <TemplatePickerModal
           onSelect={(templateBody) => {
-            setReplyData(null);
+            const payload = typeof templateBody === 'string'
+              ? { templateBody }
+              : { templateBody: templateBody?.body_html || templateBody?.body || '', templateSubject: templateBody?.subject || '' };
+            setReplyData(payload);
             setComposing(true);
             setTemplatePickerOpen(false);
           }}

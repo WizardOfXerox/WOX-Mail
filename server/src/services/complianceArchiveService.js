@@ -7,11 +7,11 @@ const logger = pino({ name: 'woxmail:compliance-archive' });
 /**
  * Calculate tamper-evident SHA-256 checksum for legal & compliance non-repudiation.
  */
-function calculateChecksum(payload) {
+export function calculateChecksum(payload) {
   const data = [
     payload.direction,
     payload.senderAddress,
-    (payload.recipientAddresses || []).sort().join(','),
+    [...(payload.recipientAddresses || [])].sort().join(','),
     payload.subject || '',
     payload.bodyText || payload.bodyHtml || '',
     payload.sentOrReceivedAt ? new Date(payload.sentOrReceivedAt).toISOString() : new Date().toISOString(),

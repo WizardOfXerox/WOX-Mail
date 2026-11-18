@@ -141,7 +141,7 @@ export const PROVIDER_PRESETS = {
  * Encrypt sensitive credentials (e.g. password or token)
  */
 export function encryptCredentials(plaintext) {
-  const iv = crypto.randomBytes(16);
+  const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv(ALGORITHM, SECRET_KEY, iv);
   let encrypted = cipher.update(plaintext, 'utf8', 'hex');
   encrypted += cipher.final('hex');
@@ -198,6 +198,23 @@ export async function testConnection({ provider, imap_host, imap_port, imap_secu
       imap: { success: false, error: 'Proton Mail does not expose standard IMAP/SMTP directly. Use Proton Direct API login or local Proton Mail Bridge.' },
       smtp: { success: false, error: 'Proton Mail does not expose standard IMAP/SMTP directly. Use Proton Direct API login or local Proton Mail Bridge.' }
     };
+  }
+
+  // SSRF Defense: block connections to loopback/private/link-local/metadata hosts unless explicitly permitted
+  if (process.env.ALLOW_PRIVATE_MAIL_HOSTS !== 'true') {
+    const { isSafeUrl } = await import('./linkPreviewService.js');
+    for (const [label, hostVal] of [['IMAP', imap_host], ['SMTP', smtp_host]]) {
+      const cleanHost = String(hostVal || '').trim();
+      if (!cleanHost) continue;
+      const safety = await isSafeUrl(`https://${cleanHost}`);
+      if (!safety.safe) {
+        const blockedMsg = `Blocked: ${label} host resolves to a private or local network address.`;
+        return {
+          imap: { success: false, error: blockedMsg },
+          smtp: { success: false, error: blockedMsg },
+        };
+      }
+    }
   }
 
   const tlsOptions = {

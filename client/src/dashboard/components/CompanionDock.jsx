@@ -571,10 +571,11 @@ export default function CompanionDock({ user, onClose, onComposeTo, activeMessag
     } catch (e) {}
     try {
       await del(`/tempmail/delete/${encodeURIComponent(targetAddr)}`);
+      if (window.WoxToast) window.WoxToast.info('Burner mailbox purged & destroyed');
     } catch (err) {
       console.error('Destroy error:', err);
+      if (window.WoxToast) window.WoxToast.error(err.message || 'Failed to purge burner on server');
     }
-    if (window.WoxToast) window.WoxToast.info('Burner mailbox purged & destroyed');
   };
 
   const handleCopyTemp = () => {

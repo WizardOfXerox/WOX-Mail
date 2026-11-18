@@ -11,6 +11,10 @@ const router = Router();
  */
 function setAntiCacheHeaders(res, contentType = 'image/png') {
   res.setHeader('Content-Type', contentType);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  if (contentType.includes('svg')) {
+    res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+  }
   res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate, post-check=0, pre-check=0, max-age=0, s-maxage=0, no-transform');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', 'Thu, 01 Jan 1970 00:00:00 GMT');
@@ -108,7 +112,7 @@ router.post(
 
       const userRes = await query('SELECT imap_password FROM users WHERE id = $1', [senderId]);
       let senderPass = userRes.rows[0]?.imap_password;
-      if (!senderPass && req.user.role === 'admin') {
+      if (!senderPass && req.user.is_admin) {
         senderPass = (process.env.ADMIN_PASSWORD || '').replace(/^['"]|['"]$/g, '');
       }
       if (!senderPass) {

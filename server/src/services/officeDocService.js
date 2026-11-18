@@ -13,14 +13,20 @@ import zlib from 'zlib';
  * @param {Buffer} buffer
  * @returns {Record<string, Buffer>}
  */
+const MAX_ZIP_ENTRIES = 500;
+const MAX_SINGLE_ENTRY_BYTES = 10 * 1024 * 1024; // 10 MB per entry
+const MAX_TOTAL_UNZIPPED_BYTES = 25 * 1024 * 1024; // 25 MB cumulative zip-bomb cap
+
 export function unpackZip(buffer) {
-  const files = {};
+  const files = Object.create(null);
   if (!Buffer.isBuffer(buffer) || buffer.length < 30) return files;
 
   let pos = 0;
   const maxLen = buffer.length - 4;
+  let entryCount = 0;
+  let totalUnzippedBytes = 0;
 
-  while (pos < maxLen) {
+  while (pos < maxLen && entryCount < MAX_ZIP_ENTRIES) {
     const sig = buffer.readUInt32LE(pos);
     if (sig === 0x04034b50) {
       // Local file header
@@ -38,18 +44,31 @@ export function unpackZip(buffer) {
       const dataEnd = dataStart + compSize;
 
       if (dataEnd <= buffer.length) {
-        const compData = buffer.subarray(dataStart, dataEnd);
-        let decompressed;
-        if (method === 8) {
-          try {
-            decompressed = zlib.inflateRawSync(compData);
-          } catch {
+        entryCount += 1;
+        if (name !== '__proto__' && name !== 'constructor' && name !== 'prototype') {
+          const compData = buffer.subarray(dataStart, dataEnd);
+          let decompressed;
+          if (method === 8) {
+            try {
+              decompressed = zlib.inflateRawSync(compData, { maxOutputLength: MAX_SINGLE_ENTRY_BYTES });
+            } catch {
+              // Skip oversized or corrupt entry (zip-bomb defense)
+              pos = dataEnd;
+              continue;
+            }
+          } else {
+            if (compData.length > MAX_SINGLE_ENTRY_BYTES) {
+              pos = dataEnd;
+              continue;
+            }
             decompressed = compData;
           }
-        } else {
-          decompressed = compData;
+          totalUnzippedBytes += decompressed.length;
+          if (totalUnzippedBytes > MAX_TOTAL_UNZIPPED_BYTES) {
+            break;
+          }
+          files[name] = decompressed;
         }
-        files[name] = decompressed;
         pos = dataEnd;
         continue;
       }

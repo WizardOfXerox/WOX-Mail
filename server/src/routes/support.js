@@ -1,6 +1,7 @@
 import { Router } from 'express';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, optionalAuth } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/admin.js';
+import { authSensitiveLimiter } from '../middleware/rateLimit.js';
 import {
   createTicket,
   addMessage,
@@ -13,6 +14,51 @@ import pino from 'pino';
 
 const logger = pino({ name: 'woxmail:support-route' });
 const router = Router();
+
+/**
+ * POST /api/support/tickets
+ * Create a new support ticket (supports both signed-in users and public guests)
+ */
+router.post('/tickets', authSensitiveLimiter, optionalAuth, async (req, res, next) => {
+  try {
+    const {
+      creatorEmail: bodyEmail,
+      creatorName: bodyName,
+      subject,
+      category = 'general',
+      priority = 'medium',
+      messageText,
+      attachments = []
+    } = req.body;
+
+    if (!subject?.trim() || !messageText?.trim()) {
+      return res.status(400).json({ error: 'Subject and message are required' });
+    }
+
+    const creatorEmail = req.user?.email || (typeof bodyEmail === 'string' ? bodyEmail.trim().toLowerCase() : '');
+    if (!creatorEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(creatorEmail)) {
+      return res.status(400).json({ error: 'A valid email address is required' });
+    }
+
+    const creatorName = req.user
+      ? (req.user.display_name || req.user.username)
+      : (typeof bodyName === 'string' && bodyName.trim() ? bodyName.trim() : creatorEmail.split('@')[0]);
+
+    const ticket = await createTicket(req.userId || null, {
+      creatorEmail,
+      creatorName,
+      subject,
+      category,
+      priority,
+      messageText,
+      attachments
+    });
+
+    res.json({ success: true, ticket });
+  } catch (err) {
+    next(err);
+  }
+});
 
 router.use(requireAuth);
 
@@ -32,38 +78,10 @@ router.get('/tickets', async (req, res, next) => {
       status,
       category,
       priority,
-      page: parseInt(page, 10),
-      limit: parseInt(limit, 10)
+      page: parseInt(page, 10) || 1,
+      limit: parseInt(limit, 10) || 25
     });
     res.json(data);
-  } catch (err) {
-    next(err);
-  }
-});
-
-/**
- * POST /api/support/tickets
- * Create a new support ticket
- */
-router.post('/tickets', async (req, res, next) => {
-  try {
-    const { subject, category = 'general', priority = 'medium', messageText, attachments = [] } = req.body;
-
-    if (!subject?.trim() || !messageText?.trim()) {
-      return res.status(400).json({ error: 'Subject and message are required' });
-    }
-
-    const ticket = await createTicket(req.userId, {
-      creatorEmail: req.user.email,
-      creatorName: req.user.display_name || req.user.username,
-      subject,
-      category,
-      priority,
-      messageText,
-      attachments
-    });
-
-    res.json({ success: true, ticket });
   } catch (err) {
     next(err);
   }

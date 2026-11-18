@@ -37,10 +37,18 @@ router.get('/pixel/:token.png', async (req, res) => {
 router.get('/click/:token', async (req, res) => {
   try {
     const targetUrl = await recordLinkClick(req.params.token, req);
-    if (!targetUrl) {
+    if (!targetUrl || typeof targetUrl !== 'string' || /[\r\n]/.test(targetUrl)) {
       return res.redirect('/');
     }
-    return res.redirect(targetUrl);
+    try {
+      const parsed = new URL(targetUrl);
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        return res.redirect('/');
+      }
+      return res.redirect(parsed.toString());
+    } catch {
+      return res.redirect('/');
+    }
   } catch (err) {
     return res.redirect('/');
   }

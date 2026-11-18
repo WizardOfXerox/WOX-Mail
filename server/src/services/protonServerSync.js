@@ -537,6 +537,16 @@ export async function getProtonMessageDetails(email, id, userId = null) {
 
       if (decryptedHtml) {
         decryptedHtml = decryptedHtml.replace(/src=["']blob:[^"']+["']/gi, 'src="" data-blocked-blob="true"');
+        try {
+          const { sanitizeEmail } = await import('./emailSanitizer.js');
+          const sanitized = sanitizeEmail(decryptedHtml, { loadImages: false });
+          decryptedHtml = typeof sanitized === 'string' ? sanitized : (sanitized?.html ?? '');
+        } catch {
+          decryptedHtml = decryptedHtml
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+        }
       }
     }
   } catch (domErr) {

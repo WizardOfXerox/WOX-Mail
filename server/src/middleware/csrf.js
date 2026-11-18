@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { JWT_COOKIE_NAME } from '../config/constants.js';
+import { JWT_COOKIE_NAME, TEMP_COOKIE_NAME } from '../config/constants.js';
 
 const CSRF_COOKIE = 'woxmail_csrf';
 const CSRF_HEADER = 'x-csrf-token';
@@ -66,8 +66,6 @@ export function csrfProtection(req, res, next) {
     cleanPath.startsWith('/api/campaigns/unsubscribe') ||
     cleanPath.startsWith('/api/secure/unlock') ||
     cleanPath.startsWith('/api/mail/secure/unlock') ||
-    cleanPath.startsWith('/api/secure-attachments/') ||
-    cleanPath.startsWith('/api/ephemeral/') ||
     cleanPath.startsWith('/api/futureme/verify') ||
     cleanPath.startsWith('/api/futureme/public') ||
     cleanPath.startsWith('/api/analytics/click') ||
@@ -77,7 +75,7 @@ export function csrfProtection(req, res, next) {
     return next();
   }
 
-  if (!req.cookies?.[JWT_COOKIE_NAME] && !req.cookies?.[CSRF_COOKIE]) {
+  if (!req.cookies?.[JWT_COOKIE_NAME] && !req.cookies?.[TEMP_COOKIE_NAME] && !req.cookies?.[CSRF_COOKIE]) {
     return next();
   }
   if (req.headers.authorization?.startsWith('Bearer ')) {

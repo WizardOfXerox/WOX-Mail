@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { query } from '../config/database.js';
 import { redis } from '../config/redis.js';
 import { requireAuth } from '../middleware/auth.js';
+import { requireAdmin } from '../middleware/admin.js';
 import * as healthMonitorService from '../services/healthMonitorService.js';
 
 const router = Router();
@@ -48,7 +49,7 @@ router.get('/', async (req, res) => {
  * Deep system health dashboard — CPU, memory, disk, DB latency, table stats.
  * Requires authentication (admin-level data).
  */
-router.get('/monitor', requireAuth, async (req, res, next) => {
+router.get('/monitor', requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const snapshot = await healthMonitorService.getHealthSnapshot();
     res.json(snapshot);

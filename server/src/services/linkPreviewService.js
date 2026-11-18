@@ -376,7 +376,7 @@ function executePinnedRequest(targetUrl, safety, options = {}) {
       }
     }
 
-    const cleanHost = parsed.hostname.toLowerCase().replace(/\.+$/, '');
+    const cleanHost = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase().replace(/\.+$/, '');
     const resolvedEntries = safety.resolvedEntries && safety.resolvedEntries.length > 0
       ? safety.resolvedEntries
       : (safety.addresses || [safety.resolvedIp]).filter(Boolean).map((addr) => ({
@@ -490,6 +490,21 @@ export async function safeFetch(targetUrl, options = {}, maxRedirects = 5) {
       if (hop === maxRedirects) {
         throw new Error('SSRF Protection: Maximum redirects exceeded');
       }
+
+      // Strip sensitive auth/cookie headers when redirecting across origins
+      try {
+        const prevOrigin = new URL(currUrl).origin;
+        const nextOrigin = new URL(nextUrl).origin;
+        if (prevOrigin !== nextOrigin && currOptions.headers) {
+          const strippedHeaders = normalizeRequestHeaders(currOptions.headers);
+          for (const hKey of Object.keys(strippedHeaders)) {
+            if (['authorization', 'cookie', 'proxy-authorization'].includes(hKey.toLowerCase())) {
+              delete strippedHeaders[hKey];
+            }
+          }
+          currOptions = { ...currOptions, headers: strippedHeaders };
+        }
+      } catch {}
 
       if ([301, 302, 303].includes(status) && currOptions.method && currOptions.method.toUpperCase() !== 'GET' && currOptions.method.toUpperCase() !== 'HEAD') {
         const nextHeaders = normalizeRequestHeaders(currOptions.headers);

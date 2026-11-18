@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 /**
  * ContextMenu Component:
@@ -123,7 +124,7 @@ export default function ContextMenu({ x, y, items = [], onClose, title }) {
     : (title || 'Actions');
 
   if (isMobile) {
-    return (
+    return createPortal(
       <div
         className="context-menu-overlay"
         style={{
@@ -265,14 +266,15 @@ export default function ContextMenu({ x, y, items = [], onClose, title }) {
             </button>
           </div>
         </div>
-      </div>
+      </div>,
+      document.body
     );
   }
 
   // Desktop Floating Popover
   let actionCounter = -1;
 
-  return (
+  return createPortal(
     <div
       ref={menuRef}
       className="context-menu-popover"
@@ -444,6 +446,7 @@ export default function ContextMenu({ x, y, items = [], onClose, title }) {
           </div>
         );
       })}
-    </div>
+    </div>,
+    document.body
   );
 }

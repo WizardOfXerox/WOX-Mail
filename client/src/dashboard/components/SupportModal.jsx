@@ -188,7 +188,7 @@ export default function SupportModal({ user, onClose }) {
                           <strong style={{ fontSize: '0.875rem' }}>{t.subject}</strong>
                         </div>
                         <div className="text-secondary" style={{ fontSize: '0.75rem', marginTop: '0.2rem' }}>
-                          Category: <strong>{t.category.toUpperCase()}</strong> · Last updated: {new Date(t.updated_at).toLocaleString()}
+                          Category: <strong>{(t.category || 'general').toUpperCase()}</strong> · Last updated: {t.updated_at ? new Date(t.updated_at).toLocaleString() : '—'}
                         </div>
                       </div>
 

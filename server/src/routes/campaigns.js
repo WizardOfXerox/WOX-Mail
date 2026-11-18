@@ -1,4 +1,6 @@
+import crypto from 'crypto';
 import { Router } from 'express';
+import { query } from '../config/database.js';
 import { requireAuth } from '../middleware/auth.js';
 import {
   createList,
@@ -7,6 +9,7 @@ import {
   addSubscriber,
   importSubscribers,
   listSubscribers,
+  verifyListOwnership,
   createCampaign,
   listCampaigns,
   sendTestEmail,
@@ -20,50 +23,67 @@ const logger = pino({ name: 'woxmail:campaigns-route' });
 const router = Router();
 
 // ─── Public Unsubscribe Endpoints ────────────────────────
-router.get('/unsubscribe/:token', async (req, res) => {
-  const result = await handleUnsubscribe(req.params.token);
-  if (!result) {
-    return res.status(404).send(`
+router.get('/unsubscribe/:token', async (req, res, next) => {
+  try {
+    const result = await handleUnsubscribe(req.params.token);
+    if (!result) {
+      return res.status(404).send(`
+        <!DOCTYPE html>
+        <html>
+          <body style="font-family: sans-serif; text-align: center; padding: 40px; background: #0f0f1a; color: #f0f0f5;">
+            <h2>Invalid or expired unsubscribe link.</h2>
+          </body>
+        </html>
+      `);
+    }
+    const safeEmail = String(result.email || '').replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' }[c]));
+    res.send(`
       <!DOCTYPE html>
       <html>
-        <body style="font-family: sans-serif; text-align: center; padding: 40px; background: #0f0f1a; color: #f0f0f5;">
-          <h2>Invalid or expired unsubscribe link.</h2>
+        <body style="font-family: sans-serif; text-align: center; padding: 50px; background: #0f0f1a; color: #f0f0f5;">
+          <div style="max-width: 500px; margin: 0 auto; background: #1a1a2e; padding: 30px; border-radius: 12px; border: 1px solid #2a2a4a;">
+            <h2 style="color: #22c55e;">✓ Successfully Unsubscribed</h2>
+            <p style="color: #9898b0;">${safeEmail} has been removed from this mailing list.</p>
+          </div>
         </body>
       </html>
     `);
+  } catch (err) {
+    next(err);
   }
-  res.send(`
-    <!DOCTYPE html>
-    <html>
-      <body style="font-family: sans-serif; text-align: center; padding: 50px; background: #0f0f1a; color: #f0f0f5;">
-        <div style="max-width: 500px; margin: 0 auto; background: #1a1a2e; padding: 30px; border-radius: 12px; border: 1px solid #2a2a4a;">
-          <h2 style="color: #22c55e;">✓ Successfully Unsubscribed</h2>
-          <p style="color: #9898b0;">${result.email} has been removed from this mailing list.</p>
-        </div>
-      </body>
-    </html>
-  `);
 });
 
 // RFC 8058 One-Click Unsubscribe POST
-router.post('/unsubscribe/:token', async (req, res) => {
-  const result = await handleUnsubscribe(req.params.token);
-  if (!result) {
-    return res.status(404).json({ error: 'Token not found' });
+router.post('/unsubscribe/:token', async (req, res, next) => {
+  try {
+    const result = await handleUnsubscribe(req.params.token);
+    if (!result) {
+      return res.status(404).json({ error: 'Token not found' });
+    }
+    res.json({ success: true, message: 'Unsubscribed successfully' });
+  } catch (err) {
+    next(err);
   }
-  res.json({ success: true, message: 'Unsubscribed successfully' });
 });
 
 // Public Subscribe Form Endpoint (Dual-Mode Verification Support)
 router.post('/subscribe/:listId', async (req, res) => {
   try {
     const listId = parseInt(req.params.listId, 10);
+    if (!Number.isInteger(listId) || listId <= 0) {
+      return res.status(400).send('Invalid mailing list ID');
+    }
     const { email, first_name, last_name } = req.body;
-    if (!email || !email.includes('@')) {
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    if (!cleanEmail || !/^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/.test(cleanEmail)) {
       return res.status(400).send('Valid email is required');
     }
-
-    const cleanEmail = email.trim().toLowerCase();
+    const safeEmailHtml = cleanEmail
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
     const listRes = await query('SELECT * FROM mailing_lists WHERE id = $1', [listId]);
     if (listRes.rows.length === 0) {
       return res.status(404).send('Mailing list not found');
@@ -108,7 +128,7 @@ router.post('/subscribe/:listId', async (req, res) => {
             <div class="card" id="mainCard">
               <div class="badge">🔐 Verification Required</div>
               <h2 style="margin: 0 0 10px;">Confirm Your Subscription</h2>
-              <p style="color: #9898b0; font-size: 14px;">We sent a 6-digit confirmation code to <strong>${cleanEmail}</strong>.</p>
+              <p style="color: #9898b0; font-size: 14px;">We sent a 6-digit confirmation code to <strong>${safeEmailHtml}</strong>.</p>
               
               <div class="dual-box">
                 <strong>⚡ Zero Friction:</strong> You can simply <strong>hit Reply</strong> to the email with the code, and this screen will update automatically!
@@ -125,7 +145,7 @@ router.post('/subscribe/:listId', async (req, res) => {
 
             <script src="/socket.io/socket.io.js"></script>
             <script>
-              const sessionToken = "${session.sessionToken}";
+              const sessionToken = ${JSON.stringify(String(session.sessionToken || '')).replace(/</g, '\\u003c')};
               const socket = io();
               socket.on('verification_success', (data) => {
                 if (data.sessionToken === sessionToken) {
@@ -134,11 +154,26 @@ router.post('/subscribe/:listId', async (req, res) => {
               });
 
               function showSuccess(text) {
-                document.getElementById('mainCard').innerHTML = \`
-                  <div style="font-size: 48px; margin-bottom: 12px;">🎉</div>
-                  <h2 style="color: #22c55e; margin: 0 0 10px;">Subscription Confirmed!</h2>
-                  <p style="color: #9898b0; font-size: 14px;">\${text}</p>
-                \`;
+                const card = document.getElementById('mainCard');
+                card.textContent = '';
+                const icon = document.createElement('div');
+                icon.style.cssText = 'font-size: 48px; margin-bottom: 12px;';
+                icon.textContent = '🎉';
+                const heading = document.createElement('h2');
+                heading.style.cssText = 'color: #22c55e; margin: 0 0 10px;';
+                heading.textContent = 'Subscription Confirmed!';
+                const p = document.createElement('p');
+                p.style.cssText = 'color: #9898b0; font-size: 14px;';
+                p.textContent = String(text || 'Subscription confirmed!');
+                card.append(icon, heading, p);
+              }
+
+              function showError(msgEl, text) {
+                msgEl.textContent = '';
+                const span = document.createElement('span');
+                span.style.color = '#ef4444';
+                span.textContent = String(text || 'Verification failed');
+                msgEl.appendChild(span);
               }
 
               document.getElementById('verifyForm').addEventListener('submit', async (e) => {
@@ -149,21 +184,24 @@ router.post('/subscribe/:listId', async (req, res) => {
                 submitBtn.disabled = true;
                 submitBtn.innerText = 'Verifying...';
                 try {
+                  const csrfMatch = document.cookie.match(/woxmail_csrf=([^;]+)/);
+                  const csrfToken = csrfMatch ? csrfMatch[1] : '';
                   const res = await fetch('/api/verify/confirm', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+                    credentials: 'include',
                     body: JSON.stringify({ sessionToken, code })
                   });
                   const json = await res.json();
                   if (json.success) {
                     showSuccess(json.message);
                   } else {
-                    msg.innerHTML = '<span style="color: #ef4444;">' + (json.error || 'Invalid code') + '</span>';
+                    showError(msg, json.error || 'Invalid code');
                     submitBtn.disabled = false;
                     submitBtn.innerText = 'Confirm Subscription';
                   }
                 } catch (err) {
-                  msg.innerHTML = '<span style="color: #ef4444;">' + err.message + '</span>';
+                  showError(msg, err.message);
                   submitBtn.disabled = false;
                   submitBtn.innerText = 'Confirm Subscription';
                 }
@@ -248,12 +286,14 @@ router.get('/lists/:id/subscribers', async (req, res, next) => {
     const { id } = req.params;
     const { page = 1, limit = 50, status } = req.query;
     const data = await listSubscribers(parseInt(id, 10), {
-      page: parseInt(page, 10),
-      limit: parseInt(limit, 10),
-      status
+      page: parseInt(page, 10) || 1,
+      limit: parseInt(limit, 10) || 50,
+      status,
+      userId: req.userId
     });
     res.json(data);
   } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
     next(err);
   }
 });
@@ -269,9 +309,11 @@ router.post('/lists/:id/import', async (req, res, next) => {
     if (!Array.isArray(subscribers) || subscribers.length === 0) {
       return res.status(400).json({ error: 'subscribers must be a non-empty array of objects' });
     }
-    const result = await importSubscribers(parseInt(id, 10), subscribers);
+    const ownedListId = await verifyListOwnership(req.userId, id);
+    const result = await importSubscribers(ownedListId, subscribers);
     res.json({ success: true, ...result });
   } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
     next(err);
   }
 });
@@ -279,9 +321,15 @@ router.post('/lists/:id/import', async (req, res, next) => {
 /**
  * GET /api/campaigns/lists/:id/embed
  */
-router.get('/lists/:id/embed', (req, res) => {
-  const formHtml = generateSignupForm(req.params.id);
-  res.json({ html: formHtml });
+router.get('/lists/:id/embed', async (req, res, next) => {
+  try {
+    const ownedListId = await verifyListOwnership(req.userId, req.params.id);
+    const formHtml = generateSignupForm(ownedListId);
+    res.json({ html: formHtml });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
 });
 
 /**
@@ -316,6 +364,7 @@ router.post('/', async (req, res, next) => {
     });
     res.json({ success: true, campaign });
   } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
     next(err);
   }
 });
@@ -346,6 +395,7 @@ router.post('/:id/send', async (req, res, next) => {
     const campaign = await startCampaign(req.userId, parseInt(id, 10));
     res.json({ success: true, campaign });
   } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
     next(err);
   }
 });

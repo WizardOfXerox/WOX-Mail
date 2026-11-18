@@ -120,6 +120,9 @@ app.use(
         'frame-src': ["'self'", 'https://newassets.hcaptcha.com', 'https://hcaptcha.com', 'https://*.hcaptcha.com'],
         'connect-src': ["'self'", 'https://fonts.googleapis.com', 'https://fonts.gstatic.com', 'https://api.hcaptcha.com', 'https://*.hcaptcha.com', 'https://static.cloudflareinsights.com', 'wss:', 'ws:'],
         'worker-src': ["'self'", 'blob:'],
+        'object-src': ["'none'"],
+        'base-uri': ["'self'"],
+        'frame-ancestors': ["'self'"],
         'upgrade-insecure-requests': null,
       },
     },
@@ -169,6 +172,10 @@ app.use(express.static(path.join(__dirname, '..', 'public'), {
 
 // ─── API Routes ──────────────────────────────────────────
 app.use('/api/health', healthRouter);
+
+// Global API rate limiter (enforced across all /api/* routes except /api/health)
+app.use('/api', apiLimiter);
+
 app.use('/api/auth/passkeys', passkeysRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/settings/passkeys', passkeysRouter);
@@ -220,9 +227,6 @@ app.use('/api', transactionalApiRouter);
 app.use('/api', automationAndProtocolsRouter);
 app.use('/', automationAndProtocolsRouter);
 app.use('/', autodiscoverRouter);
-
-// Global API rate limiter (after specific route limiters)
-app.use('/api', apiLimiter);
 
 // ─── Page Routes ─────────────────────────────────────────
 app.use('/', pagesRouter);

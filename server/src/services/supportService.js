@@ -465,16 +465,24 @@ export async function getSupportTicketMessageById(id) {
   const thread = await getTicketThread(numId, null, true);
   if (!thread) return null;
 
+  const escapeHtml = (s) => String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
   const { ticket, messages } = thread;
-  const statusUpper = (ticket.status || 'open').toUpperCase().replace('_', ' ');
-  const priorityUpper = (ticket.priority || 'medium').toUpperCase();
+  const statusUpper = escapeHtml((ticket.status || 'open').toUpperCase().replace('_', ' '));
+  const priorityUpper = escapeHtml((ticket.priority || 'medium').toUpperCase());
+  const categoryUpper = escapeHtml((ticket.category || 'general').toUpperCase());
 
   const conversationHtml = messages.map((m) => {
     const isStaff = m.sender_type === 'staff' || m.sender_type === 'admin';
     const bg = isStaff ? '#1e1b4b' : '#18182f';
     const border = isStaff ? '#8b5cf6' : '#2a2a4a';
-    const title = isStaff ? '🛡️ Support Staff Reply' : `👤 ${m.sender_email}`;
-    const time = new Date(m.created_at).toLocaleString();
+    const title = isStaff ? '🛡️ Support Staff Reply' : `👤 ${escapeHtml(m.sender_email)}`;
+    const time = escapeHtml(new Date(m.created_at).toLocaleString());
 
     return `
       <div style="margin-bottom: 16px; background: ${bg}; border: 1px solid ${border}; border-radius: 8px; padding: 14px 18px;">
@@ -482,7 +490,7 @@ export async function getSupportTicketMessageById(id) {
           <strong>${title}</strong>
           <span>${time}</span>
         </div>
-        <div style="color: #f0f0f5; font-size: 14px; line-height: 1.5; white-space: pre-wrap;">${m.message_text}</div>
+        <div style="color: #f0f0f5; font-size: 14px; line-height: 1.5; white-space: pre-wrap;">${escapeHtml(m.message_text)}</div>
       </div>
     `;
   }).join('');
@@ -491,13 +499,13 @@ export async function getSupportTicketMessageById(id) {
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #f0f0f5;">
       <div style="background: #141424; border: 1px solid #2a2a4a; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
         <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 8px;">
-          <span style="background: #7c3aed; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;">${ticket.ticket_number}</span>
+          <span style="background: #7c3aed; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;">${escapeHtml(ticket.ticket_number)}</span>
           <span style="background: #252545; color: #e0e0f0; padding: 2px 8px; border-radius: 4px; font-size: 12px;">STATUS: ${statusUpper}</span>
           <span style="background: #252545; color: #e0e0f0; padding: 2px 8px; border-radius: 4px; font-size: 12px;">PRIORITY: ${priorityUpper}</span>
-          <span style="background: #252545; color: #e0e0f0; padding: 2px 8px; border-radius: 4px; font-size: 12px;">CATEGORY: ${(ticket.category || 'general').toUpperCase()}</span>
+          <span style="background: #252545; color: #e0e0f0; padding: 2px 8px; border-radius: 4px; font-size: 12px;">CATEGORY: ${categoryUpper}</span>
         </div>
         <div style="font-size: 13px; color: #9898b0;">
-          Requester: <strong style="color: #f0f0f5;">${ticket.creator_name || ticket.creator_email}</strong> (${ticket.creator_email})
+          Requester: <strong style="color: #f0f0f5;">${escapeHtml(ticket.creator_name || ticket.creator_email)}</strong> (${escapeHtml(ticket.creator_email)})
         </div>
       </div>
       <h4 style="color: #c4b5fd; margin-bottom: 12px;">Conversation History (${messages.length} message${messages.length === 1 ? '' : 's'})</h4>

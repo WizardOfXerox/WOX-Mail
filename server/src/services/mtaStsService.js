@@ -4,8 +4,11 @@
  */
 
 import pino from 'pino';
+import { isSafeUrl, safeFetch } from './linkPreviewService.js';
 
 const logger = pino({ name: 'mta-sts-validator' });
+const VALID_DOMAIN_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
+const MAX_POLICY_BYTES = 64 * 1024;
 
 /**
  * Fetches and parses an MTA-STS policy for a destination domain.
@@ -17,20 +20,30 @@ export async function checkMtaStsPolicy(domain) {
     return { mode: 'none' };
   }
 
-  const cleanDomain = domain.toLowerCase().replace(/^@/, '');
+  const cleanDomain = domain.trim().toLowerCase().replace(/^@/, '').replace(/\.$/, '');
+  if (!VALID_DOMAIN_RE.test(cleanDomain) || cleanDomain.length > 253) {
+    return { mode: 'none' };
+  }
+
   const policyUrl = `https://mta-sts.${cleanDomain}/.well-known/mta-sts.txt`;
 
   try {
+    const safety = await isSafeUrl(policyUrl);
+    if (!safety.safe) {
+      return { mode: 'none' };
+    }
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 4000);
 
-    const res = await fetch(policyUrl, {
+    // RFC 8461 §3.3 prohibits HTTP redirects when fetching MTA-STS policies (maxRedirects = 0)
+    const res = await safeFetch(policyUrl, {
       method: 'GET',
       headers: {
         'User-Agent': 'WoxMail-MTA-STS-Validator/1.0',
       },
       signal: controller.signal,
-    });
+    }, 0);
 
     clearTimeout(timeout);
 
@@ -38,7 +51,8 @@ export async function checkMtaStsPolicy(domain) {
       return { mode: 'none' };
     }
 
-    const text = await res.text();
+    const rawBuf = Buffer.from(await res.arrayBuffer());
+    const text = rawBuf.subarray(0, MAX_POLICY_BYTES).toString('utf8');
     const lines = text.split('\n');
     let mode = 'none';
     let maxAge = 0;
@@ -93,7 +107,7 @@ export async function validateOutboundEncryption(recipientEmail, targetMxHost) {
     const isMatched = policy.mx.some((pattern) => {
       if (pattern.startsWith('*.')) {
         const suffix = pattern.slice(2).toLowerCase();
-        return targetMxHost.toLowerCase().endsWith(suffix);
+        return targetMxHost.toLowerCase().endsWith('.' + suffix);
       }
       return targetMxHost.toLowerCase() === pattern.toLowerCase();
     });

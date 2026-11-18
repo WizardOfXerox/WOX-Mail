@@ -59,7 +59,7 @@ export const RATE_LIMITS = Object.freeze({
   }),
   API: Object.freeze({
     window: 60, // 1 minute
-    max: 100,
+    max: 300,
   }),
   TEMP_GENERATE: Object.freeze({
     window: 3600, // 1 hour

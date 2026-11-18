@@ -175,11 +175,12 @@
         const renderEl = document.getElementById('content-render');
 
         if (meta.contentType && meta.contentType.startsWith('image/')) {
-          renderEl.innerHTML = '<img src="' + previewUrl + '" alt="' + meta.filename + '" class="media-preview" draggable="false" />';
+          renderEl.innerHTML = '<img src="' + previewUrl + '" alt="' + escapeHtml(meta.filename || 'Attachment') + '" class="media-preview" draggable="false" />';
         } else if (meta.contentType && meta.contentType.includes('pdf')) {
           renderEl.innerHTML = '<iframe src="' + previewUrl + '#toolbar=0" class="doc-iframe"></iframe>';
         } else if (meta.contentType && (meta.contentType.includes('text') || meta.contentType.includes('json') || meta.contentType.includes('javascript'))) {
           const textRes = await fetch(previewUrl);
+          if (!textRes.ok) throw new Error('Unable to load text preview');
           const rawText = await textRes.text();
           renderEl.innerHTML = '<pre style="width: 100%; max-height: 65vh; overflow: auto; padding: 1.25rem; background: #0c0c16; border-radius: 8px; font-family: var(--font-mono); font-size: 0.8125rem; white-space: pre-wrap; word-break: break-all;">' + escapeHtml(rawText) + '</pre>';
         } else {
@@ -188,7 +189,7 @@
             <div style="text-align: center; padding: 2rem;">
               <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 1rem;"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
               <h3 style="font-size: 1.125rem; margin-bottom: 0.25rem;">${escapeHtml(meta.filename)}</h3>
-              <p class="text-secondary" style="font-size: 0.875rem; margin-bottom: 1.25rem;">${formatBytes(meta.fileSize)} • ${meta.contentType}</p>
+              <p class="text-secondary" style="font-size: 0.875rem; margin-bottom: 1.25rem;">${formatBytes(meta.fileSize)} • ${escapeHtml(meta.contentType || 'application/octet-stream')}</p>
             </div>
           `;
         }
@@ -243,8 +244,8 @@
       renderEl.innerHTML = `
         <div class="error-card">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 1rem;"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
-          <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 0.5rem;">${title}</h2>
-          <p class="text-secondary" style="font-size: 0.875rem; line-height: 1.5;">${desc}</p>
+          <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 0.5rem;">${escapeHtml(title)}</h2>
+          <p class="text-secondary" style="font-size: 0.875rem; line-height: 1.5;">${escapeHtml(desc)}</p>
         </div>
       `;
     }
@@ -254,7 +255,13 @@
     }
 
     function escapeHtml(str) {
-      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
     }
 
     function formatBytes(bytes) {

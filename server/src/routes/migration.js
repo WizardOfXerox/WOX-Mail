@@ -13,12 +13,13 @@ const router = Router();
  */
 async function getUserImapClient(userId) {
   const creds = await query(
-    'SELECT email, imap_password FROM users WHERE id = $1',
+    'SELECT email, imap_password, is_admin FROM users WHERE id = $1',
     [userId]
   );
   if (creds.rows.length === 0) throw new Error('User not found');
-  const { email, imap_password } = creds.rows[0];
-  const pass = imap_password || process.env.ADMIN_PASSWORD;
+  const { email, imap_password, is_admin } = creds.rows[0];
+  const pass = imap_password || (is_admin ? (process.env.ADMIN_PASSWORD || '').replace(/^['"]|['"]$/g, '') : null);
+  if (!pass) throw new Error('Mailbox credentials not configured for this account');
   return await imapService.createConnection(email, pass);
 }
 
@@ -109,9 +110,13 @@ router.get('/status', requireAuth, (req, res) => {
  * POST /api/mail/migration/cancel
  * Cancel ongoing migration.
  */
-router.post('/cancel', requireAuth, async (req, res) => {
-  const cancelled = await migrationService.cancelMigration(req.userId);
-  res.json({ success: true, cancelled });
+router.post('/cancel', requireAuth, async (req, res, next) => {
+  try {
+    const cancelled = await migrationService.cancelMigration(req.userId);
+    res.json({ success: true, cancelled });
+  } catch (err) {
+    next(err);
+  }
 });
 
 /**

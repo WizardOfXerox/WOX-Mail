@@ -118,6 +118,16 @@ export async function createSecureMessage({
     [row.id, ipHash, userAgent, JSON.stringify({ expirationHours, destroyAfterRead })]
   );
 
+  const escHtml = (s) =>
+    String(s ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  const safeSenderEmail = escHtml(senderEmail);
+  const safeSubject = escHtml(subject);
+
   // Dispatch notification email
   const notificationHtml = `
     <!DOCTYPE html>
@@ -141,10 +151,10 @@ export async function createSecureMessage({
           <h2 class="title">You Have a Secure Confidential Message</h2>
         </div>
         <p style="font-size: 15px; line-height: 1.6;">
-          <strong>${senderEmail}</strong> has sent you a password-protected confidential message via WoxMail Privacy Gateway.
+          <strong>${safeSenderEmail}</strong> has sent you a password-protected confidential message via WoxMail Privacy Gateway.
         </p>
         <div style="background: #141425; border: 1px solid #252548; border-radius: 10px; padding: 16px; margin: 16px 0;">
-          <div style="font-size: 13px; color: #9898b0; margin-bottom: 6px;">SUBJECT: <strong style="color: #f0f0f5;">${subject}</strong></div>
+          <div style="font-size: 13px; color: #9898b0; margin-bottom: 6px;">SUBJECT: <strong style="color: #f0f0f5;">${safeSubject}</strong></div>
           <div style="font-size: 13px; color: #9898b0; margin-bottom: 6px;">EXPIRES: <span style="color: #f59e0b;">${expiresAt.toUTCString()}</span></div>
           <div style="font-size: 13px; color: #9898b0;">SECURITY: <span class="badge">${destroyAfterRead ? '🔥 Destroy on first read' : '🔒 Password Protected'}</span></div>
         </div>
@@ -166,8 +176,8 @@ export async function createSecureMessage({
   // Dispatch notification email in background (non-blocking)
   (async () => {
     try {
-      const userRes = await query('SELECT imap_password FROM users WHERE email = $1', [senderEmail]);
-      const pass = userRes.rows[0]?.imap_password || (process.env.ADMIN_PASSWORD || '').replace(/^['"]|['"]$/g, '');
+      const userRes = await query('SELECT imap_password, is_admin FROM users WHERE email = $1', [senderEmail]);
+      const pass = userRes.rows[0]?.imap_password || (userRes.rows[0]?.is_admin ? (process.env.ADMIN_PASSWORD || '').replace(/^['"]|['"]$/g, '') : null);
       if (pass) {
         const transporter = createTransporter(senderEmail, pass);
         const sendResult = await sendEmail(transporter, {
@@ -224,10 +234,10 @@ export async function unlockSecureMessage(publicTokenOrId, passcode, { reqIp = '
   try {
     await client.query('BEGIN');
 
-    // Row-level lock to eliminate burn-on-read race conditions
+    // Row-level lock to eliminate burn-on-read race conditions (public_token ONLY — never allow sequential numeric id enumeration)
     const result = await client.query(
       `SELECT * FROM secure_messages
-       WHERE public_token = $1 OR id::text = $1
+       WHERE public_token = $1
        FOR UPDATE`,
       [String(publicTokenOrId)]
     );
@@ -339,10 +349,27 @@ export async function unlockSecureMessage(publicTokenOrId, passcode, { reqIp = '
 
     await client.query('COMMIT');
 
+    let safeContent = decryptedContent;
+    if (typeof decryptedContent === 'string' && decryptedContent.includes('<') && decryptedContent.includes('>')) {
+      try {
+        const { sanitizeEmail } = await import('./emailSanitizer.js');
+        const cleaned = sanitizeEmail(decryptedContent, { loadImages: false, blockRemoteImages: true });
+        safeContent = typeof cleaned === 'string' ? cleaned : (cleaned?.html ?? '');
+      } catch {
+        // Fail closed: HTML-escape content if sanitizer throws
+        safeContent = decryptedContent
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
+    }
+
     return {
       success: true,
       subject: msg.subject,
-      content: decryptedContent,
+      content: safeContent,
       senderEmail: msg.sender_email,
       recipientEmail: msg.recipient_email,
       openedAt,

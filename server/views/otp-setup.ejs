@@ -64,9 +64,18 @@
 </div>
 `, scripts: `
 <script>
+  function getCsrfToken() {
+    const m = document.cookie.match(/woxmail_csrf=([^;]+)/);
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+
   async function generateOTP() {
     try {
-      const res = await fetch('/api/auth/setup-otp', { method: 'POST', credentials: 'include' });
+      const res = await fetch('/api/auth/setup-otp', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'x-csrf-token': getCsrfToken() },
+      });
       const data = await res.json();
       if (!res.ok) return WoxToast.error(data.error);
       document.getElementById('qr-image').src = data.qrCode;
@@ -84,7 +93,10 @@
     try {
       const res = await fetch('/api/auth/confirm-otp', {
         method: 'POST', credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': getCsrfToken(),
+        },
         body: JSON.stringify({ code }),
       });
       const data = await res.json();
@@ -92,7 +104,13 @@
       document.getElementById('otp-step2').style.display = 'none';
       document.getElementById('otp-step3').style.display = 'block';
       const grid = document.getElementById('recovery-codes');
-      grid.innerHTML = data.recoveryCodes.map(c => '<div class="recovery-code">' + c + '</div>').join('');
+      grid.textContent = '';
+      (data.recoveryCodes || []).forEach(c => {
+        const div = document.createElement('div');
+        div.className = 'recovery-code';
+        div.textContent = String(c);
+        grid.appendChild(div);
+      });
       WoxToast.success('2FA enabled!');
     } catch { WoxToast.error('Network error'); }
   });

@@ -292,10 +292,10 @@ export default function AppSwitcher({ currentApp = 'mail', onSelectApp = null })
             left: `${popoverCoords.left}px`,
             width: '340px',
             maxWidth: 'calc(100vw - 32px)',
-            background: 'var(--color-surface, #13131f)',
-            border: '1px solid var(--color-border, rgba(124, 58, 237, 0.28))',
+            background: 'var(--color-bg-card)',
+            border: '1px solid var(--color-border)',
             borderRadius: '14px',
-            boxShadow: '0 16px 40px rgba(0, 0, 0, 0.75), 0 0 24px rgba(124, 58, 237, 0.25)',
+            boxShadow: '0 16px 40px rgba(0, 0, 0, 0.45), 0 0 24px var(--color-primary-glow)',
             padding: '1rem',
             zIndex: 999999,
             backdropFilter: 'blur(20px)',
@@ -412,7 +412,7 @@ export default function AppSwitcher({ currentApp = 'mail', onSelectApp = null })
                     style={{
                       fontSize: '0.75rem',
                       fontWeight: isActive ? 700 : 500,
-                      color: isActive ? '#fff' : 'var(--color-text-secondary, #cbd5e1)',
+                      color: isActive ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
                       lineHeight: 1.15,
                     }}
                   >

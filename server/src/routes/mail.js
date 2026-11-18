@@ -119,7 +119,7 @@ async function getIMAPConnection(user, accountId = null) {
         secure: extAccount.imap_secure !== false,
         auth: { user: extAccount.email, pass: extAccount.password },
         logger: false,
-        tls: { rejectUnauthorized: false }
+        tls: { rejectUnauthorized: process.env.ALLOW_SELF_SIGNED_TLS !== 'true' }
       });
       await client.connect();
       connectionCache.set(cacheKey, { client, lastUsed: Date.now() });
@@ -737,13 +737,19 @@ router.post('/unsubscribe/:uid', async (req, res, next) => {
     const isOneClick = Boolean(listUnsubPostHeader && String(listUnsubPostHeader).toLowerCase().includes('list-unsubscribe=one-click'));
 
     if (httpUrl && isOneClick) {
-      // RFC 8058 One-Click HTTP POST
+      // RFC 8058 One-Click HTTP POST (SSRF-hardened via isSafeUrl + safeFetch)
       try {
-        const unsubRes = await fetch(httpUrl, {
+        const safety = await linkPreviewService.isSafeUrl(httpUrl);
+        if (!safety.safe) {
+          return res.status(400).json({ error: 'Blocked: Unsubscribe URL points to a private or internal address.' });
+        }
+        const unsubRes = await linkPreviewService.safeFetch(httpUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: 'List-Unsubscribe=One-Click',
+          signal: AbortSignal.timeout(8000),
         });
+        await unsubRes.body?.cancel?.().catch(() => {});
         return res.json({
           success: true,
           method: 'one-click-post',
@@ -765,7 +771,10 @@ router.post('/unsubscribe/:uid', async (req, res, next) => {
         unsubSubject = searchParams.get('subject') || 'Unsubscribe';
       }
 
-      const pass = req.user.purelymail_password || process.env.ADMIN_PASSWORD;
+      const pass = req.user.imap_password || (req.user.is_admin ? (process.env.ADMIN_PASSWORD || '').replace(/^['"]|['"]$/g, '') : null);
+      if (!pass) {
+        return res.status(400).json({ error: 'Mailbox credentials not configured for sending unsubscribe email.' });
+      }
       const transporter = smtpService.createTransporter(req.user.email, pass);
       await smtpService.sendEmail(transporter, {
         from: req.user.email,
@@ -1187,20 +1196,28 @@ router.post('/send',
         logger.info({ to, actualTo, aliasAddress: reverseMapping.aliasAddress }, 'Outbound reverse alias routing applied');
       }
 
-      // Normalize attachments if sent as base64 data URLs
+      // Normalize attachments safely (drop path/href/raw to prevent local file read or SSRF)
       let normalizedAttachments = [];
       if (Array.isArray(attachments)) {
-        normalizedAttachments = attachments.map((a) => {
+        normalizedAttachments = attachments.reduce((acc, a) => {
+          if (!a || typeof a !== 'object') return acc;
           if (typeof a.content === 'string' && a.content.includes('base64,')) {
             const parts = a.content.split('base64,');
-            return {
+            acc.push({
               filename: a.filename || 'attachment',
               content: Buffer.from(parts[1], 'base64'),
               contentType: a.contentType || 'application/octet-stream',
-            };
+            });
+          } else if (Buffer.isBuffer(a.content) || typeof a.content === 'string') {
+            acc.push({
+              filename: a.filename || 'attachment',
+              content: a.content,
+              contentType: a.contentType || 'application/octet-stream',
+              ...(typeof a.cid === 'string' ? { cid: a.cid } : {}),
+            });
           }
-          return a;
-        });
+          return acc;
+        }, []);
       }
 
       // Check and inject Open Tracking / Read Receipt pixel & Link Click Tracking
@@ -1472,7 +1489,7 @@ router.post('/outbox/:id/retry', async (req, res, next) => {
       return res.status(500).json({ error: 'Mail sending credentials not configured.' });
     }
 
-    await outboxService.updateOutboxStatus(msg.outboxId, { status: 'sending' });
+    await outboxService.updateOutboxStatus(msg.outboxId, { status: 'sending' }, req.user.id);
 
     const transporter = smtpService.createTransporter(req.user.email, smtpPassword);
     const result = await smtpService.sendEmail(transporter, {
@@ -1486,7 +1503,7 @@ router.post('/outbox/:id/retry', async (req, res, next) => {
       attachments: msg.attachments,
     });
 
-    await outboxService.updateOutboxStatus(msg.outboxId, { status: 'sent', sentAt: new Date() });
+    await outboxService.updateOutboxStatus(msg.outboxId, { status: 'sent', sentAt: new Date() }, req.user.id);
 
     // Append copy to user's Sent folder
     try {
@@ -1511,8 +1528,8 @@ router.post('/outbox/:id/retry', async (req, res, next) => {
 
     res.json({ message: 'Email resent successfully', messageId: result.messageId });
   } catch (err) {
-    await outboxService.updateOutboxStatus(req.params.id, { status: 'failed', errorMessage: err.message });
-    res.status(500).json({ error: `Retry failed: ${err.message}` });
+    await outboxService.updateOutboxStatus(req.params.id, { status: 'failed', errorMessage: err.message }, req.user.id);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Retry failed' : `Retry failed: ${err.message}` });
   }
 });
 
@@ -1620,20 +1637,28 @@ router.post('/reply',
         req.query.accountId || req.headers['x-account-id']
       );
 
-      // Normalize attachments if sent as base64 data URLs
+      // Normalize attachments safely (drop path/href/raw to prevent local file read or SSRF)
       let normalizedAttachments = [];
       if (Array.isArray(attachments)) {
-        normalizedAttachments = attachments.map((a) => {
+        normalizedAttachments = attachments.reduce((acc, a) => {
+          if (!a || typeof a !== 'object') return acc;
           if (typeof a.content === 'string' && a.content.includes('base64,')) {
             const parts = a.content.split('base64,');
-            return {
+            acc.push({
               filename: a.filename || 'attachment',
               content: Buffer.from(parts[1], 'base64'),
               contentType: a.contentType || 'application/octet-stream',
-            };
+            });
+          } else if (Buffer.isBuffer(a.content) || typeof a.content === 'string') {
+            acc.push({
+              filename: a.filename || 'attachment',
+              content: a.content,
+              contentType: a.contentType || 'application/octet-stream',
+              ...(typeof a.cid === 'string' ? { cid: a.cid } : {}),
+            });
           }
-          return a;
-        });
+          return acc;
+        }, []);
       }
 
       // Determine reply sender (supports explicit from as alias or auto-detect from original message headers)
@@ -1775,20 +1800,27 @@ router.post('/forward',
         contentType: att.contentType,
       }));
 
-      // Normalize any newly attached files
+      // Normalize any newly attached files safely (drop path/href/raw)
       let extraAttachments = [];
       if (Array.isArray(newAttachments)) {
-        extraAttachments = newAttachments.map((a) => {
+        extraAttachments = newAttachments.reduce((acc, a) => {
+          if (!a || typeof a !== 'object') return acc;
           if (typeof a.content === 'string' && a.content.includes('base64,')) {
             const parts = a.content.split('base64,');
-            return {
+            acc.push({
               filename: a.filename || 'attachment',
               content: Buffer.from(parts[1], 'base64'),
               contentType: a.contentType || 'application/octet-stream',
-            };
+            });
+          } else if (Buffer.isBuffer(a.content) || typeof a.content === 'string') {
+            acc.push({
+              filename: a.filename || 'attachment',
+              content: a.content,
+              contentType: a.contentType || 'application/octet-stream',
+            });
           }
-          return a;
-        });
+          return acc;
+        }, []);
       }
 
       const allAttachments = [...originalAttachments, ...extraAttachments];
@@ -2390,36 +2422,27 @@ router.get('/search/global', async (req, res, next) => {
 router.get('/proxy-image', async (req, res, next) => {
   try {
     const { url } = req.query;
-    if (!url) return res.status(400).json({ error: 'url parameter required' });
+    if (!url || typeof url !== 'string') return res.status(400).json({ error: 'url parameter required' });
 
     // Only proxy http(s) URLs
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       return res.status(400).json({ error: 'Invalid URL' });
     }
 
-    const safety = await linkPreviewService.isSafeUrl(url);
-    if (!safety.safe) {
-      return res.status(400).json({ error: 'Blocked: Target URL points to local/private network address.' });
-    }
-
-    const response = await linkPreviewService.safeFetch(url, {
-      headers: { 'User-Agent': 'WoxMail-ImageProxy/1.0' },
-      signal: AbortSignal.timeout(10000),
-    });
-
-    if (!response.ok) return res.status(502).end();
-
-    const contentType = response.headers.get('content-type');
-    if (!contentType?.startsWith('image/')) {
-      return res.status(400).json({ error: 'Not an image' });
-    }
+    const { fetchImage } = await import('../services/imageProxy.js');
+    const { buffer, contentType } = await fetchImage(url);
 
     res.setHeader('Content-Type', contentType);
     res.setHeader('Cache-Control', 'public, max-age=86400');
-    const buffer = await response.arrayBuffer();
-    res.send(Buffer.from(buffer));
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+    res.send(buffer);
   } catch (err) {
-    next(err);
+    const msg = String(err?.message || '');
+    if (msg.includes('SSRF') || msg.includes('Unsupported') || msg.includes('Invalid')) {
+      return res.status(400).json({ error: 'Blocked or unsupported remote image' });
+    }
+    return res.status(502).end();
   }
 });
 
@@ -2707,9 +2730,22 @@ router.post('/labels/apply',
     try {
       const { messageUids, addLabelIds = [], removeLabelIds = [] } = req.body;
 
+      // Verify every labelId belongs to the authenticated user before applying
+      let ownedAddLabelIds = [];
+      if (Array.isArray(addLabelIds) && addLabelIds.length > 0) {
+        const numericIds = addLabelIds.map((id) => parseInt(id, 10)).filter((n) => Number.isInteger(n) && n > 0);
+        if (numericIds.length > 0) {
+          const ownedRes = await query(
+            'SELECT id FROM labels WHERE user_id = $1 AND id = ANY($2::int[])',
+            [req.user.id, numericIds]
+          );
+          ownedAddLabelIds = ownedRes.rows.map((r) => r.id);
+        }
+      }
+
       // Add labels
       for (const uid of messageUids) {
-        for (const labelId of addLabelIds) {
+        for (const labelId of ownedAddLabelIds) {
           await query(
             `INSERT INTO email_labels (user_id, message_uid, label_id)
              VALUES ($1, $2, $3)
@@ -2957,10 +2993,27 @@ router.post('/reverse-aliases/create',
   }),
   async (req, res, next) => {
     try {
+      const { aliasAddress, externalEmail } = req.body;
+      const cleanAlias = String(aliasAddress || '').trim().toLowerCase();
+      const cleanExternal = String(externalEmail || '').trim().toLowerCase();
+
+      // Verify sender owns the aliasAddress (either primary email or an active alias in email_aliases)
+      let ownsAlias = cleanAlias === String(req.user.email || '').toLowerCase();
+      if (!ownsAlias) {
+        const aliasRes = await query(
+          'SELECT 1 FROM email_aliases WHERE user_id = $1 AND LOWER(alias_email) = $2 AND is_active = TRUE LIMIT 1',
+          [req.user.id, cleanAlias]
+        );
+        ownsAlias = aliasRes.rows.length > 0;
+      }
+      if (!ownsAlias) {
+        return res.status(403).json({ error: 'You do not own the requested alias address' });
+      }
+
       const mapping = await reverseAliasService.getOrCreateReverseAlias(
         req.user.id,
-        aliasAddress,
-        externalEmail
+        cleanAlias,
+        cleanExternal
       );
       res.status(201).json({ mapping });
     } catch (err) {

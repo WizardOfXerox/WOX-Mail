@@ -45,8 +45,15 @@ router.post('/', async (req, res, next) => {
  */
 router.put('/:id', async (req, res, next) => {
   try {
+    const snippetId = parseInt(req.params.id, 10);
+    if (!Number.isInteger(snippetId) || snippetId <= 0) {
+      return res.status(400).json({ error: 'Invalid snippet ID' });
+    }
     const { shortcut, title, contentHtml } = req.body;
-    const snippet = await updateSnippet(req.params.id, req.user.id, { shortcut, title, contentHtml });
+    if (!shortcut?.trim() || !title?.trim() || !contentHtml?.trim()) {
+      return res.status(400).json({ error: 'shortcut, title, and contentHtml are required' });
+    }
+    const snippet = await updateSnippet(snippetId, req.user.id, { shortcut, title, contentHtml });
     if (!snippet) {
       return res.status(404).json({ error: 'Snippet not found' });
     }
@@ -61,7 +68,11 @@ router.put('/:id', async (req, res, next) => {
  */
 router.delete('/:id', async (req, res, next) => {
   try {
-    const deleted = await deleteSnippet(req.params.id, req.user.id);
+    const snippetId = parseInt(req.params.id, 10);
+    if (!Number.isInteger(snippetId) || snippetId <= 0) {
+      return res.status(400).json({ error: 'Invalid snippet ID' });
+    }
+    const deleted = await deleteSnippet(snippetId, req.user.id);
     if (!deleted) {
       return res.status(404).json({ error: 'Snippet not found' });
     }

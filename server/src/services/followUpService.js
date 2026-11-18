@@ -89,19 +89,24 @@ export async function checkDueFollowUps() {
 /**
  * Automatically resolve / cancel reminder when recipient replies
  */
-export async function resolveFollowUpOnReply({ senderEmail, inReplyTo = null, references = null }) {
+export async function resolveFollowUpOnReply({ senderEmail, userId = null, inReplyTo = null, references = null }) {
   if (!senderEmail) return 0;
 
   const normalizedEmail = senderEmail.trim().toLowerCase();
-  const res = await query(`
-    UPDATE email_followup_reminders
-    SET status = 'resolved_by_reply'
-    WHERE LOWER(recipient_email) = $1 AND status = 'pending'
-    RETURNING id, user_id, recipient_email, subject
-  `, [normalizedEmail]);
+  const sql = userId
+    ? `UPDATE email_followup_reminders
+       SET status = 'resolved_by_reply'
+       WHERE LOWER(recipient_email) = $1 AND user_id = $2 AND status = 'pending'
+       RETURNING id, user_id, recipient_email, subject`
+    : `UPDATE email_followup_reminders
+       SET status = 'resolved_by_reply'
+       WHERE LOWER(recipient_email) = $1 AND status = 'pending'
+       RETURNING id, user_id, recipient_email, subject`;
+  const params = userId ? [normalizedEmail, userId] : [normalizedEmail];
+  const res = await query(sql, params);
 
   if (res.rows.length > 0) {
-    logger.info({ resolved: res.rows.length, sender: normalizedEmail }, 'Auto-resolved follow-up reminders upon reply');
+    logger.info({ resolved: res.rows.length, sender: normalizedEmail, userId }, 'Auto-resolved follow-up reminders upon reply');
   }
 
   return res.rows.length;

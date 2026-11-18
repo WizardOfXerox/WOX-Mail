@@ -74,6 +74,15 @@ export function detectHomographRisk(domain) {
  * @returns {Promise<object>}
  */
 export async function auditTlsCertificate(hostname, port = 443) {
+  const parsedPort = Number(port) || 443;
+  if (!Number.isInteger(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
+    return { valid: false, error: 'Invalid TLS port' };
+  }
+  const safety = await isSafeUrl(`https://${hostname}:${parsedPort}`);
+  if (!safety.safe || !safety.resolvedIp) {
+    return { valid: false, error: 'Blocked: Host resolves to private or local network address' };
+  }
+
   return new Promise((resolve) => {
     const timeout = 4000;
     let timer;
@@ -81,8 +90,8 @@ export async function auditTlsCertificate(hostname, port = 443) {
     try {
       const socket = tls.connect(
         {
-          host: hostname,
-          port,
+          host: safety.resolvedIp,
+          port: parsedPort,
           servername: hostname,
           rejectUnauthorized: false,
         },
@@ -148,6 +157,22 @@ export async function captureHeadlessScreenshot(targetUrl) {
     const browser = await chromium.launch({ headless: true });
     try {
       const page = await browser.newPage({ viewport: { width: 1024, height: 768 } });
+      // SSRF Defense: intercept every navigation, redirect, and subresource request inside Playwright
+      await page.route('**/*', async (route) => {
+        try {
+          const reqUrl = route.request().url();
+          if (!/^https?:\/\//i.test(reqUrl)) {
+            return route.abort('blockedbyclient');
+          }
+          const reqSafety = await isSafeUrl(reqUrl);
+          if (!reqSafety.safe) {
+            return route.abort('blockedbyclient');
+          }
+          return route.continue();
+        } catch {
+          return route.abort('blockedbyclient');
+        }
+      });
       await page.goto(targetUrl, { timeout: 6000, waitUntil: 'domcontentloaded' });
       const buffer = await page.screenshot({ type: 'jpeg', quality: 70 });
       await browser.close();
@@ -197,20 +222,21 @@ export async function inspectLink(targetUrl, withScreenshot = false) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 4000);
 
-      const res = await fetch(currUrl, {
+      // Use DNS-pinned safeFetch with maxRedirects=0 so each hop is individually validated and recorded
+      const res = await safeFetch(currUrl, {
         method: 'GET',
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 WoxMailSandbox/1.0',
           'Accept': 'text/html,application/xhtml+xml',
         },
         signal: controller.signal,
-        redirect: 'manual',
-      });
+      }, 0);
 
       clearTimeout(timeout);
 
       // Follow HTTP redirects explicitly to record each intermediate hop
       if ([301, 302, 303, 307, 308].includes(res.status)) {
+        await res.body?.cancel?.().catch(() => {});
         const location = res.headers.get('location');
         if (location) {
           const nextUrl = new URL(location, currUrl).toString();
@@ -227,8 +253,9 @@ export async function inspectLink(targetUrl, withScreenshot = false) {
         }
       }
 
-      // Reached destination, parse metadata
-      const html = await res.text();
+      // Reached destination, read bounded HTML body (max 512 KB) to prevent OOM DoS
+      const htmlBuf = Buffer.from(await res.arrayBuffer());
+      const html = htmlBuf.subarray(0, 512 * 1024).toString('utf8');
       const dom = new JSDOM(html.slice(0, 150000));
       const titleEl = dom.window.document.querySelector('title');
       if (titleEl && titleEl.textContent) {
@@ -302,7 +329,8 @@ export async function renderSafeReader(targetUrl) {
       },
       signal: controller.signal,
     });
-    rawHtml = await res.text();
+    const buf = Buffer.from(await res.arrayBuffer());
+    rawHtml = buf.subarray(0, 512 * 1024).toString('utf8');
   } finally {
     clearTimeout(timeout);
   }
@@ -324,9 +352,21 @@ export async function renderSafeReader(targetUrl) {
     ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'target', 'rel'],
   });
 
+  // Enforce safe link target/rel and safe http(s) schemes on all rendered links
+  const safeDom = new JSDOM(sanitized);
+  safeDom.window.document.querySelectorAll('a').forEach((a) => {
+    const href = (a.getAttribute('href') || '').trim();
+    if (href && !/^https?:\/\//i.test(href) && !href.startsWith('#')) {
+      a.removeAttribute('href');
+    } else {
+      a.setAttribute('target', '_blank');
+      a.setAttribute('rel', 'noopener noreferrer');
+    }
+  });
+
   return {
     title,
-    contentHtml: sanitized,
+    contentHtml: safeDom.window.document.body.innerHTML,
     domain: parsed.hostname,
     cleanUrl,
   };

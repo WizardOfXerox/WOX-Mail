@@ -8,6 +8,16 @@ const logger = pino({ name: 'woxmail:drip-service' });
  * Create a new drip sequence.
  */
 export async function createSequence(userId, listId, { name, description = '' }) {
+  const listCheck = await query(
+    `SELECT id FROM mailing_lists WHERE id = $1 AND user_id = $2`,
+    [listId, userId]
+  );
+  if (listCheck.rows.length === 0) {
+    const err = new Error('Mailing list not found or access denied');
+    err.status = 403;
+    throw err;
+  }
+
   const result = await query(
     `INSERT INTO drip_sequences (user_id, list_id, name, description, is_active)
      VALUES ($1, $2, $3, $4, true)
@@ -226,7 +236,10 @@ export async function enrollSubscriberInDrips(subscriber) {
   }
 
   const seqs = await query(
-    `SELECT id FROM drip_sequences WHERE list_id = $1 AND is_active = true`,
+    `SELECT ds.id
+     FROM drip_sequences ds
+     JOIN mailing_lists ml ON ml.id = ds.list_id AND ml.user_id = ds.user_id
+     WHERE ds.list_id = $1 AND ds.is_active = true`,
     [subscriber.list_id]
   );
 
@@ -316,7 +329,18 @@ export async function processDueDripSteps(batchSize = 25) {
 
     try {
       const domain = process.env.DOMAIN_PERMANENT || 'wox.world';
-      const fromAddr = item.from_email || item.sender_user_email || (process.env.ADMIN_EMAIL || `newsletter@${domain}`);
+      const defaultFrom = item.sender_user_email || (process.env.ADMIN_EMAIL || `newsletter@${domain}`);
+      // Prevent spoofing another user's email in drip steps: only allow sender's own address or owned alias
+      let fromAddr = defaultFrom;
+      if (item.from_email && item.from_email.toLowerCase() !== String(defaultFrom).toLowerCase()) {
+        const aliasOwn = await query(
+          'SELECT 1 FROM email_aliases WHERE user_id = (SELECT user_id FROM drip_sequences WHERE id = $1) AND LOWER(alias_email) = LOWER($2) AND is_active = TRUE LIMIT 1',
+          [item.sequence_id, item.from_email]
+        );
+        if (aliasOwn.rows.length > 0) {
+          fromAddr = item.from_email;
+        }
+      }
       const fromHeader = item.from_name ? `"${item.from_name}" <${fromAddr}>` : fromAddr;
       const htmlBody = substituteMergeTags(item.html_content, item);
       const plainBody = substituteMergeTags(item.plain_content || '', item);

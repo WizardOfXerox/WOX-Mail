@@ -112,7 +112,7 @@ export default function LinkPreviewModal({ url, preview, onClose }) {
             </div>
             <div style={{ overflow: 'hidden' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <strong style={{ fontSize: '0.9375rem', color: '#fff' }}>{preview?.siteName || hostname}</strong>
+                <strong style={{ fontSize: '0.9375rem', color: 'var(--color-text-primary)' }}>{preview?.siteName || hostname}</strong>
                 {isHttps ? (
                   <span className="admin-badge admin-badge-green" style={{ fontSize: '0.65rem' }}>
                     HTTPS SECURE
@@ -167,7 +167,7 @@ export default function LinkPreviewModal({ url, preview, onClose }) {
         {/* Modal Body */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '1.75rem' }}>
           {isBlockedDomain && (
-            <div style={{ marginBottom: '1rem', padding: '0.85rem 1rem', borderRadius: 'var(--radius-md)', background: 'rgba(239, 68, 68, 0.14)', border: '1px solid rgba(239, 68, 68, 0.35)', color: '#fca5a5', fontSize: '0.82rem' }}>
+            <div style={{ marginBottom: '1rem', padding: '0.85rem 1rem', borderRadius: 'var(--radius-md)', background: 'rgba(239, 68, 68, 0.14)', border: '1px solid rgba(239, 68, 68, 0.35)', color: 'var(--color-error)', fontSize: '0.82rem' }}>
               <strong>Destination Blocked:</strong> <code>{normalizedHost}</code> is on your blocked domains list. External navigation is disabled.
             </div>
           )}
@@ -214,7 +214,7 @@ export default function LinkPreviewModal({ url, preview, onClose }) {
                 )}
 
                 <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#fff', fontWeight: 700, lineHeight: 1.3 }}>
+                  <h3 style={{ margin: 0, fontSize: '1.25rem', color: 'var(--color-text-primary)', fontWeight: 700, lineHeight: 1.3 }}>
                     {preview?.title || hostname}
                   </h3>
                   <p style={{ margin: 0, color: 'var(--color-text-secondary)', fontSize: '0.875rem', lineHeight: 1.6 }}>
@@ -243,7 +243,7 @@ export default function LinkPreviewModal({ url, preview, onClose }) {
               >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
                 <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
-                  <strong style={{ color: '#fbbf24' }}>External Domain Protection:</strong> You are about to visit an external website outside of WoxMail. Never enter your WoxMail credentials or OTP keys on untrusted third-party sites.
+                  <strong style={{ color: 'var(--color-warning)' }}>External Domain Protection:</strong> You are about to visit an external website outside of WoxMail. Never enter your WoxMail credentials or OTP keys on untrusted third-party sites.
                 </div>
               </div>
             </div>
@@ -315,13 +315,13 @@ export default function LinkPreviewModal({ url, preview, onClose }) {
               Cancel
             </button>
             <a
-              href={isBlockedDomain ? undefined : url}
+              href={!isBlockedDomain && /^https?:\/\//i.test(url || '') ? url : undefined}
               target="_blank"
               rel="noopener noreferrer nofollow"
               onClick={(e) => {
-                if (isBlockedDomain) {
+                if (isBlockedDomain || !/^https?:\/\//i.test(url || '')) {
                   e.preventDefault();
-                  if (window.WoxToast) window.WoxToast.error(`Blocked by privacy policy: ${normalizedHost}`);
+                  if (window.WoxToast) window.WoxToast.error(isBlockedDomain ? `Blocked by privacy policy: ${normalizedHost}` : 'Unsafe URL protocol blocked');
                 }
               }}
               className="btn btn-primary btn-sm"

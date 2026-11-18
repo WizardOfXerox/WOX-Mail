@@ -22,7 +22,10 @@ router.use(requireAuth);
 router.get('/pending', async (req, res, next) => {
   try {
     const user = req.user;
-    const userPass = user.purelymail_password || process.env.ADMIN_PASSWORD;
+    const userPass = user.imap_password || (user.is_admin ? process.env.ADMIN_PASSWORD : null);
+    if (!userPass) {
+      return res.json({ pending: [], total: 0 });
+    }
 
     let client;
     let messages = [];
@@ -75,7 +78,10 @@ router.get('/pending', async (req, res, next) => {
 router.get('/pending/count', async (req, res, next) => {
   try {
     const user = req.user;
-    const userPass = user.purelymail_password || process.env.ADMIN_PASSWORD;
+    const userPass = user.imap_password || (user.is_admin ? process.env.ADMIN_PASSWORD : null);
+    if (!userPass) {
+      return res.json({ count: 0 });
+    }
 
     let client;
     let messages = [];
@@ -147,10 +153,17 @@ router.get('/rules', async (req, res, next) => {
  */
 router.put('/rules/:id', async (req, res, next) => {
   try {
-    const { id } = req.params;
+    const ruleId = parseInt(req.params.id, 10);
+    if (!Number.isInteger(ruleId) || ruleId <= 0) {
+      return res.status(400).json({ error: 'Invalid rule ID' });
+    }
     const { destination, matchType } = req.body;
+    const validDestinations = ['inbox', 'feed', 'paper_trail', 'blocked'];
+    if (destination && !validDestinations.includes(destination)) {
+      return res.status(400).json({ error: `Invalid destination. Must be one of: ${validDestinations.join(', ')}` });
+    }
 
-    const current = await query('SELECT * FROM screener_rules WHERE id = $1 AND user_id = $2', [id, req.userId]);
+    const current = await query('SELECT * FROM screener_rules WHERE id = $1 AND user_id = $2', [ruleId, req.userId]);
     if (current.rows.length === 0) {
       return res.status(404).json({ error: 'Rule not found' });
     }
@@ -174,8 +187,11 @@ router.put('/rules/:id', async (req, res, next) => {
  */
 router.delete('/rules/:id', async (req, res, next) => {
   try {
-    const { id } = req.params;
-    const deleted = await deleteScreenerRule(req.userId, parseInt(id, 10));
+    const ruleId = parseInt(req.params.id, 10);
+    if (!Number.isInteger(ruleId) || ruleId <= 0) {
+      return res.status(400).json({ error: 'Invalid rule ID' });
+    }
+    const deleted = await deleteScreenerRule(req.userId, ruleId);
     if (!deleted) {
       return res.status(404).json({ error: 'Rule not found' });
     }

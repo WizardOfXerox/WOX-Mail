@@ -1,7 +1,8 @@
 import { Router } from 'express';
-import jwt from 'jsonwebtoken';
 import { query } from '../config/database.js';
 import { JWT_COOKIE_NAME } from '../config/constants.js';
+import { verifyActiveJwt } from '../middleware/auth.js';
+import { tempGenerateLimiter } from '../middleware/rateLimit.js';
 
 const router = Router();
 
@@ -13,17 +14,18 @@ const isHttpsReq = (req) => !!(req.secure || req.headers['x-forwarded-proto'] ==
  */
 async function renderPage(req, res, view, options = {}) {
   let user = null;
-  const token = req.cookies?.[JWT_COOKIE_NAME] || req.headers.authorization?.replace('Bearer ', '');
+  const token = req.cookies?.[JWT_COOKIE_NAME] || req.headers.authorization?.replace('Bearer ', '').trim();
   if (token) {
-    try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      if (decoded && decoded.userId && decoded.type !== 'device_switch') {
-        const userRes = await query('SELECT id, email, username, display_name, is_admin FROM users WHERE id = $1', [decoded.userId]);
-        if (userRes.rows.length > 0) {
-          user = userRes.rows[0];
-        }
-      }
-    } catch {}
+    const active = await verifyActiveJwt(token);
+    if (active?.user && active.decoded?.type !== 'device_switch') {
+      user = {
+        id: active.user.id,
+        email: active.user.email,
+        username: active.user.username,
+        display_name: active.user.display_name,
+        is_admin: active.user.is_admin,
+      };
+    }
   }
 
   res.render(view, {
@@ -156,7 +158,7 @@ router.get('/tempmail/nojs', async (req, res) => {
   }
 });
 
-router.post('/tempmail/nojs/generate', async (req, res) => {
+router.post('/tempmail/nojs/generate', tempGenerateLimiter, async (req, res) => {
   try {
     const { TEMP_COOKIE_NAME } = await import('../config/constants.js');
     const { claimAddress } = await import('../services/pool.js');
@@ -175,7 +177,7 @@ router.post('/tempmail/nojs/generate', async (req, res) => {
   }
 });
 
-router.post('/tempmail/nojs/custom', async (req, res) => {
+router.post('/tempmail/nojs/custom', tempGenerateLimiter, async (req, res) => {
   try {
     const { TEMP_COOKIE_NAME } = await import('../config/constants.js');
     const { claimAddress } = await import('../services/pool.js');
@@ -288,14 +290,12 @@ router.get(['/settings', '/settings/:section'], async (req, res) => {
 
 router.get(['/admin', '/admin/:tab'], async (req, res) => {
   try {
-    const { JWT_COOKIE_NAME } = await import('../config/constants.js');
-    const jwt = (await import('jsonwebtoken')).default;
-    const token = req.cookies?.[JWT_COOKIE_NAME] || req.headers.authorization?.replace('Bearer ', '');
+    const token = req.cookies?.[JWT_COOKIE_NAME] || req.headers.authorization?.replace('Bearer ', '').trim();
     if (!token) return res.redirect(`/login?redirect=${encodeURIComponent(req.originalUrl || '/admin')}`);
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const userRes = await query('SELECT is_admin FROM users WHERE id = $1', [decoded.userId]);
-    if (!userRes.rows[0]?.is_admin) {
+    const active = await verifyActiveJwt(token);
+    if (!active?.user) return res.redirect(`/login?redirect=${encodeURIComponent(req.originalUrl || '/admin')}`);
+    if (!active.user.is_admin) {
       return res.redirect('/dashboard');
     }
 
@@ -343,14 +343,12 @@ router.get('/futureme/verify/:token', async (req, res) => {
 
 router.get('/terminal', async (req, res) => {
   try {
-    const { JWT_COOKIE_NAME } = await import('../config/constants.js');
-    const jwt = (await import('jsonwebtoken')).default;
-    const token = req.cookies?.[JWT_COOKIE_NAME] || req.headers.authorization?.replace('Bearer ', '');
+    const token = req.cookies?.[JWT_COOKIE_NAME] || req.headers.authorization?.replace('Bearer ', '').trim();
     if (!token) return res.redirect('/login?redirect=/admin%23terminal');
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const userRes = await query('SELECT is_admin FROM users WHERE id = $1', [decoded.userId]);
-    if (!userRes.rows[0]?.is_admin) {
+    const active = await verifyActiveJwt(token);
+    if (!active?.user) return res.redirect('/login?redirect=/admin%23terminal');
+    if (!active.user.is_admin) {
       return res.redirect('/dashboard');
     }
 

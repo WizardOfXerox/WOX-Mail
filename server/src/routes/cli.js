@@ -1,7 +1,9 @@
 import { Router } from 'express';
-import jwt from 'jsonwebtoken';
-import { query } from '../config/database.js';
-import { JWT_COOKIE_NAME } from '../config/constants.js';
+import { query, pool } from '../config/database.js';
+import { JWT_COOKIE_NAME, TEMP_COOKIE_NAME } from '../config/constants.js';
+import { verifyActiveJwt } from '../middleware/auth.js';
+import { rateLimit, tempGenerateLimiter } from '../middleware/rateLimit.js';
+import { timingSafeEqual } from '../utils/crypto.js';
 import { claimAddress, getPoolStats, replenishPool } from '../services/pool.js';
 import { createConnection, fetchMessages, fetchMessage } from '../services/imap.js';
 import { createTransporter, sendEmail } from '../services/smtp.js';
@@ -14,27 +16,48 @@ import { listCampaigns } from '../services/campaignService.js';
 import { setScreenerDecision, listScreenerRules } from '../services/screenerService.js';
 
 const router = Router();
+const cliExecLimiter = rateLimit({ window: 60, max: 60, prefix: 'rl:cliexec' });
+
+const REDACTED_SQL_COLUMNS = new Set([
+  'password_hash',
+  'imap_password',
+  'otp_secret',
+  'recovery_codes',
+  'credentials_encrypted',
+  'encrypted_password',
+  'api_key_hash',
+  'session_token',
+]);
+
+function getMailPassForUser(user) {
+  if (!user) return null;
+  if (user.imap_password) return user.imap_password;
+  if (user.is_admin && process.env.ADMIN_PASSWORD) {
+    return process.env.ADMIN_PASSWORD.replace(/^['"]|['"]$/g, '');
+  }
+  return null;
+}
 
 /**
- * Helper to resolve user from Bearer or Cookie (if present)
+ * Helper to resolve active, non-revoked, non-suspended user from Bearer or Cookie (if present)
  */
 async function resolveUser(req) {
-  const token = req.cookies?.[JWT_COOKIE_NAME] || req.headers.authorization?.replace('Bearer ', '');
+  const token = req.cookies?.[JWT_COOKIE_NAME] || req.headers.authorization?.replace('Bearer ', '').trim();
   if (!token) return null;
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const res = await query('SELECT * FROM users WHERE id = $1', [decoded.userId]);
-    return res.rows[0] || null;
-  } catch {
-    return null;
-  }
+  const active = await verifyActiveJwt(token);
+  if (!active?.user) return null;
+  const full = await query(
+    'SELECT id, email, username, display_name, is_admin, is_suspended, otp_enabled, created_at, imap_password FROM users WHERE id = $1 AND is_suspended = FALSE',
+    [active.user.id]
+  );
+  return full.rows[0] || null;
 }
 
 /**
  * POST /api/cli/exec
  * Interactive Terminal Command Executor (30+ Power & Admin Commands)
  */
-router.post('/exec', async (req, res) => {
+router.post('/exec', cliExecLimiter, async (req, res) => {
   const rawInput = (req.body?.command || '').trim();
   const user = await resolveUser(req);
 
@@ -117,7 +140,12 @@ router.post('/exec', async (req, res) => {
         const subCmd = args[0]?.toLowerCase();
         if (subCmd === 'list') {
           const folder = args[1] || 'INBOX';
-          const pass = user.purelymail_password || process.env.ADMIN_PASSWORD;
+          const pass = getMailPassForUser(user);
+          if (!pass) {
+            output = 'Error: Mailbox credentials not configured for this account.';
+            error = true;
+            break;
+          }
           let client;
           let result;
           try {
@@ -149,7 +177,12 @@ router.post('/exec', async (req, res) => {
             error = true;
             break;
           }
-          const pass = user.purelymail_password || process.env.ADMIN_PASSWORD;
+          const pass = getMailPassForUser(user);
+          if (!pass) {
+            output = 'Error: Mailbox credentials not configured for this account.';
+            error = true;
+            break;
+          }
           let client;
           let msg;
           try {
@@ -185,7 +218,12 @@ router.post('/exec', async (req, res) => {
             error = true;
             break;
           }
-          const pass = user.purelymail_password || process.env.ADMIN_PASSWORD;
+          const pass = getMailPassForUser(user);
+          if (!pass) {
+            output = 'Error: Mailbox credentials not configured for this account.';
+            error = true;
+            break;
+          }
           const transporter = createTransporter(user.email, pass);
           await sendEmail(transporter, { from: user.email, to, subject: sub, text: body });
           output = `✓ Email dispatched successfully to ${to} (Subject: "${sub}")`;
@@ -241,9 +279,32 @@ router.post('/exec', async (req, res) => {
             error = true;
             break;
           }
-          const resDb = await query("SELECT imap_password FROM temp_addresses WHERE address = $1 AND status = 'active'", [addr]);
+          const resDb = await query(
+            "SELECT imap_password, tier, session_token FROM temp_addresses WHERE address = $1 AND status = 'active' AND expires_at > NOW()",
+            [addr]
+          );
           if (resDb.rows.length === 0) {
             output = `Address ${addr} not found or expired.`;
+          } else if (resDb.rows[0].tier === 'personal') {
+            const tempToken = req.cookies?.[TEMP_COOKIE_NAME] || req.headers['x-temp-token'] || '';
+            if (!resDb.rows[0].session_token || !timingSafeEqual(String(tempToken), String(resDb.rows[0].session_token))) {
+              output = `Error: ${addr} is a password-protected personal inbox. Authenticate first.`;
+              error = true;
+              break;
+            }
+            let client;
+            let r;
+            try {
+              client = await createConnection(addr, resDb.rows[0].imap_password);
+              r = await fetchMessages(client, 'INBOX', { page: 1, limit: 10 });
+            } finally {
+              if (client) await client.logout().catch(() => {});
+            }
+            if (!r.messages || r.messages.length === 0) {
+              output = `No messages currently in inbox for ${addr}.`;
+            } else {
+              output = r.messages.map((m) => `[UID ${m.uid}] ${m.from?.address || 'Unknown'}: "${m.subject || '(no sub)'}" (${new Date(m.date).toLocaleTimeString()})`).join('\n');
+            }
           } else {
             let client;
             let r;
@@ -396,14 +457,32 @@ router.post('/exec', async (req, res) => {
           error = true;
           break;
         }
-        const sqlQuery = args.join(' ');
-        if (!sqlQuery.toLowerCase().startsWith('select')) {
-          output = 'Safety Error: Only read-only SELECT queries are permitted via terminal interface.';
+        const rawSql = args.join(' ').trim().replace(/;+\s*$/, '');
+        if (!rawSql.toLowerCase().startsWith('select') || /[;]|--|\/\*/.test(rawSql)) {
+          output = 'Safety Error: Only single-statement read-only SELECT queries (no semicolons or comments) are permitted via terminal interface.';
           error = true;
           break;
         }
-        const sqlRes = await query(sqlQuery);
-        output = JSON.stringify(sqlRes.rows, null, 2);
+        {
+          const client = await pool.connect();
+          try {
+            await client.query('BEGIN TRANSACTION READ ONLY');
+            await client.query("SET LOCAL statement_timeout = '3000ms'");
+            const sqlRes = await client.query(rawSql);
+            await client.query('ROLLBACK');
+            const sanitizedRows = (sqlRes.rows || []).slice(0, 100).map((row) => {
+              const clean = {};
+              for (const [k, v] of Object.entries(row)) {
+                clean[k] = REDACTED_SQL_COLUMNS.has(k.toLowerCase()) ? '[REDACTED]' : v;
+              }
+              return clean;
+            });
+            output = JSON.stringify(sanitizedRows, null, 2);
+          } finally {
+            await client.query('ROLLBACK').catch(() => {});
+            client.release();
+          }
+        }
         break;
 
       case 'alias':
@@ -529,14 +608,15 @@ router.post('/exec', async (req, res) => {
  * GET /api/cli/temp
  * Plaintext cURL endpoint returning an instant disposable email
  */
-router.get('/temp', async (req, res) => {
+router.get('/temp', tempGenerateLimiter, async (req, res) => {
   try {
-    const hours = parseInt(req.query.hours, 10) || 24;
+    const hours = Math.min(72, Math.max(1, parseInt(req.query.hours, 10) || 24));
     const claimed = await claimAddress({ expiryHours: hours, tier: 'public' });
     const expDate = new Date(claimed.expires_at || Date.now() + hours * 3600000);
     const baseUrl = process.env.APP_URL || 'http://127.0.0.1:3001';
 
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     res.send(
       [
         'WOXMAIL DISPOSABLE INBOX',
@@ -549,19 +629,23 @@ router.get('/temp', async (req, res) => {
       ].join('\n') + '\n'
     );
   } catch (err) {
-    res.status(500).send(`Error creating temp mailbox: ${err.message}\n`);
+    res.status(500).send(
+      process.env.NODE_ENV === 'production'
+        ? 'Error creating temp mailbox.\n'
+        : `Error creating temp mailbox: ${err.message}\n`
+    );
   }
 });
 
 /**
  * GET /api/cli/temp/:address
- * Plaintext cURL inbox viewer
+ * Plaintext cURL inbox viewer (restricted to public temp mailboxes or authenticated personal sessions)
  */
 router.get('/temp/:address', async (req, res) => {
   try {
     const { address } = req.params;
     const result = await query(
-      "SELECT imap_password FROM temp_addresses WHERE address = $1 AND status = 'active' AND expires_at > NOW()",
+      "SELECT imap_password, tier, session_token FROM temp_addresses WHERE address = $1 AND status = 'active' AND expires_at > NOW()",
       [address]
     );
 
@@ -569,16 +653,25 @@ router.get('/temp/:address', async (req, res) => {
       return res.status(404).send(`Address "${address}" not found or expired.\n`);
     }
 
+    const record = result.rows[0];
+    if (record.tier === 'personal') {
+      const tempToken = req.cookies?.[TEMP_COOKIE_NAME] || req.headers['x-temp-token'] || '';
+      if (!record.session_token || !timingSafeEqual(String(tempToken), String(record.session_token))) {
+        return res.status(401).send('Authentication required for personal temporary mailbox.\n');
+      }
+    }
+
     let client;
     let data;
     try {
-      client = await createConnection(address, result.rows[0].imap_password);
+      client = await createConnection(address, record.imap_password);
       data = await fetchMessages(client, 'INBOX', { page: 1, limit: 15 });
     } finally {
       if (client) await client.logout().catch(() => {});
     }
 
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     if (!data.messages || data.messages.length === 0) {
       return res.send(`Inbox for ${address} is empty. (0 messages)\n`);
     }
@@ -600,7 +693,11 @@ router.get('/temp/:address', async (req, res) => {
     lines.push('========================================================================');
     res.send(lines.join('\n') + '\n');
   } catch (err) {
-    res.status(500).send(`Error reading inbox: ${err.message}\n`);
+    res.status(500).send(
+      process.env.NODE_ENV === 'production'
+        ? 'Error reading inbox.\n'
+        : `Error reading inbox: ${err.message}\n`
+    );
   }
 });
 

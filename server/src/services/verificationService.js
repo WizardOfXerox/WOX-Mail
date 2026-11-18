@@ -8,7 +8,7 @@ import crypto from 'crypto';
 import { query } from '../config/database.js';
 import { get, setex, del } from '../config/redis.js';
 import { createTransporter } from './smtp.js';
-import { generateUrlSafeToken } from '../utils/crypto.js';
+import { generateUrlSafeToken, timingSafeEqual } from '../utils/crypto.js';
 import pino from 'pino';
 
 const logger = pino({ name: 'woxmail:verification-service' });
@@ -209,16 +209,26 @@ async function executePostVerification(session, method = 'code_entry') {
   // Clean up code map
   await del(`vcode:${targetEmail}:${session.code}`);
 
-  // Broadcast WebSocket notification to connected browser tabs
+  // Emit WebSocket notification strictly scoped to the owning user room (never broadcast stepUpAuthToken globally)
   if (ioInstance) {
-    ioInstance.emit('verification_success', {
-      sessionToken,
-      type,
-      targetEmail,
-      method,
-      message,
-      stepUpAuthToken: session.stepUpAuthToken || null,
-    });
+    if (session.userId) {
+      ioInstance.to(`user:${session.userId}`).emit('verification_success', {
+        sessionToken,
+        type,
+        targetEmail,
+        method,
+        message,
+        stepUpAuthToken: session.stepUpAuthToken || null,
+      });
+    } else {
+      // Public newsletter_optin flow has no authenticated user room — never include stepUpAuthToken or PII
+      ioInstance.emit('verification_success', {
+        sessionToken,
+        type,
+        method,
+        message,
+      });
+    }
   }
 
   logger.info({ sessionToken, type, targetEmail, method }, 'Verification completed successfully');
@@ -248,7 +258,15 @@ export async function verifyCode(sessionToken, inputCode) {
   }
 
   const cleanInput = String(inputCode).trim();
-  if (cleanInput !== String(session.code).trim()) {
+  const expectedCode = String(session.code || '').trim();
+  if (!timingSafeEqual(cleanInput, expectedCode)) {
+    session.attempts = (Number(session.attempts) || 0) + 1;
+    if (session.attempts >= 5) {
+      await del(`vsession:${sessionToken}`);
+      await del(`vcode:${session.targetEmail}:${session.code}`);
+      throw new Error('Too many incorrect verification attempts. Please request a new code.');
+    }
+    await setex(`vsession:${sessionToken}`, 300, JSON.stringify(session));
     throw new Error('Incorrect 6-digit verification code. Please check and try again.');
   }
 
@@ -298,7 +316,7 @@ export async function processInboundReply({ fromEmail, toEmail = '', subject = '
         return { processed: true, sessionToken, message: 'Already verified' };
       }
       // If the email is from the target recipient OR contains the valid code
-      if (session.targetEmail === cleanFrom || (detectedCode && detectedCode === session.code)) {
+      if (session.targetEmail === cleanFrom || (detectedCode && timingSafeEqual(detectedCode, String(session.code || '')))) {
         await executePostVerification(session, 'inbound_reply');
         return { processed: true, sessionToken, message: 'Inbound reply verified via session' };
       }

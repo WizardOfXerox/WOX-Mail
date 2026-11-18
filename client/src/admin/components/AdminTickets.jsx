@@ -17,6 +17,24 @@ export default function AdminTickets() {
   const [replyText, setReplyText] = useState('');
   const [isInternalNote, setIsInternalNote] = useState(false);
   const [sending, setSending] = useState(false);
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(max-width: 768px)');
+    const onChange = () => setIsMobile(mq.matches);
+    onChange();
+    if (mq.addEventListener) mq.addEventListener('change', onChange);
+    else mq.addListener(onChange);
+    window.addEventListener('resize', onChange);
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener('change', onChange);
+      else mq.removeListener(onChange);
+      window.removeEventListener('resize', onChange);
+    };
+  }, []);
 
   const fetchStats = async () => {
     try {
@@ -147,9 +165,13 @@ export default function AdminTickets() {
       </div>
 
       {/* 2-Pane Board: Ticket List (Left) | Thread & Response (Right) */}
-      <div style={{ display: 'grid', gridTemplateColumns: selectedTicketId ? '1fr 1.2fr' : '1fr', gap: '1rem', minHeight: 450 }}>
-        {/* Ticket List */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+      <div
+        className={`admin-tickets-board ${selectedTicketId && !isMobile ? 'has-selection' : ''}`}
+        style={{ minWidth: 0, maxWidth: '100%' }}
+      >
+        {/* Ticket List (Hidden on mobile while viewing a selected thread) */}
+        {(!isMobile || !selectedTicketId) && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', minWidth: 0 }}>
           {loading ? (
             <div className="text-secondary" style={{ textAlign: 'center', padding: '2rem' }}>Loading tickets...</div>
           ) : tickets.length === 0 ? (
@@ -193,13 +215,24 @@ export default function AdminTickets() {
             ))
           )}
         </div>
+        )}
 
         {/* Selected Thread Pane */}
         {selectedTicketId && threadData && (
-          <div className="card" style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '0.75rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid var(--color-border)', paddingBottom: '0.5rem' }}>
-              <div>
-                <h4 style={{ margin: 0 }}>{threadData.ticket.subject}</h4>
+          <div className="card" style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '0.75rem', minWidth: 0, maxWidth: '100%', overflowWrap: 'anywhere' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem', borderBottom: '1px solid var(--color-border)', paddingBottom: '0.5rem' }}>
+              <div style={{ minWidth: 0, flex: '1 1 200px' }}>
+                {isMobile && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-xs"
+                    onClick={() => setSelectedTicketId(null)}
+                    style={{ marginBottom: '0.5rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                  >
+                    ← Back to Tickets
+                  </button>
+                )}
+                <h4 style={{ margin: 0, wordBreak: 'break-word' }}>{threadData.ticket.subject}</h4>
                 <div className="text-secondary" style={{ fontSize: '0.75rem', marginTop: '0.2rem' }}>
                   From: <strong>{threadData.ticket.creator_email}</strong> ({threadData.ticket.creator_name || 'Member'})
                 </div>
@@ -285,10 +318,11 @@ export default function AdminTickets() {
                 </label>
               </div>
 
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '0.5rem' }}>
                 <textarea
                   className="input"
                   rows={3}
+                  style={{ width: '100%', minWidth: 0 }}
                   placeholder={isInternalNote ? "Write an internal note for other staff members..." : "Write a customer reply (will be emailed to the user)..."}
                   value={replyText}
                   onChange={(e) => setReplyText(e.target.value)}
@@ -298,7 +332,7 @@ export default function AdminTickets() {
                   type="submit"
                   className={`btn btn-sm ${isInternalNote ? 'btn-secondary' : 'btn-primary'}`}
                   disabled={sending}
-                  style={{ alignSelf: 'flex-end' }}
+                  style={{ alignSelf: isMobile ? 'stretch' : 'flex-end', justifyContent: 'center' }}
                 >
                   {sending ? 'Posting...' : isInternalNote ? 'Add Note' : 'Send Reply'}
                 </button>

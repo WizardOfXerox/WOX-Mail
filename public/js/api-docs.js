@@ -11,7 +11,7 @@ async function loadApiReference() {
     renderPortal(spec);
   } catch (e) {
     if (contentArea) {
-      contentArea.innerHTML = '<div style="color:var(--color-error); padding: 2rem;">Failed to load API specification: ' + e.message + '</div>';
+      contentArea.innerHTML = '<div style="color:var(--color-error); padding: 2rem;">Failed to load API specification: ' + escapeHtml(e.message) + '</div>';
     }
   }
 }

@@ -389,11 +389,16 @@
   window.deleteMailbox = async function () {
     if (!confirm('Delete this mailbox permanently?')) return;
     try {
-      await fetch(`${API}/delete/${encodeURIComponent(currentAddress)}`, {
+      const res = await fetch(`${API}/delete/${encodeURIComponent(currentAddress)}`, {
         method: 'DELETE',
         headers: { 'x-csrf-token': getCsrfToken() },
         credentials: 'include',
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        WoxToast.error(data.error || 'Failed to delete mailbox');
+        return;
+      }
       WoxToast.success('Deleted');
       setTimeout(() => window.location.href = '/tempmail', 1000);
     } catch { WoxToast.error('Failed'); }
@@ -427,7 +432,10 @@
 
   // ─── Helpers ─────────────────────────────────────────
 
-  function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+  function escapeHtml(s) {
+    if (s === null || s === undefined) return '';
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
   function formatDate(ds) {
     if (!ds) return '';
     const d = new Date(ds);

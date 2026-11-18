@@ -164,11 +164,19 @@ Type <span class="term-highlight">help</span> for available commands or <span cl
     const history = [];
     let historyIdx = -1;
 
+    function getCsrfToken() {
+      const m = document.cookie.match(/woxmail_csrf=([^;]+)/);
+      return m ? decodeURIComponent(m[1]) : '';
+    }
+
     async function init() {
       try {
         const res = await fetch('/api/cli/exec', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-csrf-token': getCsrfToken(),
+          },
           credentials: 'include',
           body: JSON.stringify({ command: '' }),
         });
@@ -181,7 +189,7 @@ Type <span class="term-highlight">help</span> for available commands or <span cl
       if (!cmd.trim()) return;
 
       const currentPrompt = promptEl.textContent;
-      logEl.innerHTML += `\n<span class="term-prompt">${currentPrompt}</span><span style="color: #ffffff;">${escapeHtml(cmd)}</span>\n`;
+      logEl.innerHTML += `\n<span class="term-prompt">${escapeHtml(currentPrompt)}</span><span style="color: #ffffff;">${escapeHtml(cmd)}</span>\n`;
 
       if (cmd.trim().toLowerCase() === 'clear') {
         logEl.innerHTML = '';
@@ -192,7 +200,10 @@ Type <span class="term-highlight">help</span> for available commands or <span cl
       try {
         const res = await fetch('/api/cli/exec', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-csrf-token': getCsrfToken(),
+          },
           credentials: 'include',
           body: JSON.stringify({ command: cmd }),
         });

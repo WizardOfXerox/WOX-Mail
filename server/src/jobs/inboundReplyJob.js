@@ -56,9 +56,16 @@ export async function processInboundVerificationReplies() {
         const toAddr = (msg.envelope?.to?.[0]?.address || '').toLowerCase().trim();
         const subject = msg.envelope?.subject || '';
 
-        // Auto-resolve any pending "Bump If No Reply" reminders for this sender
-        if (fromAddr) {
-          await resolveFollowUpOnReply({ senderEmail: fromAddr }).catch(() => {});
+        // Auto-resolve any pending "Bump If No Reply" reminders scoped to the receiving user
+        if (fromAddr && toAddr) {
+          try {
+            const { query } = await import('../config/database.js');
+            const uRes = await query('SELECT id FROM users WHERE LOWER(email) = $1 LIMIT 1', [toAddr]);
+            const targetUserId = uRes.rows[0]?.id || null;
+            if (targetUserId) {
+              await resolveFollowUpOnReply({ senderEmail: fromAddr, userId: targetUserId });
+            }
+          } catch {}
         }
 
         // Check if message relates to verification

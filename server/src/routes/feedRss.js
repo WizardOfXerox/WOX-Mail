@@ -40,13 +40,22 @@ router.get('/:token/the-feed.xml', async (req, res, next) => {
       }
     }
 
+    const escXml = (s) =>
+      String(s ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+    const escCdata = (s) => String(s ?? '').replace(/]]>/g, ']]]]><![CDATA[>');
+
     const baseUrl = process.env.APP_URL || 'http://127.0.0.1:3001';
     const feedItemsXml = messages.map(m => {
-      const title = (m.subject || '(No Subject)').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      const author = (m.from?.name || m.from?.address || 'Newsletter').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const title = escXml(m.subject || '(No Subject)');
+      const author = escXml(m.from?.name || m.from?.address || 'Newsletter');
       const parsedDate = m.date ? new Date(m.date) : null;
       const pubDate = (parsedDate && !isNaN(parsedDate.getTime())) ? parsedDate.toUTCString() : new Date().toUTCString();
-      const guid = `woxmail-msg-${m.uid}-${m.messageId || ''}`;
+      const guid = escXml(`woxmail-msg-${m.uid}-${m.messageId || ''}`);
 
       return `
         <item>
@@ -54,8 +63,8 @@ router.get('/:token/the-feed.xml', async (req, res, next) => {
           <author>${author}</author>
           <pubDate>${pubDate}</pubDate>
           <guid isPermaLink="false">${guid}</guid>
-          <link>${baseUrl}/dashboard</link>
-          <description><![CDATA[${m.snippet || title}]]></description>
+          <link>${escXml(baseUrl)}/dashboard</link>
+          <description><![CDATA[${escCdata(m.snippet || m.subject || '(No Subject)')}]]></description>
         </item>
       `;
     }).join('\n');
@@ -63,17 +72,19 @@ router.get('/:token/the-feed.xml', async (req, res, next) => {
     const rssXml = `<?xml version="1.0" encoding="UTF-8" ?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
 <channel>
-  <title>The Feed — ${user.username}'s Curated Newsletters</title>
-  <link>${baseUrl}/dashboard</link>
+  <title>The Feed — ${escXml(user.username)}'s Curated Newsletters</title>
+  <link>${escXml(baseUrl)}/dashboard</link>
   <description>Private RSS stream of newsletters and publications received on WoxMail.</description>
   <language>en-us</language>
   <lastBuildDate>${new Date().toUTCString()}</lastBuildDate>
-  <atom:link href="${baseUrl}/feeds/${token}/the-feed.xml" rel="self" type="application/rss+xml" />
+  <atom:link href="${escXml(baseUrl)}/feeds/${escXml(token)}/the-feed.xml" rel="self" type="application/rss+xml" />
   ${feedItemsXml}
 </channel>
 </rss>`;
 
     res.setHeader('Content-Type', 'application/rss+xml; charset=utf-8');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
     res.send(rssXml);
   } catch (err) {
     next(err);

@@ -45,10 +45,18 @@
       case 'info': icon = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--color-info)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'; break;
     }
 
-    toast.innerHTML = `
-      <div class="toast-icon" style="display:flex;align-items:center;">${icon}</div>
-      <div class="toast-message" style="flex:1;font-size:0.875rem;">${message}</div>
-    `;
+    const iconEl = document.createElement('div');
+    iconEl.className = 'toast-icon';
+    iconEl.style.cssText = 'display:flex;align-items:center;';
+    iconEl.innerHTML = icon;
+
+    const msgEl = document.createElement('div');
+    msgEl.className = 'toast-message';
+    msgEl.style.cssText = 'flex:1;font-size:0.875rem;';
+    msgEl.textContent = String(message ?? '');
+
+    toast.appendChild(iconEl);
+    toast.appendChild(msgEl);
 
     if (action && action.text && typeof action.onClick === 'function') {
       const btn = document.createElement('button');

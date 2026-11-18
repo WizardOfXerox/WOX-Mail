@@ -38,20 +38,28 @@ function cleanUrlParams(rawUrl) {
 function stripUnsafeCss(cssText, blockRemoteUrls) {
   if (!cssText || typeof cssText !== 'string') return '';
   let out = cssText
+    // Neutralize CSS hex backslash escapes that could bypass keyword/url regexes
+    .replace(/\\[0-9a-f]{1,6}\s?/gi, '')
     .replace(/@import\b[^;]*(;|$)/gi, '/* @import blocked */')
     .replace(/expression\s*\([^)]*\)/gi, 'none')
     .replace(/javascript\s*:/gi, 'blocked:')
-    .replace(/vbscript\s*:/gi, 'blocked:');
+    .replace(/vbscript\s*:/gi, 'blocked:')
+    .replace(/data\s*:\s*(?:text\/html|text\/javascript|text\/xml|application\/|image\/svg\+xml)/gi, 'blocked:');
 
   if (blockRemoteUrls) {
     out = out.replace(/url\(\s*(['"]?)\s*([^)'"]*?)\s*\1\s*\)/gi, (full, _q, inner) => {
       const trimmed = (inner || '').trim();
       const lower = trimmed.toLowerCase();
-      if (lower.startsWith('data:') || lower.startsWith('cid:') || lower.startsWith('#')) {
+      if (
+        (lower.startsWith('data:image/') && !lower.startsWith('data:image/svg+xml')) ||
+        lower.startsWith('cid:') ||
+        lower.startsWith('#')
+      ) {
         return full;
       }
       return 'none';
     });
+    out = out.replace(/image-set\s*\([^)]*\)/gi, 'none');
   }
   return out;
 }
@@ -63,6 +71,9 @@ function isDangerousScheme(val) {
     normalized.startsWith('javascript:') ||
     normalized.startsWith('vbscript:') ||
     normalized.startsWith('data:text/html') ||
+    normalized.startsWith('data:text/javascript') ||
+    normalized.startsWith('data:text/xml') ||
+    normalized.startsWith('data:image/svg+xml') ||
     normalized.startsWith('data:application/')
   );
 }
@@ -74,12 +85,14 @@ function isDangerousScheme(val) {
  * @param {string} html - Raw HTML email body
  * @param {object} [options]
  * @param {boolean} [options.loadImages=true] - Whether to allow external images
+ * @param {boolean} [options.blockRemoteImages=false] - Alias to force loadImages=false
  * @param {boolean} [options.proxyImages=false] - Whether to rewrite remote image URLs through proxyBase
  * @param {string} [options.proxyBase='/api/mail/proxy-image'] - Image proxy URL base
  * @returns {{ html: string, trackers: number }}
  */
 export function sanitizeEmail(html, options = {}) {
-  const { loadImages = true, proxyImages = false, proxyBase = '/api/mail/proxy-image' } = options;
+  const { loadImages = true, blockRemoteImages = false, proxyImages = false, proxyBase = '/api/mail/proxy-image' } = options;
+  const allowImages = blockRemoteImages ? false : loadImages;
   let trackerCount = 0;
 
   if (!html) return { html: '', trackers: 0 };
@@ -135,14 +148,14 @@ export function sanitizeEmail(html, options = {}) {
         continue;
       }
       if (nameLower === 'style') {
-        const sanitizedStyle = stripUnsafeCss(attr.value, !loadImages);
+        const sanitizedStyle = stripUnsafeCss(attr.value, !allowImages);
         if (sanitizedStyle) {
           el.setAttribute('style', sanitizedStyle);
         } else {
           el.removeAttribute('style');
         }
       }
-      if (!loadImages && nameLower === 'background') {
+      if (!allowImages && nameLower === 'background') {
         const bgVal = attr.value.trim();
         if (bgVal.startsWith('http://') || bgVal.startsWith('https://') || bgVal.startsWith('//')) {
           el.setAttribute('data-original-background', bgVal);
@@ -154,7 +167,7 @@ export function sanitizeEmail(html, options = {}) {
 
   // Sanitize <style> blocks (strip @import / expression, and neutralize remote url() when images blocked)
   doc.querySelectorAll('style').forEach((styleEl) => {
-    styleEl.textContent = stripUnsafeCss(styleEl.textContent || '', !loadImages);
+    styleEl.textContent = stripUnsafeCss(styleEl.textContent || '', !allowImages);
   });
 
   // Process all links — clean tracking query params and force safe rel
@@ -171,15 +184,23 @@ export function sanitizeEmail(html, options = {}) {
   doc.querySelectorAll('img').forEach((img) => {
     const src = img.getAttribute('src') || img.getAttribute('data-original-src') || '';
 
-    // Strip invisible 0x0 / 1x1 tracking pixels ONLY when width or height attribute is explicitly present
+    // Strip invisible 0x0 / 1x1 tracking pixels (HTML attributes OR inline CSS style dimensions)
     const hasWidth = img.hasAttribute('width');
     const hasHeight = img.hasAttribute('height');
     const rawWidth = hasWidth ? parseInt(img.getAttribute('width'), 10) : NaN;
     const rawHeight = hasHeight ? parseInt(img.getAttribute('height'), 10) : NaN;
-    const isDimensionTracker =
+    const isAttrDimensionTracker =
       (hasWidth || hasHeight) &&
       (!hasWidth || (!Number.isNaN(rawWidth) && rawWidth <= 1)) &&
       (!hasHeight || (!Number.isNaN(rawHeight) && rawHeight <= 1));
+
+    const styleAttr = (img.getAttribute('style') || '').toLowerCase();
+    const cssWidthMatch = styleAttr.match(/(?:^|;)\s*width\s*:\s*([0-9.]+)\s*px\b/);
+    const cssHeightMatch = styleAttr.match(/(?:^|;)\s*height\s*:\s*([0-9.]+)\s*px\b/);
+    const isCssDimensionTracker =
+      (cssWidthMatch && parseFloat(cssWidthMatch[1]) <= 1) &&
+      (cssHeightMatch && parseFloat(cssHeightMatch[1]) <= 1);
+    const isDimensionTracker = isAttrDimensionTracker || Boolean(isCssDimensionTracker);
 
     const isTracker =
       isDimensionTracker ||
@@ -198,7 +219,7 @@ export function sanitizeEmail(html, options = {}) {
 
     if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('//')) {
       const normalizedRemoteSrc = src.startsWith('//') ? `https:${src}` : src;
-      if (!loadImages) {
+      if (!allowImages) {
         img.setAttribute('data-original-src', normalizedRemoteSrc);
         img.setAttribute('src', '');
         const existingClass = img.getAttribute('class') || '';

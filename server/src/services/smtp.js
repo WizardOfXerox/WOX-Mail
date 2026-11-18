@@ -30,6 +30,8 @@ export function createTransporter(email, password) {
       tls: getTlsOptions(),
       pool: false,
       maxConnections: 1,
+      disableFileAccess: true,
+      disableUrlAccess: true,
     });
   }
 
@@ -41,6 +43,8 @@ export function createTransporter(email, password) {
     tls: getTlsOptions(),
     pool: false,
     maxConnections: 1,
+    disableFileAccess: true,
+    disableUrlAccess: true,
   });
 }
 
@@ -163,21 +167,68 @@ export async function getTransporterForUser(userOrId, accountId = null) {
   return { transporter, senderEmail, accountId: null };
 }
 
+const RFC5322_HEADER_NAME_RE = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+const HEADER_CONTROL_RE = /[\r\n\x00-\x08\x0b\x0c\x0e-\x1f\x7f]+/g;
+
+function cleanHeaderValue(val) {
+  if (val == null) return val;
+  if (typeof val === 'string') {
+    return val.replace(HEADER_CONTROL_RE, ' ').trim();
+  }
+  if (Array.isArray(val)) {
+    return val.map(cleanHeaderValue);
+  }
+  if (typeof val === 'object') {
+    const out = {};
+    if (val.name !== undefined) out.name = cleanHeaderValue(String(val.name));
+    if (val.address !== undefined) out.address = cleanHeaderValue(String(val.address));
+    return out;
+  }
+  return val;
+}
+
+/**
+ * Allowlist Nodemailer attachment properties to prevent arbitrary local file read (`path`)
+ * or outbound SSRF (`href` / `raw`) when user-controlled attachments are passed to SMTP.
+ */
+export function sanitizeAttachments(attachments) {
+  if (!Array.isArray(attachments)) return [];
+  const safe = [];
+  for (const raw of attachments.slice(0, 25)) {
+    if (!raw || typeof raw !== 'object') continue;
+    // Explicitly reject/ignore `path`, `href`, `raw` — only allow in-memory Buffer or string content
+    if (raw.content === undefined || raw.content === null) continue;
+    if (!Buffer.isBuffer(raw.content) && typeof raw.content !== 'string') continue;
+
+    const cleanFilename = String(raw.filename || 'attachment')
+      .replace(/[\r\n\x00-\x1f\x7f/\\]/g, '_')
+      .slice(0, 255) || 'attachment';
+
+    const item = {
+      filename: cleanFilename,
+      content: raw.content,
+      contentType: String(raw.contentType || 'application/octet-stream')
+        .replace(HEADER_CONTROL_RE, '')
+        .trim() || 'application/octet-stream',
+    };
+    if (typeof raw.cid === 'string' && raw.cid.trim()) {
+      item.cid = raw.cid.replace(HEADER_CONTROL_RE, '').trim();
+    }
+    if (typeof raw.encoding === 'string' && ['base64', 'utf8', 'utf-8', 'hex', 'binary', 'ascii'].includes(raw.encoding.toLowerCase())) {
+      item.encoding = raw.encoding;
+    }
+    safe.push(item);
+  }
+  return safe;
+}
+
 /**
  * Sanitize outbound email headers to strip client IP, local hostname, and browser fingerprints.
  * @param {object} customHeaders
  * @returns {object} Privacy-hardened headers
  */
 export function sanitizeOutboundHeaders(customHeaders = {}) {
-  const sanitized = {
-    'User-Agent': 'WoxMail Privacy Gateway / 1.0',
-    'X-Mailer': 'WoxMail Privacy Gateway',
-    'X-Privacy-Protected': 'true',
-    ...customHeaders,
-  };
-
-  // Remove any leaked IP or telemetry headers
-  const forbiddenHeaders = [
+  const forbiddenHeaders = new Set([
     'x-originating-ip',
     'x-forwarded-for',
     'x-real-ip',
@@ -185,11 +236,23 @@ export function sanitizeOutboundHeaders(customHeaders = {}) {
     'x-sender-ip',
     'x-php-originating-script',
     'x-envoy-external-address',
-  ];
+  ]);
 
-  for (const key of Object.keys(sanitized)) {
-    if (forbiddenHeaders.includes(key.toLowerCase())) {
-      delete sanitized[key];
+  const sanitized = {
+    'User-Agent': 'WoxMail Privacy Gateway / 1.0',
+    'X-Mailer': 'WoxMail Privacy Gateway',
+    'X-Privacy-Protected': 'true',
+  };
+
+  if (customHeaders && typeof customHeaders === 'object' && !Array.isArray(customHeaders)) {
+    for (const [rawKey, rawVal] of Object.entries(customHeaders)) {
+      const key = String(rawKey || '').trim();
+      if (!RFC5322_HEADER_NAME_RE.test(key)) continue;
+      if (forbiddenHeaders.has(key.toLowerCase())) continue;
+      if (rawVal === undefined || rawVal === null) continue;
+      sanitized[key] = Array.isArray(rawVal)
+        ? rawVal.map((v) => cleanHeaderValue(String(v)))
+        : cleanHeaderValue(String(rawVal));
     }
   }
 
@@ -235,19 +298,20 @@ export async function sendEmail(transporter, options) {
     }
   }
 
-  // RFC 5322 & SMTP Header Injection Defense: Strip raw CRLF from headers
-  const cleanHeader = (val) => (typeof val === 'string' ? val.replace(/[\r\n]+/g, ' ').trim() : val);
+  // RFC 5322 & SMTP Header Injection Defense: Strip raw CRLF & control chars from headers
+  const cleanHeader = cleanHeaderValue;
   const sanitizedSubject = cleanHeader(subject);
+  const safeAttachments = sanitizeAttachments(attachments);
 
   // Build sanitized mail options
   const mailOptions = {
     from: cleanHeader(from),
     replyTo: options.replyTo ? cleanHeader(options.replyTo) : cleanHeader(from),
     to: Array.isArray(to) ? to.map(cleanHeader).join(', ') : cleanHeader(to),
-    subject: isEncrypted && !sanitizedSubject.startsWith('[Encrypted]') ? `[Encrypted] ${sanitizedSubject}` : sanitizedSubject,
+    subject: isEncrypted && !String(sanitizedSubject || '').startsWith('[Encrypted]') ? `[Encrypted] ${sanitizedSubject}` : sanitizedSubject,
     text: text || '',
     html: html || undefined,
-    attachments: attachments || [],
+    attachments: safeAttachments,
     date: new Date(), // Normalized UTC timestamp
     headers: sanitizeOutboundHeaders(headers),
   };
@@ -288,13 +352,16 @@ export async function sendEmail(transporter, options) {
   const archiveEmail = (process.env.ARCHIVE_EMAIL || '').trim();
   const archiveLower = archiveEmail.toLowerCase();
 
-  if (isArchiveEnabled && archiveEmail && cleanHeader(from).toLowerCase() !== archiveLower) {
+  const fromAddrStr = typeof from === 'object' && from !== null
+    ? cleanHeader(from.address || '')
+    : String(cleanHeader(from) || '');
+  if (isArchiveEnabled && archiveEmail && fromAddrStr.toLowerCase() !== archiveLower) {
     const toStr = String(mailOptions.to || '').toLowerCase();
     const bccStr = String(mailOptions.bcc || '').toLowerCase();
     if (!toStr.includes(archiveLower) && !bccStr.includes(archiveLower)) {
       const journalHeaders = {
         ...mailOptions.headers,
-        'X-WoxMail-Journal-Original-From': cleanHeader(from),
+        'X-WoxMail-Journal-Original-From': fromAddrStr,
         'X-WoxMail-Journal-Original-To': Array.isArray(to) ? to.map(cleanHeader).join(', ') : cleanHeader(to),
         'X-WoxMail-Journal-Direction': 'outbound',
         'X-WoxMail-Journal-Timestamp': new Date().toISOString(),
@@ -331,11 +398,27 @@ export async function sendEmail(transporter, options) {
  * @returns {Promise<Buffer>}
  */
 export async function buildRawMessage(mailOptions) {
-  const streamer = nodemailer.createTransport({ streamTransport: true, buffer: true });
-  const info = await streamer.sendMail({
-    ...mailOptions,
-    headers: sanitizeOutboundHeaders(mailOptions.headers || {}),
+  const streamer = nodemailer.createTransport({
+    streamTransport: true,
+    buffer: true,
+    disableFileAccess: true,
+    disableUrlAccess: true,
   });
+  const sanitized = {
+    ...mailOptions,
+    from: cleanHeaderValue(mailOptions.from),
+    to: Array.isArray(mailOptions.to) ? mailOptions.to.map(cleanHeaderValue).join(', ') : cleanHeaderValue(mailOptions.to),
+    subject: cleanHeaderValue(mailOptions.subject),
+    attachments: sanitizeAttachments(mailOptions.attachments),
+    headers: sanitizeOutboundHeaders(mailOptions.headers || {}),
+  };
+  if (mailOptions.cc) sanitized.cc = Array.isArray(mailOptions.cc) ? mailOptions.cc.map(cleanHeaderValue).join(', ') : cleanHeaderValue(mailOptions.cc);
+  if (mailOptions.bcc) sanitized.bcc = Array.isArray(mailOptions.bcc) ? mailOptions.bcc.map(cleanHeaderValue).join(', ') : cleanHeaderValue(mailOptions.bcc);
+  if (mailOptions.replyTo) sanitized.replyTo = cleanHeaderValue(mailOptions.replyTo);
+  if (mailOptions.inReplyTo) sanitized.inReplyTo = cleanHeaderValue(mailOptions.inReplyTo);
+  if (mailOptions.references) sanitized.references = cleanHeaderValue(mailOptions.references);
+
+  const info = await streamer.sendMail(sanitized);
   return info.message;
 }
 

@@ -33,13 +33,13 @@
 
   <!-- Category filter bar -->
   <div class="filter-bar">
-    <button class="filter-btn active" onclick="filterCategory('all')">All Letters</button>
-    <button class="filter-btn" onclick="filterCategory('Goals')">Goals</button>
-    <button class="filter-btn" onclick="filterCategory('Life Advice')">Life Advice</button>
-    <button class="filter-btn" onclick="filterCategory('Reflections')">Reflections</button>
-    <button class="filter-btn" onclick="filterCategory('Predictions')">Predictions</button>
-    <button class="filter-btn" onclick="filterCategory('Love & Relationships')">Relationships</button>
-    <button class="filter-btn" onclick="filterCategory('Career')">Career</button>
+    <button class="filter-btn active" data-cat="all" onclick="filterCategory('all')">All Letters</button>
+    <button class="filter-btn" data-cat="Goals" onclick="filterCategory('Goals')">Goals</button>
+    <button class="filter-btn" data-cat="Life Advice" onclick="filterCategory('Life Advice')">Life Advice</button>
+    <button class="filter-btn" data-cat="Reflections" onclick="filterCategory('Reflections')">Reflections</button>
+    <button class="filter-btn" data-cat="Predictions" onclick="filterCategory('Predictions')">Predictions</button>
+    <button class="filter-btn" data-cat="Love & Relationships" onclick="filterCategory('Love & Relationships')">Relationships</button>
+    <button class="filter-btn" data-cat="Career" onclick="filterCategory('Career')">Career</button>
   </div>
 
   <!-- Dynamic Letters Grid -->
@@ -61,6 +61,7 @@
     try {
       const res = await fetch('/api/futureme/public?category=' + encodeURIComponent(category));
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to load public letters');
 
       if (!data.letters || data.letters.length === 0) {
         grid.innerHTML = \`
@@ -78,7 +79,7 @@
         <div class="letter-card">
           <div class="letter-meta">
             <span class="badge badge-purple">\${escapeHtml(l.category || 'General')}</span>
-            <span class="text-tertiary"> Written \${l.timeSpan}</span>
+            <span class="text-tertiary"> Written \${escapeHtml(l.timeSpan || '')}</span>
           </div>
           <h3 style="font-size: 1.125rem; font-weight: 700; margin: 0 0 0.25rem;">\${escapeHtml(l.subject)}</h3>
           <div class="letter-body">"\${escapeHtml(l.excerpt)}"</div>
@@ -89,19 +90,19 @@
         </div>
       \`).join('');
     } catch (err) {
-      grid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; color: var(--color-error);">Error loading letters: ' + err.message + '</div>';
+      grid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; color: var(--color-error);">Error loading letters: ' + escapeHtml(err.message) + '</div>';
     }
   }
 
   function filterCategory(cat) {
     document.querySelectorAll('.filter-btn').forEach(btn => {
-      btn.classList.toggle('active', btn.textContent.toLowerCase().includes(cat.toLowerCase()) || (cat === 'all' && btn.textContent.includes('All')));
+      btn.classList.toggle('active', btn.getAttribute('data-cat') === cat);
     });
     loadPublicLetters(cat);
   }
 
   function escapeHtml(str) {
-    return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
   document.addEventListener('DOMContentLoaded', () => loadPublicLetters('all'));

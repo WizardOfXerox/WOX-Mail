@@ -10,6 +10,12 @@ import {
 } from '../services/secureAttachmentService.js';
 
 const router = Router();
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // 25 MB cap
+const DANGEROUS_INLINE_MIME_RE = /^(text\/html|application\/xhtml\+xml|image\/svg\+xml|application\/xml|text\/xml|text\/javascript|application\/javascript|application\/ecmascript|text\/xsl|application\/mathml\+xml|message\/rfc822)/i;
+
+function sanitizeHeaderToken(val, fallback) {
+  return String(val || fallback).replace(/[\r\n\x00-\x1f\x7f]/g, '').trim() || fallback;
+}
 
 /**
  * POST /api/secure-attachments/upload
@@ -31,11 +37,18 @@ router.post('/upload', requireAuth, async (req, res, next) => {
       return res.status(400).json({ error: 'Filename and bufferBase64 are required' });
     }
 
-    const buffer = Buffer.from(bufferBase64, 'base64');
+    const buffer = Buffer.from(String(bufferBase64), 'base64');
+    if (buffer.length > MAX_UPLOAD_BYTES) {
+      return res.status(413).json({ error: 'Attachment exceeds maximum allowed size of 25 MB' });
+    }
+
+    const cleanFilename = sanitizeHeaderToken(filename, 'attachment').replace(/[/\\]/g, '_').slice(0, 255);
+    const cleanContentType = sanitizeHeaderToken(contentType, 'application/octet-stream').slice(0, 128);
+
     const result = await createSecureAttachment({
       userId: req.user.id,
-      filename,
-      contentType: contentType || 'application/octet-stream',
+      filename: cleanFilename,
+      contentType: cleanContentType,
       buffer,
       maxViews: maxViews ? parseInt(maxViews, 10) : null,
       maxDownloads: maxDownloads !== undefined && maxDownloads !== null && maxDownloads !== '' ? parseInt(maxDownloads, 10) : null,
@@ -100,8 +113,15 @@ router.get('/preview/:token', async (req, res, next) => {
       });
     }
 
-    res.setHeader('Content-Type', result.contentType);
-    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(result.filename)}"`);
+    const safeMime = sanitizeHeaderToken(result.contentType, 'application/octet-stream');
+    const safeName = sanitizeHeaderToken(result.filename, 'attachment').replace(/["/\\]/g, '_');
+    const isDangerousInline = DANGEROUS_INLINE_MIME_RE.test(safeMime);
+    const disposition = isDangerousInline ? 'attachment' : 'inline';
+
+    res.setHeader('Content-Type', isDangerousInline ? 'application/octet-stream' : safeMime);
+    res.setHeader('Content-Disposition', `${disposition}; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(result.filename || 'attachment')}`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data:; media-src 'self'; sandbox");
     res.setHeader('X-Attachment-Remaining-Views', String(result.remainingViews !== null ? result.remainingViews : 'unlimited'));
     res.send(result.buffer);
   } catch (err) {
@@ -127,8 +147,12 @@ router.get('/download/:token', async (req, res, next) => {
       });
     }
 
-    res.setHeader('Content-Type', result.contentType);
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(result.filename)}"`);
+    const safeMime = sanitizeHeaderToken(result.contentType, 'application/octet-stream');
+    const safeName = sanitizeHeaderToken(result.filename, 'attachment').replace(/["/\\]/g, '_');
+
+    res.setHeader('Content-Type', safeMime);
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(result.filename || 'attachment')}`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Attachment-Remaining-Downloads', String(result.remainingDownloads !== null ? result.remainingDownloads : 'unlimited'));
     res.send(result.buffer);
   } catch (err) {

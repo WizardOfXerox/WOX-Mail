@@ -75,6 +75,17 @@ function sanitizeSvgContent(rawSvg) {
     }
   });
 
+  doc.querySelectorAll('style').forEach((styleEl) => {
+    const cleanedBlock = (styleEl.textContent || '')
+      .replace(/\\[0-9a-f]{1,6}\s?/gi, '')
+      .replace(/@import\b[^;]*(;|$)/gi, '')
+      .replace(/expression\s*\([^)]*\)/gi, 'none')
+      .replace(/javascript\s*:/gi, 'blocked:')
+      .replace(/vbscript\s*:/gi, 'blocked:')
+      .replace(/url\s*\(\s*(['"]?)\s*(?!#)(?!data:image\/(?!svg\+xml))[^)]*\1\s*\)/gi, 'none');
+    styleEl.textContent = cleanedBlock;
+  });
+
   const svgEl = doc.querySelector('svg');
   if (!svgEl) {
     throw new Error('Invalid or unsafe SVG content');

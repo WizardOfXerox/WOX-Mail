@@ -2,6 +2,7 @@ import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import { requireAuth } from '../middleware/auth.js';
+import { authSensitiveLimiter } from '../middleware/rateLimit.js';
 import { validate } from '../middleware/validate.js';
 import * as passkeyService from '../services/passkeyService.js';
 import { JWT_COOKIE_NAME } from '../config/constants.js';
@@ -29,11 +30,11 @@ async function issueToken(res, user, req) {
     [jti, user.id, req.ip, req.headers['user-agent']?.slice(0, 256)]
   );
 
-  const isProduction = process.env.NODE_ENV === 'production';
+  const isHttps = !!(req.secure || req.headers['x-forwarded-proto'] === 'https');
   res.cookie(JWT_COOKIE_NAME, token, {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? 'strict' : 'lax',
+    secure: isHttps,
+    sameSite: 'strict',
     maxAge: 7 * 24 * 60 * 60 * 1000,
     path: '/',
   });
@@ -49,6 +50,9 @@ async function issueToken(res, user, req) {
  */
 router.post('/register-options', requireAuth, async (req, res, next) => {
   try {
+    if (req.isAppPasswordAuth) {
+      return res.status(403).json({ error: 'Application passwords cannot manage passkeys' });
+    }
     const options = await passkeyService.getRegistrationOptions(req.user);
     res.json(options);
   } catch (err) {
@@ -68,6 +72,9 @@ router.post('/register-verify',
   }),
   async (req, res, next) => {
     try {
+      if (req.isAppPasswordAuth) {
+        return res.status(403).json({ error: 'Application passwords cannot manage passkeys' });
+      }
       const { response, deviceName } = req.body;
       const result = await passkeyService.verifyRegistration(req.user, response, deviceName);
       res.status(201).json({
@@ -86,7 +93,7 @@ router.post('/register-verify',
  * POST /api/auth/passkeys/login-options
  * Generate challenge for logging in with a registered passkey.
  */
-router.post('/login-options', async (req, res, next) => {
+router.post('/login-options', authSensitiveLimiter, async (req, res, next) => {
   try {
     const { email } = req.body || {};
     const { options, challengeSessionId } = await passkeyService.getAuthenticationOptions(email);
@@ -101,6 +108,7 @@ router.post('/login-options', async (req, res, next) => {
  * Verify client assertion and log in user with session token.
  */
 router.post('/login-verify',
+  authSensitiveLimiter,
   validate({
     challengeSessionId: { type: 'string', required: true },
     response: { type: 'object', required: true },

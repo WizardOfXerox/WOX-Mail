@@ -60,7 +60,7 @@ export default function KanbanBoard({ onClose, onOpenEmail }) {
   };
 
   const handleAddCard = async (colId) => {
-    if (!newCardTitle.trim()) return;
+    if (!newCardTitle.trim() || !board?.id) return;
     try {
       const res = await post('/api/kanban/cards', {
         board_id: board.id,
@@ -72,6 +72,7 @@ export default function KanbanBoard({ onClose, onOpenEmail }) {
       setNewCardCol(null);
     } catch (err) {
       console.error('Failed to add card:', err);
+      if (window.WoxToast) window.WoxToast.error(err.message || 'Failed to add task');
     }
   };
 
@@ -81,6 +82,7 @@ export default function KanbanBoard({ onClose, onOpenEmail }) {
       setCards(cards.filter(c => c.id !== cardId));
     } catch (err) {
       console.error('Failed to delete card:', err);
+      if (window.WoxToast) window.WoxToast.error(err.message || 'Failed to delete task');
     }
   };
 

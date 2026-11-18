@@ -152,14 +152,14 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    if (!userLoading && window.WoxLoader) {
+      window.WoxLoader.done();
+    }
+  }, [userLoading]);
+
   if (userLoading) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', gap: '1rem', background: '#0a0a14', color: '#f0f0f5' }}>
-        <div style={{ width: 44, height: 44, border: '3px solid rgba(124,58,237,0.2)', borderTop: '3px solid #7c3aed', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-        <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.875rem' }}>Authenticating Sovereign Admin Session...</p>
-        <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
-      </div>
-    );
+    return null;
   }
 
   if (!user || !user.is_admin) {
@@ -203,6 +203,7 @@ export default function App() {
         { id: 'settings', label: 'System Configuration' },
         { id: 'audit', label: 'Security Audit Log' },
         { id: 'announcements', label: 'Global Announcements' },
+        { id: 'terminal', label: 'Web Terminal' },
       ],
     },
   ];
@@ -239,7 +240,7 @@ export default function App() {
           <a href="/admin" className="admin-brand-logo" title="WoxAdmin Sovereign Enclave">
             <div className="admin-shield-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div>
             <div>
-              <span style={{ color: '#ffffff' }}>Wox</span>
+              <span style={{ color: 'var(--color-text-primary)' }}>Wox</span>
               <span style={{ color: 'var(--color-primary-light)' }}>Admin</span>
             </div>
           </a>
@@ -1867,15 +1868,25 @@ function IpsTab() {
 
   const blockIp = async (e) => {
     e.preventDefault();
-    await post('/admin/blocked-ips', { ip, reason });
-    setIp('');
-    setReason('');
-    loadIps();
+    try {
+      await post('/admin/blocked-ips', { ip_address: ip.trim(), reason: reason.trim() || undefined });
+      if (window.WoxToast) window.WoxToast.success(`Blocked IP ${ip.trim()}`);
+      setIp('');
+      setReason('');
+      loadIps();
+    } catch (err) {
+      if (window.WoxToast) window.WoxToast.error(err.message || 'Failed to block IP');
+    }
   };
 
-  const unblockIp = async (id) => {
-    await del(`/admin/blocked-ips/${id}`);
-    loadIps();
+  const unblockIp = async (ipOrId) => {
+    try {
+      await del(`/admin/blocked-ips/${encodeURIComponent(ipOrId)}`);
+      if (window.WoxToast) window.WoxToast.info('IP unblocked');
+      loadIps();
+    } catch (err) {
+      if (window.WoxToast) window.WoxToast.error(err.message || 'Failed to unblock IP');
+    }
   };
 
   return (
@@ -1908,7 +1919,7 @@ function IpsTab() {
                 <td>{b.reason || 'Manual block'}</td>
                 <td className="text-secondary">{new Date(b.created_at).toLocaleString()}</td>
                 <td>
-                  <button type="button" className="btn btn-ghost btn-xs" onClick={() => unblockIp(b.id)}>
+                  <button type="button" className="btn btn-ghost btn-xs" onClick={() => unblockIp(b.ip_address || b.id)}>
                     Unblock
                   </button>
                 </td>

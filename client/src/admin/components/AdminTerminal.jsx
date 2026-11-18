@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { post } from '../../shared/api.js';
 
 /**
  * AdminTerminal — Full-Featured Developer Console Embedded in Admin Panel (Component 13)
@@ -60,13 +61,7 @@ export default function AdminTerminal() {
     setExecuting(true);
 
     try {
-      const res = await fetch('/api/cli/exec', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ command: rawCmd }),
-      });
-      const data = await res.json();
+      const data = await post('/cli/exec', { command: rawCmd });
 
       setHistory((prev) => [
         ...prev,

@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 import { redis } from '../config/redis.js';
 import { RATE_LIMITS, JWT_COOKIE_NAME, TEMP_COOKIE_NAME } from '../config/constants.js';
 
@@ -80,7 +81,7 @@ async function checkRedisWindow(key, windowSec, max, now) {
     };
   }
 
-  await redis.zadd(key, now, `${now}:${Math.random()}`);
+  await redis.zadd(key, now, `${now}:${crypto.randomBytes(4).toString('hex')}`);
   await redis.expire(key, windowSec);
 
   return {
@@ -175,18 +176,24 @@ function getApiClientIdentifier(req) {
     return `user:${req.userId}`;
   }
   const authHeader = req.headers?.authorization;
-  let token = null;
+  let jwtToken = null;
   if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
-    token = authHeader.slice(7).trim();
+    jwtToken = authHeader.slice(7).trim();
   } else if (req.cookies?.[JWT_COOKIE_NAME]) {
-    token = req.cookies[JWT_COOKIE_NAME];
-  } else if (req.cookies?.[TEMP_COOKIE_NAME]) {
-    token = req.cookies[TEMP_COOKIE_NAME];
+    jwtToken = req.cookies[JWT_COOKIE_NAME];
   }
 
-  if (token && typeof token === 'string') {
-    const hash = crypto.createHash('sha256').update(token).digest('hex').slice(0, 24);
-    return `tok:${hash}`;
+  // Only bucket by authenticated userId when JWT signature actually verifies;
+  // prevents unauthenticated callers from rotating arbitrary Bearer strings to bypass rate limits.
+  if (jwtToken && typeof jwtToken === 'string' && process.env.JWT_SECRET) {
+    try {
+      const decoded = jwt.verify(jwtToken, process.env.JWT_SECRET);
+      if (decoded?.userId) {
+        return `user:${decoded.userId}`;
+      }
+    } catch {
+      // Invalid or expired JWT — fall through to IP bucketing
+    }
   }
 
   return `ip:${req.ip}`;
@@ -204,10 +211,18 @@ export const loginLimiter = rateLimit({
   burstKeyGenerator: (req) => `ip:${req.ip}`,
 });
 
+export const authSensitiveLimiter = rateLimit({
+  window: 900, // 15 minutes
+  max: 20,
+  prefix: 'rl:authsens',
+});
+
 export const apiLimiter = rateLimit({
   ...RATE_LIMITS.API,
   prefix: 'rl:api',
   keyGenerator: getApiClientIdentifier,
+  burstMax: RATE_LIMITS.API.max * 3,
+  burstKeyGenerator: (req) => `ip:${req.ip}`,
 });
 
 export const tempGenerateLimiter = rateLimit({

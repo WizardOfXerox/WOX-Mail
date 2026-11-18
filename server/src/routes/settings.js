@@ -84,6 +84,9 @@ router.put('/password',
   }),
   async (req, res, next) => {
     try {
+      if (req.isAppPasswordAuth) {
+        return res.status(403).json({ error: 'Application passwords cannot change account password' });
+      }
       const { currentPassword, newPassword } = req.body;
 
       // Verify current password
@@ -100,6 +103,14 @@ router.put('/password',
 
       const hash = await hashPassword(newPassword);
       await query('UPDATE users SET password_hash = $1, imap_password = $2, updated_at = NOW() WHERE id = $3', [hash, newPassword, req.user.id]);
+
+      // Revoke all other active sessions so stolen cookies/tokens are invalidated
+      const currentJti = req.jwtPayload?.jti || null;
+      if (currentJti) {
+        await query('UPDATE user_sessions SET is_revoked = TRUE WHERE user_id = $1 AND id != $2', [req.user.id, currentJti]);
+      } else {
+        await query('UPDATE user_sessions SET is_revoked = TRUE WHERE user_id = $1', [req.user.id]);
+      }
 
       if (req.user.email) {
         try {
@@ -162,6 +173,7 @@ router.delete('/2fa',
  */
 router.get('/sessions', async (req, res, next) => {
   try {
+    const currentJti = req.jwtPayload?.jti ? String(req.jwtPayload.jti) : null;
     const result = await query(
       `SELECT id, ip_address, user_agent, created_at, expires_at
        FROM user_sessions
@@ -170,7 +182,12 @@ router.get('/sessions', async (req, res, next) => {
       [req.user.id]
     );
 
-    res.json({ sessions: result.rows });
+    const sessions = result.rows.map((row) => ({
+      ...row,
+      current: Boolean(currentJti && String(row.id) === currentJti),
+    }));
+
+    res.json({ sessions });
   } catch (err) {
     next(err);
   }
@@ -182,6 +199,10 @@ router.get('/sessions', async (req, res, next) => {
  */
 router.delete('/sessions/:id', async (req, res, next) => {
   try {
+    if (req.jwtPayload?.jti && String(req.params.id) === String(req.jwtPayload.jti)) {
+      return res.status(400).json({ error: 'Cannot revoke your current active session. Use Sign Out instead.' });
+    }
+
     const result = await query(
       'UPDATE user_sessions SET is_revoked = TRUE WHERE id = $1 AND user_id = $2 RETURNING id',
       [req.params.id, req.user.id]
@@ -814,14 +835,27 @@ router.get('/preferences', async (req, res, next) => {
  */
 router.put('/preferences', async (req, res, next) => {
   try {
-    const incoming = req.body.preferences || req.body || {};
+    const rawIncoming = req.body.preferences || req.body || {};
+    if (!rawIncoming || typeof rawIncoming !== 'object' || Array.isArray(rawIncoming)) {
+      return res.status(400).json({ error: 'Invalid preferences payload' });
+    }
+    const sanitized = {};
+    for (const [key, value] of Object.entries(rawIncoming)) {
+      if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
+      if (!/^[a-zA-Z0-9_-]{1,64}$/.test(key)) continue;
+      sanitized[key] = value;
+    }
+    const serialized = JSON.stringify(sanitized);
+    if (serialized.length > 16384) {
+      return res.status(413).json({ error: 'Preferences payload exceeds 16 KB limit' });
+    }
     const result = await query(`
       UPDATE users
       SET preferences = COALESCE(preferences, '{}'::jsonb) || $1::jsonb,
           updated_at = NOW()
       WHERE id = $2
       RETURNING preferences
-    `, [JSON.stringify(incoming), req.user.id]);
+    `, [serialized, req.user.id]);
 
     res.json({ message: 'Preferences saved successfully.', preferences: result.rows[0]?.preferences || {} });
   } catch (err) {
@@ -850,13 +884,17 @@ router.get('/api-keys', async (req, res, next) => {
  */
 router.post('/api-keys', async (req, res, next) => {
   try {
+    if (req.isAppPasswordAuth) {
+      return res.status(403).json({ error: 'Application passwords cannot manage API keys' });
+    }
     const { name, scopes = ['mail:read', 'mail:send'], rateLimit = 100, permissions } = req.body;
     if (!name) return res.status(400).json({ error: 'Key name is required.' });
 
+    const clampedRateLimit = Math.min(1000, Math.max(1, parseInt(rateLimit, 10) || 100));
     const perms = permissions || (Array.isArray(scopes) ? { scopes } : { send: true });
     const key = await apiKeyService.createApiKey(req.user.id, {
       name,
-      rateLimit: parseInt(rateLimit, 10) || 100,
+      rateLimit: clampedRateLimit,
       permissions: perms,
     });
 

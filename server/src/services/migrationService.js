@@ -43,8 +43,20 @@ async function saveMigrationSnapshot(userId, job) {
  * Test credentials and fetch mailbox hierarchy from a source IMAP server.
  */
 export async function testSourceConnection({ host, port = 993, secure = true, username, password }) {
+  const cleanHost = String(host || '').trim();
+  if (!cleanHost) {
+    throw new Error('Source IMAP host is required');
+  }
+  if (process.env.ALLOW_PRIVATE_MAIL_HOSTS !== 'true') {
+    const { isSafeUrl } = await import('./linkPreviewService.js');
+    const safety = await isSafeUrl(`https://${cleanHost}`);
+    if (!safety.safe) {
+      throw new Error('Blocked: Source IMAP host resolves to a private or internal network address.');
+    }
+  }
+
   const client = new ImapFlow({
-    host: host.trim(),
+    host: cleanHost,
     port: parseInt(port, 10) || 993,
     secure: Boolean(secure),
     auth: { user: username.trim(), pass: password },

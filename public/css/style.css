@@ -4433,11 +4433,11 @@ kbd {
 }
 
 [data-theme='light'] .cta-banner-title {
-  color: #ffffff !important;
+  color: var(--color-text-primary, #1a1a2e) !important;
 }
 
 [data-theme='light'] .cta-banner-desc {
-  color: #d1d1eb !important;
+  color: var(--color-text-secondary, #4a4a68) !important;
 }
 
 @media (max-width: 768px) {
@@ -5860,7 +5860,10 @@ kbd {
   }
 
   .comparison-wrapper {
-    margin: 0 -0.5rem !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
     border-radius: var(--radius-md) !important;
   }
 

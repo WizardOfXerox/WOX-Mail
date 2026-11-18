@@ -98,9 +98,10 @@ async function resolveAuthorizedProtonAccount(req, requestedEmailRaw) {
 /**
  * 0. Check live session status (with user-scoped auto-resume from connected_accounts if needed)
  */
-router.get('/sync/status', async (req, res) => {
-  const requested = req.query.email || req.headers['x-proton-email'];
-  const authCheck = await resolveAuthorizedProtonAccount(req, requested);
+router.get('/sync/status', async (req, res, next) => {
+  try {
+    const requested = req.query.email || req.headers['x-proton-email'];
+    const authCheck = await resolveAuthorizedProtonAccount(req, requested);
 
   if (!authCheck.authorized) {
     return res.status(403).json({ active: false, error: 'Access denied: Proton account does not belong to current user.' });
@@ -134,6 +135,9 @@ router.get('/sync/status', async (req, res) => {
     requires2FA: Boolean(session?.pending2FA),
     email,
   });
+  } catch (err) {
+    next(err);
+  }
 });
 
 /**
@@ -192,22 +196,22 @@ router.post('/login', async (req, res) => {
 /**
  * 1b. Submit TOTP 2FA code for pending Playwright Proton login
  */
-router.post('/sync/2fa', async (req, res) => {
-  const requested = req.body?.email || req.query.email || req.headers['x-proton-email'];
-  const code = req.body?.code || req.body?.totp;
-  if (!code || typeof code !== 'string') {
-    return res.status(400).json({ error: '2FA code is required.' });
-  }
-
-  const authCheck = await resolveAuthorizedProtonAccount(req, requested);
-  if (!authCheck.authorized) {
-    return res.status(403).json({ error: 'Access denied: Proton account does not belong to current user.' });
-  }
-  if (!authCheck.email) {
-    return res.status(400).json({ error: 'Proton account email required.' });
-  }
-
+router.post('/sync/2fa', async (req, res, next) => {
   try {
+    const requested = req.body?.email || req.query.email || req.headers['x-proton-email'];
+    const code = req.body?.code || req.body?.totp;
+    if (!code || typeof code !== 'string') {
+      return res.status(400).json({ error: '2FA code is required.' });
+    }
+
+    const authCheck = await resolveAuthorizedProtonAccount(req, requested);
+    if (!authCheck.authorized) {
+      return res.status(403).json({ error: 'Access denied: Proton account does not belong to current user.' });
+    }
+    if (!authCheck.email) {
+      return res.status(400).json({ error: 'Proton account email required.' });
+    }
+
     const result = await submitProton2FA(authCheck.email, code, req.user.id);
     return res.json({
       ...result,
@@ -352,7 +356,19 @@ function buildValidatedProtonUrl(rawSubpath) {
 
   const [rawPathOnly] = rawSubpath.split('?');
   if (!rawPathOnly || rawPathOnly.startsWith('//') || rawPathOnly.includes('@')) return null;
-  if (rawPathOnly.split('/').some((seg) => seg === '..' || seg === '.')) return null;
+  let decodedPath = rawPathOnly;
+  try {
+    decodedPath = decodeURIComponent(rawPathOnly);
+  } catch {
+    return null;
+  }
+  if (
+    rawPathOnly.split('/').some((seg) => seg === '..' || seg === '.') ||
+    decodedPath.split('/').some((seg) => seg === '..' || seg === '.') ||
+    /%2e/i.test(rawPathOnly)
+  ) {
+    return null;
+  }
 
   const normalizedSubpath = rawSubpath.startsWith('/') ? rawSubpath : `/${rawSubpath}`;
   let parsed;
@@ -420,16 +436,28 @@ router.all('/*', async (req, res) => {
       const data = await response.json();
       return res.json(data);
     } else {
+      const contentLen = Number(response.headers.get('content-length') || 0);
+      if (contentLen > 25 * 1024 * 1024) {
+        await response.body?.cancel?.().catch(() => {});
+        return res.status(413).json({ error: 'Upstream Proton response exceeds 25 MB limit' });
+      }
       const arrayBuffer = await response.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
-      if (contentType) res.setHeader('Content-Type', contentType);
+      if (buffer.length > 25 * 1024 * 1024) {
+        return res.status(413).json({ error: 'Upstream Proton response exceeds 25 MB limit' });
+      }
+      const safeType = /^text\/html|image\/svg\+xml|application\/xhtml\+xml/i.test(contentType)
+        ? 'application/octet-stream'
+        : contentType;
+      if (safeType) res.setHeader('Content-Type', safeType);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
       return res.send(buffer);
     }
   } catch (err) {
     console.error('[ProtonProxy] Network relay error:', err.message);
     return res.status(502).json({
       error: 'Proton Mail API proxy relay failure',
-      details: err.message,
+      ...(process.env.NODE_ENV !== 'production' ? { details: err.message } : {}),
     });
   }
 });

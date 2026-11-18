@@ -287,8 +287,10 @@ export async function createMailboxBackup(userId, options = {}) {
   // Apply AES-256-GCM encryption if requested or format is encrypted
   let buffer = rawBuffer;
   if (passphrase || format.startsWith('encrypted')) {
-    const keyToUse = passphrase || 'WoxMail-ZeroTrust-Sovereign-Key';
-    buffer = encryptBackupBuffer(rawBuffer, keyToUse);
+    if (!passphrase || typeof passphrase !== 'string' || passphrase.trim().length < 4) {
+      throw new Error('A passphrase (minimum 4 characters) is required for encrypted mailbox backups.');
+    }
+    buffer = encryptBackupBuffer(rawBuffer, passphrase);
     contentType = 'application/octet-stream';
   }
 

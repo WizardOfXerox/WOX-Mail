@@ -240,7 +240,7 @@ export default function LinkPreviewTray({
                     </button>
 
                     <a
-                      href={domainBlocked ? undefined : u}
+                      href={domainBlocked || !/^https?:\/\//i.test(u || '') ? undefined : u}
                       target="_blank"
                       rel="noopener noreferrer nofollow"
                       onClick={(e) => {

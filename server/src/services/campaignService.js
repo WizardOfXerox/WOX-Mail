@@ -122,12 +122,40 @@ export async function importSubscribers(listId, rows) {
 }
 
 /**
+ * Verify that a mailing list belongs to the given user
+ */
+export async function verifyListOwnership(userId, listId) {
+  const numericListId = parseInt(listId, 10);
+  if (!Number.isInteger(numericListId) || numericListId <= 0) {
+    const err = new Error('Invalid mailing list ID');
+    err.status = 400;
+    throw err;
+  }
+  const ownRes = await query(
+    'SELECT id FROM mailing_lists WHERE id = $1 AND user_id = $2',
+    [numericListId, userId]
+  );
+  if (ownRes.rows.length === 0) {
+    const err = new Error('Mailing list not found');
+    err.status = 404;
+    throw err;
+  }
+  return numericListId;
+}
+
+/**
  * List subscribers for a list
  */
-export async function listSubscribers(listId, { page = 1, limit = 50, status = 'all' } = {}) {
+export async function listSubscribers(listId, { page = 1, limit = 50, status = 'all', userId = null } = {}) {
+  const numericListId = userId != null ? await verifyListOwnership(userId, listId) : parseInt(listId, 10);
+  if (!Number.isInteger(numericListId) || numericListId <= 0) {
+    const err = new Error('Invalid mailing list ID');
+    err.status = 400;
+    throw err;
+  }
   const offset = (page - 1) * limit;
   let where = 'WHERE list_id = $1';
-  const params = [listId];
+  const params = [numericListId];
 
   if (status !== 'all') {
     params.push(status);
@@ -155,14 +183,18 @@ export async function listSubscribers(listId, { page = 1, limit = 50, status = '
 /**
  * Create a new campaign
  */
-export async function createCampaign(userId, { listId, title, subject, fromName, fromEmail, htmlContent, plainContent = '' }) {
+export async function createCampaign(userId, { listId, title, name, subject, fromName, fromEmail, htmlContent, plainContent = '' }) {
+  const ownedListId = await verifyListOwnership(userId, listId);
+  const safeTitle = String(title || name || subject || 'Untitled Campaign').trim();
+  const safeSubject = String(subject || title || name || '(No Subject)').trim();
   const result = await query(
     `INSERT INTO campaigns (user_id, list_id, title, subject, from_name, from_email, html_content, plain_content, status)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'draft')
      RETURNING *`,
-    [userId, listId, title.trim(), subject.trim(), fromName?.trim() || 'WoxMail Broadcast', fromEmail?.trim(), htmlContent, plainContent]
+    [userId, ownedListId, safeTitle, safeSubject, fromName?.trim() || 'WoxMail Broadcast', fromEmail?.trim() || null, htmlContent || '', plainContent]
   );
-  return result.rows[0];
+  const row = result.rows[0];
+  return row ? { ...row, name: row.title } : row;
 }
 
 /**
@@ -185,7 +217,7 @@ export async function listCampaigns(userId) {
  */
 export async function sendTestEmail(userId, campaignId, testEmail) {
   const campRes = await query(
-    `SELECT c.*, u.imap_password, u.email as user_email
+    `SELECT c.*, u.imap_password, u.email as user_email, u.is_admin as user_is_admin
      FROM campaigns c
      JOIN users u ON u.id = c.user_id
      WHERE c.id = $1 AND c.user_id = $2`,
@@ -197,8 +229,20 @@ export async function sendTestEmail(userId, campaignId, testEmail) {
   }
 
   const campaign = campRes.rows[0];
-  const senderEmail = campaign.from_email || campaign.user_email;
-  const pass = campaign.imap_password || process.env.ADMIN_PASSWORD;
+  let senderEmail = campaign.user_email;
+  if (campaign.from_email && campaign.from_email.toLowerCase() !== String(campaign.user_email || '').toLowerCase()) {
+    const aliasCheck = await query(
+      'SELECT 1 FROM email_aliases WHERE user_id = $1 AND LOWER(alias_email) = LOWER($2) AND is_active = TRUE LIMIT 1',
+      [userId, campaign.from_email]
+    );
+    if (aliasCheck.rows.length > 0) {
+      senderEmail = campaign.from_email;
+    }
+  }
+  const pass = campaign.imap_password || (campaign.user_is_admin ? (process.env.ADMIN_PASSWORD || '').replace(/^['"]|['"]$/g, '') : null);
+  if (!pass) {
+    throw new Error('Mailbox credentials not configured for sending campaign test email');
+  }
 
   const transporter = createTransporter(senderEmail, pass);
 

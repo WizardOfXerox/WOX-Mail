@@ -143,6 +143,12 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  useEffect(() => {
+    if (!loading && window.WoxLoader) {
+      window.WoxLoader.done();
+    }
+  }, [loading]);
+
   if (loading) return null;
 
   const getSettingStyle = (id) => {

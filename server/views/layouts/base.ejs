@@ -18,8 +18,8 @@
     (function() {
       try {
         var t = localStorage.getItem('woxmail_theme') || 'dark';
-        var isDark = t === 'light' ? false : true;
-        document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+        var isLight = t === 'light' || (t === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches);
+        document.documentElement.setAttribute('data-theme', isLight ? 'light' : 'dark');
         var a = localStorage.getItem('woxmail_accent') || 'purple';
         document.documentElement.setAttribute('data-accent', a);
         var d = localStorage.getItem('woxmail_density') || 'comfortable';
@@ -34,9 +34,9 @@
   </script>
 
   <!-- Styles -->
-  <link rel="stylesheet" href="/css/style.css?v=2.0.1">
+  <link rel="stylesheet" href="/css/style.css?v=2.0.2">
   <link rel="stylesheet" href="/css/backgrounds.css?v=2.0.1">
-  <link rel="stylesheet" href="/dist/assets/style.css?v=3.0.1">
+  <link rel="stylesheet" href="/dist/assets/style.css?v=3.0.4">
   <link rel="stylesheet" href="/css/print.css?v=2.0.1" media="print">
 
   <!-- PWA & Mobile Web App Meta -->
@@ -98,52 +98,171 @@
       height: 28px !important;
       max-width: 28px !important;
     }
+    /* Unified Theme- & Accent-Aware Full-Screen Loading Screen */
+    :root, [data-accent='purple'] {
+      --preloader-accent: #8b5cf6;
+      --preloader-accent-strong: #7c3aed;
+      --preloader-glow: rgba(124, 58, 237, 0.22);
+    }
+    [data-accent='emerald'] {
+      --preloader-accent: #34d399;
+      --preloader-accent-strong: #10b981;
+      --preloader-glow: rgba(16, 185, 129, 0.22);
+    }
+    [data-accent='cobalt'] {
+      --preloader-accent: #60a5fa;
+      --preloader-accent-strong: #3b82f6;
+      --preloader-glow: rgba(59, 130, 246, 0.22);
+    }
+    [data-accent='amber'] {
+      --preloader-accent: #fbbf24;
+      --preloader-accent-strong: #f59e0b;
+      --preloader-glow: rgba(245, 158, 11, 0.22);
+    }
+    [data-accent='cyan'] {
+      --preloader-accent: #22d3ee;
+      --preloader-accent-strong: #06b6d4;
+      --preloader-glow: rgba(6, 182, 212, 0.22);
+    }
+    [data-accent='crimson'] {
+      --preloader-accent: #f87171;
+      --preloader-accent-strong: #ef4444;
+      --preloader-glow: rgba(239, 68, 68, 0.22);
+    }
+    [data-accent='oled'] {
+      --preloader-accent: #e5e7eb;
+      --preloader-accent-strong: #d1d5db;
+      --preloader-glow: rgba(229, 231, 235, 0.14);
+    }
+    [data-theme='light'][data-accent='oled'] {
+      --preloader-accent: #18181b;
+      --preloader-accent-strong: #27272a;
+      --preloader-glow: rgba(24, 24, 27, 0.12);
+    }
+
     #wox-screen-preloader {
       position: fixed;
       inset: 0;
-      z-index: 999999;
-      background: var(--color-bg-page, #0a0a14);
+      z-index: 9999999;
+      background-color: #070710;
+      background-image: radial-gradient(circle at 50% 44%, var(--preloader-glow), transparent 58%);
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 1.25rem;
-      transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.35s ease;
+      padding: 1.5rem;
+      transition: opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1), transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.28s ease;
       pointer-events: all;
+      user-select: none;
+    }
+    html[data-theme='dark'][data-accent='oled'] #wox-screen-preloader {
+      background-color: #000000;
+    }
+    html[data-theme='light'] #wox-screen-preloader {
+      background-color: #f4f4f8;
     }
     #wox-screen-preloader.fade-out {
       opacity: 0 !important;
+      transform: scale(1.015);
       visibility: hidden !important;
       pointer-events: none !important;
+    }
+    .preloader-stage {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.25rem;
+      max-width: 320px;
+      width: 100%;
+      text-align: center;
+    }
+    .preloader-emblem {
+      position: relative;
+      width: 68px;
+      height: 68px;
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45), 0 0 28px var(--preloader-glow);
+    }
+    html[data-theme='light'] .preloader-emblem {
+      background: #ffffff;
+      border: 1px solid #e2e2ea;
+      box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08), 0 0 24px var(--preloader-glow);
+    }
+    .preloader-emblem::after {
+      content: '';
+      position: absolute;
+      inset: -6px;
+      border-radius: 25px;
+      border: 1.5px solid var(--preloader-accent);
+      opacity: 0.35;
+      animation: woxEmblemPulse 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    }
+    .preloader-emblem img {
+      width: 38px;
+      height: 38px;
+      object-fit: contain;
+      display: block;
     }
     .preloader-brand {
       display: flex;
       align-items: center;
-      gap: 0.5rem;
-      font-family: 'Outfit', -apple-system, sans-serif;
+      justify-content: center;
+      font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
       font-size: 1.65rem;
       font-weight: 800;
       letter-spacing: -0.03em;
-      color: #ffffff;
+      color: #f8fafc;
+      line-height: 1;
     }
-    .preloader-brand span.purple {
-      color: #8b5cf6;
-      text-shadow: 0 0 20px rgba(139, 92, 246, 0.6);
+    html[data-theme='light'] .preloader-brand {
+      color: #111827;
     }
-    .preloader-spinner {
-      width: 42px;
-      height: 42px;
-      border: 3px solid rgba(124, 58, 237, 0.15);
-      border-top-color: #8b5cf6;
-      border-radius: 50%;
-      animation: woxSpin 0.8s linear infinite;
+    .preloader-brand span.accent {
+      color: var(--preloader-accent);
+    }
+    .preloader-progress-track {
+      width: 196px;
+      height: 3px;
+      border-radius: 9999px;
+      background: rgba(255, 255, 255, 0.09);
+      overflow: hidden;
+      position: relative;
+    }
+    html[data-theme='light'] .preloader-progress-track {
+      background: rgba(15, 23, 42, 0.1);
+    }
+    .preloader-progress-bar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      width: 42%;
+      border-radius: 9999px;
+      background: linear-gradient(90deg, transparent, var(--preloader-accent), var(--preloader-accent-strong), transparent);
+      animation: woxProgressSlide 1.25s cubic-bezier(0.4, 0, 0.2, 1) infinite;
     }
     .preloader-text {
-      font-family: 'Inter', -apple-system, sans-serif;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
       font-size: 0.8125rem;
       font-weight: 500;
-      color: #8888a4;
-      letter-spacing: 0.02em;
+      color: #94a3b8;
+      letter-spacing: 0.01em;
+    }
+    html[data-theme='light'] .preloader-text {
+      color: #64748b;
+    }
+    @keyframes woxEmblemPulse {
+      0%, 100% { transform: scale(0.98); opacity: 0.22; }
+      50% { transform: scale(1.06); opacity: 0.55; }
+    }
+    @keyframes woxProgressSlide {
+      0% { transform: translateX(-110%); }
+      100% { transform: translateX(270%); }
     }
     @keyframes woxSpin {
       to { transform: rotate(360deg); }
@@ -353,32 +472,61 @@
   <%- typeof headExtra !== 'undefined' ? headExtra : '' %>
 </head>
 <body>
-  <!-- Global Screen Preloader to Prevent FOUC -->
-  <div id="wox-screen-preloader" aria-hidden="true">
-    <div class="preloader-brand" style="display: flex; align-items: center; gap: 0.65rem;">
-      <img src="/assets/favicon.svg" alt="WoxMail" style="width: 36px; height: 36px; object-fit: contain;">
-      <span>Wox<span class="purple">Mail</span></span>
+  <!-- Unified Branded Loading Screen (Opaque, Theme- & Accent-Aware, SPA-Synchronized) -->
+  <div id="wox-screen-preloader" role="status" aria-live="polite" aria-label="Loading WoxMail">
+    <div class="preloader-stage">
+      <div class="preloader-emblem">
+        <img src="/assets/favicon.svg" alt="WoxMail">
+      </div>
+      <div class="preloader-brand">
+        <span>Wox<span class="accent">Mail</span></span>
+      </div>
+      <div class="preloader-progress-track" aria-hidden="true">
+        <div class="preloader-progress-bar"></div>
+      </div>
+      <div class="preloader-text" id="wox-preloader-text"><%= typeof loadingLabel !== 'undefined' && loadingLabel ? loadingLabel : 'Preparing WoxMail...' %></div>
     </div>
-    <div class="preloader-spinner"></div>
-    <div class="preloader-text">Loading sovereign workspace...</div>
   </div>
   <script>
     (function() {
+      var waitForApp = <%= typeof waitForApp !== 'undefined' && waitForApp ? 'true' : 'false' %>;
+      var dismissed = false;
       function dismissPreloader() {
+        if (dismissed) return;
+        dismissed = true;
         var el = document.getElementById('wox-screen-preloader');
         if (el && !el.classList.contains('fade-out')) {
           el.classList.add('fade-out');
-          setTimeout(function() { if (el && el.parentNode) el.parentNode.removeChild(el); }, 400);
+          el.setAttribute('aria-hidden', 'true');
+          setTimeout(function() { if (el && el.parentNode) el.parentNode.removeChild(el); }, 320);
         }
       }
-      if (document.readyState === 'complete' || document.readyState === 'interactive') {
-        setTimeout(dismissPreloader, 100);
+      window.WoxLoader = {
+        done: function() {
+          if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(function() { requestAnimationFrame(dismissPreloader); });
+          } else {
+            dismissPreloader();
+          }
+        },
+        setMessage: function(msg) {
+          var t = document.getElementById('wox-preloader-text');
+          if (t && msg) t.textContent = msg;
+        }
+      };
+      if (waitForApp) {
+        // React SPA views call window.WoxLoader.done() once hydrated & authenticated;
+        // safety cap guarantees the screen can never stall on network issues.
+        setTimeout(dismissPreloader, 4000);
       } else {
-        window.addEventListener('DOMContentLoaded', function() { setTimeout(dismissPreloader, 100); });
-        window.addEventListener('load', dismissPreloader);
+        if (document.readyState === 'complete' || document.readyState === 'interactive') {
+          setTimeout(dismissPreloader, 40);
+        } else {
+          window.addEventListener('DOMContentLoaded', function() { setTimeout(dismissPreloader, 40); });
+          window.addEventListener('load', dismissPreloader);
+        }
+        setTimeout(dismissPreloader, 450);
       }
-      // Safety fallback max timeout
-      setTimeout(dismissPreloader, 900);
     })();
   </script>
 
