@@ -303,6 +303,9 @@
           const data = JSON.parse(event.data);
           if (data.type === 'new_email') {
             window.refreshInbox(false);
+            if (typeof window.loadRecentAddresses === 'function') {
+              window.loadRecentAddresses(false);
+            }
             if (window.WoxToast) {
               const sender = typeof data.message?.from === 'object' ? (data.message.from.address || data.message.from.name) : data.message?.from;
               WoxToast.info(`New email received from ${sender || 'Unknown'}`);
@@ -570,6 +573,10 @@
 
       if (manual && window.WoxToast) {
         WoxToast.success(`Inbox updated (${currentMessages.length} message${currentMessages.length !== 1 ? 's' : ''})`);
+      }
+
+      if (typeof window.loadRecentAddresses === 'function') {
+        window.loadRecentAddresses(false);
       }
     } catch (err) {
       console.error('Refresh inbox error:', err);
@@ -927,6 +934,10 @@
 
       if (window.WoxToast) {
         WoxToast.success('Mailbox extended by 24 hours!');
+      }
+
+      if (typeof window.loadRecentAddresses === 'function') {
+        window.loadRecentAddresses(false);
       }
     } catch (err) {
       console.error('Extend error:', err);
