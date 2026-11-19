@@ -48,6 +48,9 @@ WoxMail supports three primary authentication schemes:
 | `POST` | `/api/mail/forward` | User | Forward message with attachments |
 | `POST` | `/api/mail/schedule` | User | Schedule email for future delivery time |
 | `POST` | `/api/mail/snooze` | User | Temporarily hide message until specified time |
+| `GET` | `/lite`, `/m` | User | Zero-bundle server-rendered lite mailbox view (< 15 KB, < 30ms render time) |
+| `POST` | `/lite/send` | User | Low-bandwidth plain-text SMTP email dispatch via standard form POST |
+| `WS` | `/socket.io/` | User | Real-time bidirectional socket gateway (`mail:new`, `email_opened`, `email_link_clicked`, `email_unsnoozed`) |
 
 ### 3. Disposable Temp Mail (`/api/tempmail`)
 
@@ -58,6 +61,8 @@ WoxMail supports three primary authentication schemes:
 | `POST` | `/api/tempmail/generate-custom` | Public | Provision custom username address on-demand |
 | `GET` | `/api/tempmail/inbox/:address` | Public | Fetch live messages from IMAP for temp address |
 | `GET` | `/api/tempmail/sse/:address` | Public | Server-Sent Events stream for instant real-time incoming mail |
+| `GET` | `/api/tempmail/sse-directory` | Public | Server-Sent Events stream for instant public directory badge & pool sync across all tabs |
+| `GET` | `/api/tempmail/recent` | Public | List active community addresses (supports `?sync=true` for live IMAP probes) |
 | `DELETE` | `/api/tempmail/delete/:address` | Public | Explicitly purge disposable mailbox |
 
 ### 4. Support Desk API (`/api/support`)

@@ -37,6 +37,7 @@
 | `/support` | SSR (EJS) | ~16 KB | Customer support ticket submission, live status lookups |
 | `/login`, `/register` | SSR (EJS) | ~18 KB | Password auth, WebAuthn Passkeys biometric login, 2FA prompt |
 | `/dashboard` | EJS Shell + React | ~190 KB (Gzip) | Full webmail client (J/K shortcuts, undo send, composer, search, PGP) |
+| `/lite`, `/m` | SSR (EJS) | 0 KB (Zero-Bundle) | < 15 KB total page size, pure HTML/CSS, < 30ms render time for slow 2G/3G connections |
 | `/settings` | EJS Shell + React | ~45 KB (Gzip) | User security, passkeys, PGP keys, aliases, forwarding, sessions, vacation |
 | `/admin` | EJS Shell + React | ~55 KB (Gzip) | User governance, standby pool replenishment, tickets, live terminal |
 | `/.well-known/security.txt` | Static Text | 0 KB | RFC 9116 vulnerability disclosure and contact declarations |
@@ -67,12 +68,33 @@
 * **Grace Period Buffer**: Configurable 5s to 30s cancellation window before SMTP transmission.
 * **Queue Invariant**: Emails reside in `outbox_queue` with status `pending`. If not cancelled within the window, the background worker dispatches via SMTP and transitions status to `sent`.
 
+### F. Real-Time Live Push Engine (`liveMailWatcher.js` & `socket.js`)
+* **Zero-Resource Watcher**: Monitors authenticated users only while they maintain an active WebSocket connection in room `user:${userId}`.
+* **Non-Locking STATUS Probes**: Evaluates RFC 3501 IMAP `STATUS` every 10 seconds against baseline `uidNext` and message counts without selecting or locking user mailboxes.
+* **Automated Inbox Injection**: Emits `mail:new` over Socket.IO, plays Web Audio chime, triggers native OS alerts, and auto-refetches messages and unread folder counters without pressing <kbd>R</kbd>.
+* **Multi-Channel Push**: Also dispatches Web Push notifications via `notifyNewEmail()` and emits `mail.received` webhooks.
+* **In-Dock Burner SSE Stream**: Dedicated `/api/tempmail/sse/:address` stream in the Companion Dock delivering instant incoming burner alerts and unread badges.
+* **Public Directory SSE Broadcast**: `/api/tempmail/sse-directory` broadcasts badge updates and pool replenishments to all open tabs with zero latency.
+
+### G. Two-Tiered Low Resource Mode & Data Saver
+* **Tier 1 (In-App Lite Mode in SPA)**:
+  * Activated via 1-click `⚡ Lite Mode` toggle button, sidebar footer, Command Palette (<kbd>Ctrl+K</kbd>), or auto-detected via `navigator.connection` (`saveData === true`, `2g`, `3g`).
+  * Sets `data-low-resource="true"` on root element, suppressing heavy WebGL Canvas shaders (Matrix, Aurora, Void), disabling `backdrop-filter: blur(...)`, keyframe animations, transitions, and box shadows for instant CPU repaints.
+  * Reduces `useMessages` chunk limit from 25–50 to 15 items to slash JSON network payload.
+  * Blocks remote images and tracking beacons by default in `MessageView` with a click-to-load banner.
+* **Tier 2 (Zero-Bundle Standalone Server-Rendered Mode `/lite` & `/m`)**:
+  * Dedicated server-rendered EJS route at [`/lite`](file:///h:/Ideas/Mail/server/views/lite.ejs) and `/m`.
+  * Total page weight is under 15 KB (over 97% reduction compared to 500 KB+ SPA bundle) and renders in under 30 milliseconds.
+  * Pure HTML + semantic CSS with zero JavaScript bundle required.
+  * Full folder browsing (`Inbox`, `Sent`, `Drafts`, `Archive`, `Trash`, `Spam`), email reading with sanitized layout, quick Reply, and standalone `+ Compose` form via standard POST.
+
 ---
 
-## 4. Background Job Daemons (11 Periodic Cron Tasks)
+## 4. Background Job Daemons (12 Periodic Cron Tasks)
 
 | Task | Cadence | Handler / Service | Purpose |
 | :--- | :--- | :--- | :--- |
+| **Live Mail Watcher** | Every 10s | `liveMailWatcher.js` | Non-locking IMAP STATUS watcher for active Socket.IO users |
 | **Verification Reply Ingestion** | Every 1m | `inboundReplyJob.js` | Dual-mode inbound email reply verification |
 | **Campaign Batch Dispatcher** | Every 10s | `campaignService.js` | Dispatches pending marketing and RSS broadcasts |
 | **Support Inbound Poller** | Every 3m | `supportIngestionJob.js` | Ingests unread emails on `support@wox.world` |

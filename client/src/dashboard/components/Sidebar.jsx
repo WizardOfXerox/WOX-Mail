@@ -4,6 +4,7 @@ import { get, post, del } from '../../shared/api.js';
 import { useIntl } from '../../i18n/IntlProvider.jsx';
 import AppSwitcher from '../../shared/components/AppSwitcher.jsx';
 import { useExperienceMode } from '../../shared/hooks/useExperienceMode.js';
+import { useLowResourceMode } from '../../shared/hooks/useLowResourceMode.js';
 import { ProtonSessionStore } from '../../services/protonSessionStore.js';
 import { protonClient } from '../../services/protonAPI.js';
 import AccountSwitcherModal from './AccountSwitcherModal.jsx';
@@ -164,6 +165,7 @@ export default function Sidebar({
 }) {
   const { t } = useIntl();
   const { mode, isFeatureVisible, metadata } = useExperienceMode();
+  const { isLowResource, toggleLowResource } = useLowResourceMode();
   const [screenerPendingCount, setScreenerPendingCount] = useState(0);
   const [showAccountSwitcher, setShowAccountSwitcher] = useState(false);
   const [savedAccounts, setSavedAccounts] = useState([]);
@@ -682,6 +684,23 @@ export default function Sidebar({
             <span className="sidebar-label" style={{ fontWeight: 600 }}>Unlock Proton</span>
           </button>
         )}
+        <button
+          type="button"
+          className="sidebar-item"
+          title={isLowResource ? "Low Resource Mode is Active (Data Saver). Click to disable." : "Enable Low Resource Mode for slow internet & low power"}
+          onClick={toggleLowResource}
+          style={isLowResource ? { color: '#f59e0b', background: 'rgba(245, 158, 11, 0.12)' } : {}}
+        >
+          <span className="sidebar-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          </span>
+          <span className="sidebar-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+            <span>Low Resource</span>
+            <span style={{ fontSize: '0.625rem', padding: '0.1rem 0.35rem', borderRadius: '4px', background: isLowResource ? '#f59e0b' : 'rgba(255,255,255,0.1)', color: isLowResource ? '#000' : '#fff', fontWeight: 700 }}>
+              {isLowResource ? 'ON' : 'OFF'}
+            </span>
+          </span>
+        </button>
         <button type="button" className="sidebar-item" title="Settings" onClick={() => window.location.href = '/settings'}>
           <span className="sidebar-icon">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>

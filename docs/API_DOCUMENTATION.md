@@ -37,6 +37,8 @@
    - [4.22 Autodiscover & Autoconfig (`/autodiscover`, `/.well-known`)](#422-autodiscover--autoconfig)
    - [4.23 Administrator & Domain Control (`/api/admin`)](#423-administrator--domain-control-apiadmin)
    - [4.24 System Health & Diagnostics (`/api/health`)](#424-system-health--diagnostics-apihealth)
+   - [4.25 Zero-Bundle Ultra-Lite Webmail (`/lite`, `/m`)](#425-zero-bundle-ultra-lite-webmail-lite-m)
+5. [Real-Time Event Architecture & WebSocket Gateway (`socket.io` & SSE)](#5-real-time-event-architecture--websocket-gateway)
 
 ---
 
@@ -993,6 +995,64 @@ curl https://mail.wox.world/api/tempmail/inbox/quick-fox-4829@mail.wox.world
 
 ---
 
+#### `GET /api/tempmail/recent`
+
+**Description**: Fetch active community throwaway mailboxes and ready standby pool addresses with live message count annotations.
+
+**Authentication**: `Public`
+
+**Query Parameters**:
+- `sync` (optional, boolean): If `true`, performs non-locking IMAP STATUS probes to sync message counts on-demand.
+
+**Success Response** (`HTTP 200`):
+```json
+{
+  "recent": [
+    {
+      "address": "jordanmercer33@mail.wox.world",
+      "createdAt": "2026-11-18T10:00:00.000Z",
+      "messageCount": 1,
+      "isStandby": false
+    },
+    {
+      "address": "alexwest@mail.wox.world",
+      "createdAt": "2026-11-18T09:45:00.000Z",
+      "messageCount": 0,
+      "isStandby": true
+    }
+  ]
+}
+```
+
+---
+
+#### `GET /api/tempmail/sse-directory`
+
+**Description**: High-concurrency Server-Sent Events (SSE) live push stream broadcasting directory updates, newly leased addresses, address purges, and message count badges in real-time across all open clients without polling.
+
+**Authentication**: `Public`
+
+**Success Response** (`HTTP 200`):
+```text
+Content-Type: text/event-stream
+Cache-Control: no-cache
+Connection: keep-alive
+```
+
+**Stream Event Payloads**:
+```json
+event: message
+data: {
+  "type": "directory_update",
+  "recent": [
+    { "address": "jordanmercer33@mail.wox.world", "messageCount": 2 },
+    { "address": "alexwest@mail.wox.world", "messageCount": 0 }
+  ]
+}
+```
+
+---
+
 
 ### 4.7 Enclave Vault Secure Messages (`/api/secure`, `/api/mail/secure-messages`)
 
@@ -1809,4 +1869,86 @@ curl https://mail.wox.world/api/health
 ```
 
 ---
+
+### 4.25 Zero-Bundle Ultra-Lite Webmail (`/lite`, `/m`)
+
+The Ultra-Lite engine provides an instant, zero-client-bundle, server-rendered interface designed for users with slow 2G/3G mobile networks, high latency, or legacy low-resource devices. Total initial HTML payload is under 15 KB with sub-30ms render time.
+
+#### `GET /lite` or `GET /m`
+
+**Description**: Server-rendered HTML webmail interface streaming mailbox folders and messages directly from IMAP without loading React, Vite, or client-side JavaScript.
+
+**Authentication**: `JWT Bearer Cookie (woxmail_token)`
+
+**Query Parameters**:
+- `folder` (optional, string, default: `INBOX`): Target mailbox folder to view.
+- `uid` (optional, integer): IMAP message UID to read in inline reading pane.
+- `compose` (optional, string): Set to `1` to render server-rendered plain-text composer.
+
+**Success Response** (`HTTP 200`):
+```text
+Content-Type: text/html; charset=utf-8
+Transfer-Encoding: chunked
+```
+
+---
+
+#### `POST /lite/send`
+
+**Description**: Native HTML Form POST submission endpoint for sending low-bandwidth emails directly via SMTP without client-side asynchronous JavaScript.
+
+**Authentication**: `JWT Bearer Cookie (woxmail_token)`
+
+**Request Headers**:
+- `Content-Type: application/x-www-form-urlencoded`
+
+**Form Parameters**:
+- `to` (string, required): Recipient email address.
+- `subject` (string, required): Message subject.
+- `text` (string, required): Plain-text email body.
+
+**Response**:
+`302 Found` redirecting back to `/lite?folder=INBOX&sent=1`.
+
+---
+
+## 5. Real-Time Event Architecture & WebSocket Gateway
+
+WoxMail incorporates a high-efficiency dual-channel real-time push architecture combining **Socket.IO** (authenticated user dashboard & companion dock) and **Server-Sent Events (SSE)** (public disposable mailboxes & standby directory).
+
+### 5.1 Socket.IO Gateway (`/socket.io/`)
+
+#### Connection & Handshake
+
+Clients connect to `/socket.io/` using WebSocket transport with fallback to HTTP long-polling:
+
+```javascript
+import { io } from 'socket.io-client';
+
+const socket = io('https://mail.wox.world', {
+  auth: { token: localStorage.getItem('woxmail_token') },
+  withCredentials: true,
+  transports: ['websocket', 'polling']
+});
+```
+
+#### Server-to-Client Event Payloads
+
+| Event Name | Trigger | Payload Structure |
+|---|---|---|
+| `mail:new` | Dispatched by `liveMailWatcher` upon RFC 3501 IMAP `uidNext` increment | `{ uid: number, subject: string, from: string, date: string, preview: string, folder: string }` |
+| `email_opened` | Triggered when a tracked recipient renders the 1x1 transparent tracking pixel | `{ messageId: string, recipient: string, openedAt: string, userAgent: string, ip: string }` |
+| `email_link_clicked` | Triggered when a tracked recipient navigates via redirected URL wrapper | `{ messageId: string, recipient: string, targetUrl: string, clickedAt: string }` |
+| `followup_reminder_triggered` | Triggered when a scheduled smart follow-up threshold expires | `{ reminderId: string, threadId: string, recipient: string, subject: string, triggerTime: string }` |
+| `email_unsnoozed` | Triggered when a snoozed message returns to the user inbox | `{ uid: number, messageId: string, subject: string, folder: string }` |
+
+---
+
+### 5.2 Server-Sent Events (SSE) Channels
+
+| Endpoint | Authentication | Purpose |
+|---|---|---|
+| `GET /api/tempmail/sse/:address` | Public | Instant push notification when an incoming email arrives for a specific burner address. Dispatches `{ type: 'new_mail', message: {...} }`. |
+| `GET /api/tempmail/sse-directory` | Public | Multi-client broadcast stream broadcasting additions, deletions, and live message count badge updates across all public directory views. |
+
 

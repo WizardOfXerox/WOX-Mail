@@ -6,6 +6,16 @@ import React, { useEffect } from 'react';
  */
 export default function BackgroundCanvas() {
   useEffect(() => {
+    if (typeof window !== 'undefined' && (
+      document.documentElement.getAttribute('data-low-resource') === 'true' ||
+      localStorage.getItem('woxmail_low_resource') === 'true'
+    )) {
+      if (window.WoxBackground && typeof window.WoxBackground.setMode === 'function') {
+        window.WoxBackground.setMode('solid');
+      }
+      return;
+    }
+
     let savedMode = localStorage.getItem('woxmail_bg_mode');
     if (!savedMode || savedMode === 'oled_monochrome') {
       savedMode = 'aurora';

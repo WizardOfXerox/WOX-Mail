@@ -10,6 +10,7 @@ import ReadReceiptIndicator from './ReadReceiptIndicator.jsx';
 import { getFolderIcon } from './Sidebar.jsx';
 import { useIntl } from '../../i18n/IntlProvider.jsx';
 import { get, post } from '../../shared/api.js';
+import { useLowResourceMode } from '../../shared/hooks/useLowResourceMode.js';
 
 /**
  * Normalizes subject for conversation grouping by removing Re:, Fwd:, [EXTERNAL], [Spam], etc.
@@ -669,6 +670,7 @@ export default function MessageList({
   onUnlockProton,
 }) {
   const { t } = useIntl();
+  const { isLowResource, toggleLowResource } = useLowResourceMode();
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 768);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUids, setSelectedUids] = useState(new Set());
@@ -1365,6 +1367,53 @@ export default function MessageList({
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
             </button>
           )}
+
+          {/* Real-Time Live Sync Status Badge */}
+          <span
+            className="live-sync-indicator"
+            title="Real-Time WebSocket Sync Active — New emails arrive dynamically without manual refresh"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.3rem',
+              fontSize: '0.6875rem',
+              color: '#10b981',
+              background: 'rgba(16, 185, 129, 0.12)',
+              border: '1px solid rgba(16, 185, 129, 0.28)',
+              padding: '0.15rem 0.45rem',
+              borderRadius: '999px',
+              fontWeight: 600,
+              flexShrink: 0,
+            }}
+          >
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 6px #10b981' }} />
+            <span>Live Sync</span>
+          </span>
+
+          {/* Low Resource Mode / Lite Mode Toggle */}
+          <button
+            type="button"
+            className={`btn btn-xs ${isLowResource ? 'btn-warning' : 'btn-ghost'}`}
+            onClick={toggleLowResource}
+            title={isLowResource ? "Low Resource Mode Active: Animations, blurs & background loads paused to save data & CPU. Click to switch to Full experience." : "Switch to Low Resource Mode for slow internet connections, data saving & high performance"}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.25rem',
+              fontSize: '0.6875rem',
+              fontWeight: 600,
+              padding: '0.15rem 0.5rem',
+              borderRadius: '999px',
+              flexShrink: 0,
+              cursor: 'pointer',
+              color: isLowResource ? '#f59e0b' : 'var(--color-text-secondary)',
+              border: isLowResource ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid var(--color-border-subtle)',
+              background: isLowResource ? 'rgba(245, 158, 11, 0.12)' : 'transparent',
+            }}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            <span>{isLowResource ? 'Lite Active' : 'Lite Mode'}</span>
+          </button>
           {(folder || '').toLowerCase() === 'trash' && messages.length > 0 && (onBatchDelete || onDelete) && (
             <button
               type="button"

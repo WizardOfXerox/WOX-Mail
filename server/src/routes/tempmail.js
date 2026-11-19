@@ -180,6 +180,8 @@ router.post('/generate',
         path: '/',
       });
 
+      broadcastDirectoryUpdate({ type: 'directory_refresh' });
+
       res.status(201).json({
         address: address.address,
         expiresAt: address.expires_at,
@@ -260,6 +262,44 @@ router.get('/inbox/:address', async (req, res, next) => {
   }
 });
 
+// ─── Real-Time Public Directory SSE Stream ────────────────
+const directorySSEClients = new Set();
+
+/**
+ * Broadcast dynamic updates to all connected public directory viewers.
+ * @param {object} payload
+ */
+export function broadcastDirectoryUpdate(payload) {
+  const data = `data: ${JSON.stringify(payload)}\n\n`;
+  for (const client of directorySSEClients) {
+    try {
+      client.write(data);
+    } catch {
+      directorySSEClients.delete(client);
+    }
+  }
+}
+
+/**
+ * GET /api/tempmail/sse-directory
+ * Server-Sent Events stream for instant public directory badge and pool sync.
+ */
+router.get('/sse-directory', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+
+  res.write(`data: ${JSON.stringify({ type: 'connected' })}\n\n`);
+  directorySSEClients.add(res);
+
+  req.on('close', () => {
+    directorySSEClients.delete(res);
+  });
+});
+
 /**
  * GET /api/tempmail/sse/:address
  * Server-Sent Events stream for real-time inbox updates.
@@ -328,6 +368,10 @@ router.get('/sse/:address', async (req, res, next) => {
           if (!knownUids.has(msg.uid)) {
             knownUids.add(msg.uid);
             res.write(`data: ${JSON.stringify({ type: 'new_email', message: msg })}\n\n`);
+
+            // Instantly update database count and broadcast to all live directory viewers
+            query('UPDATE temp_addresses SET message_count = $1, last_accessed = NOW() WHERE address = $2', [knownUids.size, address]).catch(() => {});
+            broadcastDirectoryUpdate({ type: 'badge_update', address, messageCount: knownUids.size });
           }
         }
       } catch {}
@@ -585,6 +629,7 @@ router.post('/extend', async (req, res, next) => {
     );
 
     if (result.rows.length === 0) return res.status(404).json({ error: 'Active address not found' });
+    broadcastDirectoryUpdate({ type: 'directory_refresh' });
     res.json({
       message: `Mailbox lifetime extended by ${hours} hours`,
       expiresAt: result.rows[0].expires_at,
@@ -686,6 +731,8 @@ router.delete('/delete/:address', async (req, res, next) => {
     res.clearCookie(TEMP_COOKIE_NAME, { path: '/', httpOnly: true });
     res.clearCookie(TEMP_COOKIE_NAME, { path: '/' });
     res.cookie(TEMP_COOKIE_NAME, '', { path: '/', maxAge: 0, expires: new Date(0), httpOnly: true, sameSite: 'lax' });
+
+    broadcastDirectoryUpdate({ type: 'directory_refresh' });
 
     res.json({ message: 'Mailbox deleted', address: row.address });
   } catch (err) {

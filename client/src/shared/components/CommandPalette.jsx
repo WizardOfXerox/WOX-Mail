@@ -61,6 +61,21 @@ const baseCommands = useMemo(() => {
     { id: 'futureme', title: 'Write Letter to the Future', category: 'Time Capsule', desc: 'Deliver letter 1, 3, 5, 10 years from now', action: () => { window.location.href = '/futureme'; } },
     { id: 'tempmail', title: 'Generate Disposable Temp Mail', category: 'Temp Mail', desc: 'Instant anonymous mailbox with SSE', action: () => { window.location.href = '/tempmail'; } },
     { id: 'theme', title: 'Toggle Dark / Light Theme', category: 'Preferences', desc: 'Switch visual appearance', action: () => onAction('theme') },
+    {
+      id: 'low-resource',
+      title: 'Toggle Low Resource Mode (Lite / Data Saver)',
+      category: 'Preferences',
+      desc: 'Pause animations, blurs & large payloads for slow internet connections',
+      action: () => {
+        const cur = localStorage.getItem('woxmail_low_resource') === 'true';
+        const next = !cur;
+        localStorage.setItem('woxmail_low_resource', next ? 'true' : 'false');
+        if (next) document.documentElement.setAttribute('data-low-resource', 'true');
+        else document.documentElement.removeAttribute('data-low-resource');
+        window.dispatchEvent(new CustomEvent('woxmail:low-resource-change', { detail: { enabled: next } }));
+        if (window.WoxToast) window.WoxToast.info(`Low Resource Mode ${next ? 'Enabled' : 'Disabled'}`);
+      }
+    },
     { id: 'settings', title: 'Account Settings & PGP Vault', category: 'Navigation', desc: 'Open settings and security dashboard', action: () => { window.location.href = '/settings'; } },
   ];
 

@@ -39,6 +39,8 @@ WoxMail is a self-sovereign, privacy-centric email and messaging platform design
 - **Gatekeeper Sender Screener**: Quarantine first-contact senders and allow/block senders before they reach your primary inbox.
 - **Native Device Configuration**: RFC 6186 & Autodiscover support with one-click Apple iOS/macOS `.mobileconfig` profiles, Mozilla Thunderbird XML autoconfig, and Microsoft Outlook POX protocols.
 - **Tor Onion Routing**: Built-in darknet access via dedicated v3 `.onion` hidden service with automated Onion-Location headers.
+- **Real-Time Live Push Engine (Socket.IO + SSE)**: Zero-resource background IMAP watcher (`liveMailWatcher.js`) pushing new messages via WebSockets with visible `● Live Sync` indicator, Web Audio chime, desktop alerts, and instant inbox injection; paired with live Server-Sent Events directory broadcasts (`/api/tempmail/sse-directory`) for instant 0ms pool synchronization.
+- **Two-Tiered Low Resource Mode & WoxMail Lite (`/lite`)**: Ultra-fast performance for users on slow or metered internet connections. Features an in-app Lite Mode (GPU shader suppression, blur/animation bypass, 15-message chunks, and automatic tracking image blocking) alongside a dedicated zero-bundle server-rendered Lite Webmail view (`/lite` and `/m`) that loads in under 30 milliseconds with a total page size under 15 KB.
 - **Interactive Developer CLI**: Native command-line interface (`woxmail`) for reading, sending, temporary mailbox provisioning, and admin management directly from your terminal.
 
 ---

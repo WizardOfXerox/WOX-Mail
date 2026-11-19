@@ -223,11 +223,16 @@ export function useMessages(folder, page = 1, activeAccount = null) {
 
   const accountParam = activeAccount?.id ? `&accountId=${encodeURIComponent(activeAccount.id)}` : '';
   const isInboxFolder = folder === 'INBOX' || folder === 'Inbox' || folder === 'Inboxes';
+  const isLowRes = typeof window !== 'undefined' && (
+    document.documentElement.getAttribute('data-low-resource') === 'true' ||
+    localStorage.getItem('woxmail_low_resource') === 'true'
+  );
+  const limit = isLowRes ? 15 : 25;
   const path = isAllInboxes || isProton
     ? null
     : isInboxFolder
-      ? `/mail/inbox?page=${page}&limit=25${accountParam}`
-      : `/mail/folder/${encodeURIComponent(folder)}?page=${page}&limit=25${accountParam}`;
+      ? `/mail/inbox?page=${page}&limit=${limit}${accountParam}`
+      : `/mail/folder/${encodeURIComponent(folder)}?page=${page}&limit=${limit}${accountParam}`;
 
   const { data, loading, error, refetch } = useApi(path, [folder, page, activeAccount?.id]);
 

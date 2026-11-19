@@ -284,6 +284,103 @@ router.get('/dashboard', async (req, res) => {
   await renderPage(req, res, 'dashboard', { title: 'Inbox', showNav: false, showFooter: false });
 });
 
+// ─── Zero-Bundle Low Resource / Lite Mail View ───────────
+router.get(['/lite', '/m'], async (req, res) => {
+  try {
+    const token = req.cookies?.[JWT_COOKIE_NAME] || req.headers.authorization?.replace('Bearer ', '').trim();
+    if (!token) return res.redirect(`/login?redirect=${encodeURIComponent(req.originalUrl || '/lite')}`);
+
+    const active = await verifyActiveJwt(token);
+    if (!active?.user) return res.redirect(`/login?redirect=${encodeURIComponent(req.originalUrl || '/lite')}`);
+
+    const user = active.user;
+    const currentFolder = req.query.folder || 'INBOX';
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const viewUid = req.query.view ? parseInt(req.query.view, 10) : null;
+    const currentAction = req.query.action || null;
+    const replyUid = req.query.replyUid ? parseInt(req.query.replyUid, 10) : null;
+
+    // Get user credentials
+    const creds = await query('SELECT imap_password FROM users WHERE id = $1', [user.id]);
+    let password = creds.rows[0]?.imap_password;
+    if (!password && user.is_admin) {
+      password = (process.env.ADMIN_PASSWORD || '').replace(/^['"]|['"]$/g, '');
+    }
+
+    let messages = [];
+    let selectedMessage = null;
+    let composeDefaults = null;
+
+    if (password) {
+      const { createConnection, fetchMessages, fetchMessage } = await import('../services/imap.js');
+      let client;
+      try {
+        client = await createConnection(user.email, password);
+        if (viewUid) {
+          selectedMessage = await fetchMessage(client, currentFolder, viewUid);
+        } else if (replyUid) {
+          const original = await fetchMessage(client, currentFolder, replyUid);
+          if (original) {
+            composeDefaults = {
+              to: original.from?.address || original.from?.text || '',
+              subject: original.subject?.startsWith('Re:') ? original.subject : `Re: ${original.subject || ''}`,
+              text: `\n\n--- Original Message ---\nFrom: ${original.from?.name || ''} <${original.from?.address || ''}>\nDate: ${original.date}\n\n${original.text || ''}`,
+            };
+          }
+        } else if (!currentAction) {
+          const fetched = await fetchMessages(client, currentFolder, { page, limit: 15 });
+          messages = fetched.messages || [];
+        }
+      } catch (imapErr) {
+        // IMAP error handled gracefully
+      } finally {
+        if (client) await client.logout().catch(() => {});
+      }
+    }
+
+    res.render('lite', {
+      title: `${currentFolder} — WoxMail Lite`,
+      user,
+      currentFolder,
+      page,
+      messages,
+      selectedMessage,
+      currentAction: currentAction || (replyUid ? 'compose' : null),
+      composeDefaults,
+      alertMessage: req.query.alert || null,
+      errorMessage: req.query.err || null,
+    });
+  } catch (err) {
+    res.status(500).render('500', { title: 'Error', error: err.message, status: 500 });
+  }
+});
+
+router.post('/lite/send', async (req, res) => {
+  try {
+    const token = req.cookies?.[JWT_COOKIE_NAME] || req.headers.authorization?.replace('Bearer ', '').trim();
+    if (!token) return res.redirect('/login');
+
+    const active = await verifyActiveJwt(token);
+    if (!active?.user) return res.redirect('/login');
+
+    const { to, subject, text, folder = 'INBOX' } = req.body;
+    if (!to || !subject) {
+      return res.redirect(`/lite?action=compose&folder=${encodeURIComponent(folder)}&err=Recipient+and+Subject+are+required`);
+    }
+
+    const { sendEmail } = await import('../services/smtp.js');
+    await sendEmail(active.user.id, {
+      to,
+      subject,
+      text,
+    });
+
+    res.redirect(`/lite?folder=${encodeURIComponent(folder)}&alert=Email+dispatched+successfully`);
+  } catch (err) {
+    res.redirect(`/lite?action=compose&err=${encodeURIComponent(err.message)}`);
+  }
+});
+
 router.get(['/settings', '/settings/:section'], async (req, res) => {
   await renderPage(req, res, 'settings', { title: 'Settings', showNav: false, showFooter: false });
 });

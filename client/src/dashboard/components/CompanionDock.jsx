@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { get, post, del, put } from '../../shared/api.js';
+import { NotificationService } from '../../services/notifications.js';
 
 /**
  * Enhanced Slide-Over Productivity Companion Hub
@@ -502,6 +503,54 @@ export default function CompanionDock({ user, onClose, onComposeTo, activeMessag
     }
   }, [activeTab]);
 
+  // ─── Real-Time In-Dock Burner SSE Stream ──────────────────
+  useEffect(() => {
+    if (!tempAddress) return;
+
+    let es = null;
+    try {
+      es = new EventSource(`/api/tempmail/sse/${encodeURIComponent(tempAddress)}`);
+      es.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'new_email' && data.message) {
+            const msg = data.message;
+            setTempMessages((prev) => {
+              if (prev.some((m) => m.uid === msg.uid)) return prev;
+              return [msg, ...prev];
+            });
+
+            const sender = msg.from?.name || msg.from?.address || 'Someone';
+            NotificationService.notify({
+              from: `Burner: ${sender}`,
+              subject: msg.subject || '(No Subject)',
+              preview: msg.snippet || `Received on ${tempAddress}`,
+              onClick: () => {
+                switchTab('tempmail');
+                setExpandedMsgUid(msg.uid);
+              }
+            });
+
+            if (window.WoxToast) {
+              window.WoxToast.success(`Burner Received: ${msg.subject || '(No Subject)'}`);
+            }
+          }
+        } catch (e) {
+          console.warn('[Burner SSE] Parse error:', e);
+        }
+      };
+      es.onerror = () => {
+        // SSE auto-reconnects
+      };
+    } catch (e) {}
+
+    return () => {
+      if (es) {
+        es.close();
+      }
+    };
+  }, [tempAddress]);
+
   const handleGenerateTemp = async (customName = null, domainChoice = null) => {
     setGeneratingTemp(true);
     try {
@@ -854,6 +903,11 @@ export default function CompanionDock({ user, onClose, onComposeTo, activeMessag
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
             <span>Burner</span>
+            {tempMessages.length > 0 && (
+              <span style={{ fontSize: '0.625rem', padding: '0.1rem 0.35rem', borderRadius: '999px', background: 'var(--color-primary)', color: '#fff', marginLeft: '0.2rem', fontWeight: 700 }}>
+                {tempMessages.length}
+              </span>
+            )}
           </button>
         </div>
       </div>

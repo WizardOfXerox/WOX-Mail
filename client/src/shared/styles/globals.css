@@ -7023,3 +7023,62 @@ main,
   color: #6d28d9;
   border-color: rgba(124, 58, 237, 0.25);
 }
+
+/* ═════════════════════════════════════════════════════════
+   LOW RESOURCE / DATA SAVER / LITE MODE OVERRIDES
+   ═════════════════════════════════════════════════════════ */
+[data-low-resource="true"] {
+  --color-bg-page: #0b0a12 !important;
+  --color-bg-card: #141224 !important;
+  --color-bg-hover: #1e1b34 !important;
+  --color-bg-input: #100f1c !important;
+  --color-bg-elevated: #19162e !important;
+  --color-bg-nav: #0f0e1a !important;
+  --shadow-sm: none !important;
+  --shadow-md: none !important;
+  --shadow-lg: none !important;
+  --shadow-glow: none !important;
+}
+
+[data-low-resource="true"][data-theme="light"] {
+  --color-bg-page: #f8fafc !important;
+  --color-bg-card: #ffffff !important;
+  --color-bg-hover: #f1f5f9 !important;
+  --color-bg-input: #ffffff !important;
+  --color-bg-elevated: #ffffff !important;
+  --color-bg-nav: #f8fafc !important;
+}
+
+[data-low-resource="true"] *,
+[data-low-resource="true"] *::before,
+[data-low-resource="true"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+
+/* Hide GPU-heavy animated Canvas shaders */
+[data-low-resource="true"] canvas#matrix-canvas,
+[data-low-resource="true"] canvas#ambient-canvas,
+[data-low-resource="true"] .background-canvas,
+[data-low-resource="true"] .ambient-glow,
+[data-low-resource="true"] .orb-glow {
+  display: none !important;
+}
+
+/* Force solid clean backgrounds for instant GPU rendering */
+[data-low-resource="true"] body,
+[data-low-resource="true"] .dashboard-root,
+[data-low-resource="true"] .dashboard-app,
+[data-low-resource="true"] .dashboard-main,
+[data-low-resource="true"] .list-header,
+[data-low-resource="true"] .viewer-header,
+[data-low-resource="true"] .sidebar {
+  background-image: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}

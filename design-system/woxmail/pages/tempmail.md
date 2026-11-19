@@ -31,12 +31,21 @@
 ### Component Overrides
 
 - Avoid: Block paste or require manual OTP transcription with no alternative
+- **Copy Button Micro-Interaction**: One-click clipboard copy on address chips with instant visual tooltip confirmation (`Copied!`).
+- **Live Message Badges**: Pulsing pill badges (`0 msg` in muted indigo, `1+ msg` in vibrant emerald `#10b981`) scaling with cubic-bezier transition when new messages land.
 
 ---
 
 ## Page-Specific Components
 
-- No unique components for this page
+### 1. Public Temp Mail Directory (`.recent-pool-grid`)
+- Responsive 2-column community directory displaying currently leased disposable addresses and active standby pool.
+- One-click copy action for any directory address.
+- Live message count badge showing real-time unread messages in that mailbox.
+
+### 2. Real-Time Directory SSE Sync (`/api/tempmail/sse-directory`)
+- Real-time Server-Sent Events listener that updates directory pills, new addresses, and message counters dynamically across all connected browsers without manual refresh.
+- Includes manual "Refresh List" fallback button that triggers non-locking IMAP STATUS probes (`?sync=true`).
 
 ---
 

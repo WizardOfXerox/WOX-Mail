@@ -265,6 +265,88 @@ export default function App() {
     messages.forEach((m) => knownMsgUidsRef.current.add(m.uid));
   }, [messages, activeFolder, activeAccount]);
 
+  // ─── Real-Time WebSocket Engine (Socket.IO) ────────────────
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    let socket = null;
+    try {
+      if (typeof window.io === 'function') {
+        socket = window.io();
+
+        socket.on('connect', () => {
+          console.debug('[WoxMail:Socket] Connected to real-time notification engine');
+        });
+
+        // Live incoming email push
+        socket.on('mail:new', (payload) => {
+          const { message } = payload || {};
+          if (!message) return;
+
+          const sender = message.from?.name || message.from?.address || 'Someone';
+          const subject = message.subject || '(No Subject)';
+          const preview = message.snippet || message.intro || '';
+
+          // 1. Play audio chime and display native desktop notification
+          NotificationService.notify({
+            from: sender,
+            subject,
+            preview,
+            onClick: () => {
+              window.focus();
+              if (message.uid) setSelectedUid(message.uid);
+            }
+          });
+
+          // 2. Display in-app glassmorphism notification toast
+          if (window.WoxToast) {
+            window.WoxToast.info(`New email from ${sender}: ${subject.slice(0, 45)}`);
+          }
+
+          // 3. Immediately sync inbox message stream and unread folder counts
+          refetchMessages();
+          refetchFolders();
+        });
+
+        // Real-time read receipt notification
+        socket.on('email_opened', (data) => {
+          if (window.WoxToast) {
+            window.WoxToast.success(`Read Receipt: Email opened by recipient`);
+          }
+        });
+
+        // Real-time link click notification
+        socket.on('email_link_clicked', (data) => {
+          if (window.WoxToast) {
+            window.WoxToast.info(`Link Click: Recipient clicked a tracked link`);
+          }
+        });
+
+        // Real-time follow-up reminder
+        socket.on('followup_reminder_triggered', (data) => {
+          if (window.WoxToast) {
+            window.WoxToast.warning(`Follow-up Reminder: ${data.subject || 'Follow up required'}`);
+          }
+        });
+
+        // Real-time unsnooze event
+        socket.on('email_unsnoozed', () => {
+          refetchMessages();
+          refetchFolders();
+          if (window.WoxToast) {
+            window.WoxToast.info(`Email unsnoozed and returned to Inbox`);
+          }
+        });
+      }
+    } catch (err) {
+      console.warn('[WoxMail:Socket] Real-time setup warning:', err);
+    }
+
+    return () => {
+      if (socket) socket.disconnect();
+    };
+  }, [refetchMessages, refetchFolders]);
+
   const handleProtonUnlocked = () => {
     setIsProtonUnlocked(true);
     setShowProtonUnlock(false);

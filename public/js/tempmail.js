@@ -1173,7 +1173,7 @@
         const msgCount = typeof addr.messageCount === 'number' ? addr.messageCount : 0;
         const isStandby = addr.status === 'available';
         return `
-          <div class="recent-item" onclick="openPublicAddress('${escapeHtml(addr.address)}', '${escapeHtml(addr.expiresAt || '')}')">
+          <div class="recent-item" data-address="${escapeHtml(addr.address)}" onclick="openPublicAddress('${escapeHtml(addr.address)}', '${escapeHtml(addr.expiresAt || '')}')">
             <span class="recent-address mono">${escapeHtml(addr.address)}</span>
             <div class="recent-meta" style="display:flex;align-items:center;gap:0.4rem;">
               <span class="badge ${msgCount > 0 ? 'badge-green' : (isStandby ? 'badge-blue' : 'badge-purple')}" style="font-size:0.75rem;font-weight:600;">
@@ -1194,6 +1194,43 @@
       }
     }
   };
+
+  // ─── Real-Time Directory SSE Connection ──────────────────
+  let directoryEventSource = null;
+  function connectDirectorySSE() {
+    if (typeof EventSource === 'undefined') return;
+    if (directoryEventSource) {
+      try { directoryEventSource.close(); } catch {}
+    }
+    try {
+      directoryEventSource = new EventSource(`${API}/sse-directory`);
+      directoryEventSource.onmessage = function (event) {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'badge_update' && data.address) {
+            const item = document.querySelector(`.recent-item[data-address="${data.address}"]`);
+            if (item) {
+              const badge = item.querySelector('.badge');
+              if (badge) {
+                badge.className = data.messageCount > 0 ? 'badge badge-green' : 'badge badge-purple';
+                badge.textContent = `${data.messageCount} msg`;
+                badge.style.transition = 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)';
+                badge.style.transform = 'scale(1.22)';
+                setTimeout(() => { badge.style.transform = ''; }, 350);
+              }
+            } else {
+              window.loadRecentAddresses(false);
+            }
+          } else if (data.type === 'directory_refresh') {
+            window.loadRecentAddresses(false);
+          }
+        } catch (e) {}
+      };
+      directoryEventSource.onerror = function () {
+        // EventSource will automatically retry connection
+      };
+    } catch (e) {}
+  }
 
   window.refreshAll = async function () {
     const promises = [];
@@ -1353,6 +1390,7 @@
     
     renderMyMailboxes();
     window.loadRecentAddresses();
+    connectDirectorySSE();
     recentInterval = setInterval(window.loadRecentAddresses, 15000);
     autoRefreshInterval = setInterval(() => {
       if (currentAddress) window.refreshInbox(false);

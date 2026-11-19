@@ -2,6 +2,7 @@ import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import { query } from './database.js';
 import { JWT_COOKIE_NAME } from './constants.js';
+import * as liveMailWatcher from '../services/liveMailWatcher.js';
 import pino from 'pino';
 
 const logger = pino({ name: 'woxmail:socket' });
@@ -119,6 +120,9 @@ export function initSocket(httpServer) {
     // Join user-specific room for targeted events
     socket.join(`user:${user.id}`);
 
+    // Register user for live background mail watching while connected
+    liveMailWatcher.registerUser(user.id, user.email);
+
     // Admin room
     if (user.is_admin) {
       socket.join('admin');
@@ -126,8 +130,12 @@ export function initSocket(httpServer) {
 
     socket.on('disconnect', () => {
       logger.debug({ userId: user.id }, 'Socket disconnected');
+      liveMailWatcher.unregisterUser(user.id);
     });
   });
+
+  // Start the background mail watcher loop
+  liveMailWatcher.startWatcher();
 
   return io;
 }

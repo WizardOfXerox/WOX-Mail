@@ -201,7 +201,14 @@ export default function MessageView({
     }
 
     // Determine initial image loading permission
-    if (prefs.remoteImages === 'allow_all') {
+    const isLowRes = typeof window !== 'undefined' && (
+      document.documentElement.getAttribute('data-low-resource') === 'true' ||
+      localStorage.getItem('woxmail_low_resource') === 'true'
+    );
+    if (isLowRes) {
+      // In Low Resource Mode, always block heavy remote images initially to save bandwidth
+      setAllowImagesThisEmail(false);
+    } else if (prefs.remoteImages === 'allow_all') {
       setAllowImagesThisEmail(true);
     } else {
       const isTrusted = (prefs.trustedSenders || []).some((s) => s.toLowerCase() === senderEmail || (senderDomain && s.toLowerCase() === senderDomain));
